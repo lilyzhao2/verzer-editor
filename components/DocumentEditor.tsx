@@ -7,7 +7,7 @@ import { Check, X, CheckCircle, Save } from 'lucide-react';
 import { RichTextEditor } from './RichTextEditor';
 
 export function DocumentEditor() {
-  const { updateVersion, getCurrentVersion, getCompareVersion, createVersion } = useEditor();
+  const { state, updateVersion, getCurrentVersion, getCompareVersion, createVersion } = useEditor();
   const currentVersion = getCurrentVersion();
   const compareVersion = getCompareVersion();
   const [localContent, setLocalContent] = useState(currentVersion?.content || '');
@@ -42,6 +42,20 @@ export function DocumentEditor() {
       setHasUnsavedChanges(false);
       
       // Clear any pending auto-save
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+    }
+  };
+
+  const handleSaveAsNewVersion = () => {
+    if (hasUnsavedChanges && currentVersion) {
+      const prompt = state.compareVersionId 
+        ? `Manual edits to v${currentVersion.number} (compared with v${state.versions.find(v => v.id === state.compareVersionId)?.number})`
+        : `Manual edits to v${currentVersion.number}`;
+      
+      createVersion(localContent, prompt);
+      setHasUnsavedChanges(false);
       if (saveTimeoutRef.current) {
         clearTimeout(saveTimeoutRef.current);
       }
@@ -139,18 +153,23 @@ export function DocumentEditor() {
 
   return (
     <div className="h-full flex flex-col">
-      <div className="px-6 py-3 border-b bg-gray-50 dark:bg-gray-700">
+      <div className="px-6 py-3 border-b bg-gray-50">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-200">
+            <h2 className="text-lg font-semibold text-gray-800">
               Version {currentVersion?.number} 
               {currentVersion?.isOriginal && ' (Original)'}
+              {state.compareVersionId && (
+                <span className="ml-2 text-sm text-blue-600 bg-blue-50 px-2 py-1 rounded">
+                  Comparing with v{state.versions.find(v => v.id === state.compareVersionId)?.number} (editable)
+                </span>
+              )}
               {hasUnsavedChanges && (
-                <span className="ml-2 text-sm text-amber-600 dark:text-amber-400">(edited)</span>
+                <span className="ml-2 text-sm text-amber-600">(edited)</span>
               )}
             </h2>
             {currentVersion?.prompt && (
-              <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
+              <p className="mt-1 text-sm text-gray-600">
                 {currentVersion.prompt.includes('Manual edit') ? '✏️ ' : '🤖 '}
                 {currentVersion.prompt}
               </p>
@@ -158,15 +177,26 @@ export function DocumentEditor() {
           </div>
           <div className="flex items-center gap-3">
             {hasUnsavedChanges && (
-              <button
-                onClick={handleSaveVersion}
-                className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors"
-              >
-                <Save className="w-4 h-4" />
-                Save Changes
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleSaveVersion}
+                  className="flex items-center gap-2 px-3 py-1.5 bg-gray-600 text-white text-sm rounded-lg hover:bg-gray-700 transition-colors"
+                  title="Update current version"
+                >
+                  <Save className="w-4 h-4" />
+                  Update v{currentVersion?.number}
+                </button>
+                <button
+                  onClick={handleSaveAsNewVersion}
+                  className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors"
+                  title="Create new version"
+                >
+                  <Save className="w-4 h-4" />
+                  Save as New Version
+                </button>
+              </div>
             )}
-            <span className="text-sm text-gray-500 dark:text-gray-400">
+            <span className="text-sm text-gray-500">
               {currentVersion?.timestamp && new Date(currentVersion.timestamp).toLocaleString()}
             </span>
           </div>

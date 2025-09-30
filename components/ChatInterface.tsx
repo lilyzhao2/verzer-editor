@@ -34,7 +34,7 @@ export function ChatInterface() {
 
   return (
     <div className="h-full flex flex-col bg-gray-50">
-      <div className="px-6 py-4 border-b bg-white">
+      <div className="px-6 py-4 border-b bg-white border-gray-200">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
             <MessageSquare className="w-5 h-5" />
@@ -44,9 +44,9 @@ export function ChatInterface() {
           {/* Model Selector */}
           <div className="flex items-center gap-2">
             <button
-              onClick={() => handleModelChange('claude-3-haiku-20240307')}
+              onClick={() => handleModelChange('claude-3-5-haiku-20241022')}
               className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center gap-1.5 ${
-                state.selectedModel === 'claude-3-haiku-20240307'
+                state.selectedModel === 'claude-3-5-haiku-20241022'
                   ? 'bg-blue-100 text-blue-700 border-2 border-blue-300'
                   : 'bg-gray-100 text-gray-600 border-2 border-transparent hover:bg-gray-200'
               }`}
@@ -72,7 +72,7 @@ export function ChatInterface() {
         
         {/* Model Description */}
         <p className="text-xs text-gray-500 mt-2">
-          {state.selectedModel === 'claude-3-haiku-20240307' 
+          {state.selectedModel === 'claude-3-5-haiku-20241022' 
             ? '⚡ Fast & affordable - Best for quick edits and iterations'
             : '🎨 Higher quality - Best for creative writing and complex edits'}
         </p>
@@ -89,7 +89,7 @@ export function ChatInterface() {
           </div>
         ) : (
           state.chatHistory.map((message) => (
-            <div key={message.id} className="bg-white rounded-lg p-4 shadow-sm">
+            <div key={message.id} className="bg-white rounded-lg p-4 shadow-sm border border-gray-200">
               <div className="flex items-start justify-between mb-2">
                 <span className="text-xs font-medium text-blue-600 bg-blue-50 px-2 py-1 rounded">
                   v{message.versionCreated}
@@ -124,14 +124,14 @@ export function ChatInterface() {
         </div>
       )}
 
-      <form onSubmit={handleSubmit} className="p-6 bg-white border-t">
+      <form onSubmit={handleSubmit} className="p-6 bg-white border-t border-gray-200">
         <div className="flex gap-2">
           <input
             type="text"
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
             placeholder="e.g., Make it more compelling, Add humor, Make it formal..."
-            className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white text-gray-900 placeholder-gray-500"
             disabled={isLoading}
           />
           <button
@@ -154,7 +154,7 @@ export function ChatInterface() {
         </div>
         
         <div className="mt-2 text-xs text-gray-500">
-          Using {state.selectedModel === 'claude-3-haiku-20240307' ? 'Claude 3 Haiku' : 'Claude 3.5 Sonnet'} model
+          Using {state.selectedModel === 'claude-3-5-haiku-20241022' ? 'Claude 3.5 Haiku' : 'Claude 3.5 Sonnet'} model
         </div>
       </form>
     </div>

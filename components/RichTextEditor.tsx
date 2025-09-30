@@ -6,9 +6,8 @@ import Placeholder from '@tiptap/extension-placeholder';
 import Color from '@tiptap/extension-color';
 import { TextStyle } from '@tiptap/extension-text-style';
 import FontFamily from '@tiptap/extension-font-family';
-import { Bold, Italic, List, ListOrdered, Heading2, Undo, Redo, Type, Palette, Type as FontIcon, Moon, Sun } from 'lucide-react';
+import { Bold, Italic, List, ListOrdered, Heading2, Undo, Redo, Type, Palette, Type as FontIcon } from 'lucide-react';
 import { useState, useEffect } from 'react';
-import { useTheme } from '@/contexts/ThemeContext';
 
 interface RichTextEditorProps {
   content: string;
@@ -21,7 +20,6 @@ export function RichTextEditor({ content, onChange, onSave, placeholder }: RichT
   const [mounted, setMounted] = useState(false);
   const [showColorPicker, setShowColorPicker] = useState(false);
   const [showFontPicker, setShowFontPicker] = useState(false);
-  const { theme, toggleTheme } = useTheme();
 
   useEffect(() => {
     setMounted(true);
@@ -46,7 +44,7 @@ export function RichTextEditor({ content, onChange, onSave, placeholder }: RichT
     },
     editorProps: {
       attributes: {
-        class: 'prose prose-sm max-w-none focus:outline-none min-h-[400px] p-4 dark:prose-invert',
+        class: 'prose prose-sm max-w-none focus:outline-none min-h-[400px] p-4 text-black',
       },
     },
   });
@@ -67,15 +65,15 @@ export function RichTextEditor({ content, onChange, onSave, placeholder }: RichT
   if (!mounted || !editor) {
     return (
       <div className="h-full flex flex-col">
-        <div className="border-b bg-white dark:bg-gray-800 px-4 py-2 flex items-center gap-1">
-          <div className="w-8 h-8 bg-gray-200 dark:bg-gray-700 rounded animate-pulse"></div>
-          <div className="w-8 h-8 bg-gray-200 dark:bg-gray-700 rounded animate-pulse"></div>
-          <div className="w-px h-6 bg-gray-300 dark:bg-gray-600 mx-1"></div>
-          <div className="w-8 h-8 bg-gray-200 dark:bg-gray-700 rounded animate-pulse"></div>
-          <div className="w-8 h-8 bg-gray-200 dark:bg-gray-700 rounded animate-pulse"></div>
+        <div className="border-b bg-white px-4 py-2 flex items-center gap-1">
+          <div className="w-8 h-8 bg-gray-200 rounded animate-pulse"></div>
+          <div className="w-8 h-8 bg-gray-200 rounded animate-pulse"></div>
+          <div className="w-px h-6 bg-gray-300 mx-1"></div>
+          <div className="w-8 h-8 bg-gray-200 rounded animate-pulse"></div>
+          <div className="w-8 h-8 bg-gray-200 rounded animate-pulse"></div>
         </div>
-        <div className="flex-1 bg-white dark:bg-gray-900 p-4">
-          <div className="h-96 bg-gray-100 dark:bg-gray-800 rounded animate-pulse"></div>
+        <div className="flex-1 bg-white p-4">
+          <div className="h-96 bg-gray-100 rounded animate-pulse"></div>
         </div>
       </div>
     );
@@ -105,9 +103,9 @@ export function RichTextEditor({ content, onChange, onSave, placeholder }: RichT
   );
 
   const colors = [
-    '#000000', '#374151', '#6B7280', '#9CA3AF', '#D1D5DB', '#F3F4F6', '#FFFFFF',
-    '#DC2626', '#EA580C', '#D97706', '#CA8A04', '#65A30D', '#16A34A', '#059669',
-    '#0D9488', '#0891B2', '#0284C7', '#2563EB', '#7C3AED', '#C026D3', '#DB2777'
+    '#000000', '#808080', '#C0C0C0', '#FFFFFF',
+    '#FF0000', '#FFA500', '#FFFF00', '#00FF00', 
+    '#00FFFF', '#0000FF', '#800080', '#FF00FF'
   ];
 
   const fonts = [
@@ -122,7 +120,7 @@ export function RichTextEditor({ content, onChange, onSave, placeholder }: RichT
   return (
     <div className="h-full flex flex-col" onKeyDown={handleKeyDown}>
       {/* Formatting Toolbar */}
-      <div className="border-b bg-white dark:bg-gray-800 px-4 py-2 flex items-center gap-1">
+      <div className="border-b bg-white px-4 py-2 flex items-center gap-1">
         {/* Text Formatting */}
         <ToolbarButton
           onClick={() => editor.chain().focus().toggleBold().run()}
@@ -140,7 +138,7 @@ export function RichTextEditor({ content, onChange, onSave, placeholder }: RichT
           <Italic className="w-4 h-4" />
         </ToolbarButton>
 
-        <div className="w-px h-6 bg-gray-300 dark:bg-gray-600 mx-1" />
+        <div className="w-px h-6 bg-gray-300 mx-1" />
         
         {/* Font Color */}
         <div className="relative">
@@ -151,8 +149,9 @@ export function RichTextEditor({ content, onChange, onSave, placeholder }: RichT
             <Palette className="w-4 h-4" />
           </ToolbarButton>
           {showColorPicker && (
-            <div className="absolute top-10 left-0 z-50 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg p-2 shadow-lg">
-              <div className="grid grid-cols-7 gap-1">
+            <div className="absolute top-10 left-0 z-50 bg-white border border-gray-200 rounded-lg p-3 shadow-lg">
+              <div className="text-xs text-gray-600 mb-2 font-medium">Text Color</div>
+              <div className="grid grid-cols-4 gap-2">
                 {colors.map((color) => (
                   <button
                     key={color}
@@ -160,12 +159,21 @@ export function RichTextEditor({ content, onChange, onSave, placeholder }: RichT
                       editor.chain().focus().setColor(color).run();
                       setShowColorPicker(false);
                     }}
-                    className="w-6 h-6 rounded border border-gray-300 dark:border-gray-500"
+                    className="w-8 h-8 rounded border border-gray-300 hover:border-gray-500 transition-colors"
                     style={{ backgroundColor: color }}
-                    title={color}
+                    title={color === '#000000' ? 'Black (default)' : color}
                   />
                 ))}
               </div>
+              <button
+                onClick={() => {
+                  editor.chain().focus().unsetColor().run();
+                  setShowColorPicker(false);
+                }}
+                className="w-full mt-2 px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 rounded"
+              >
+                Default (Black)
+              </button>
             </div>
           )}
         </div>
@@ -179,7 +187,7 @@ export function RichTextEditor({ content, onChange, onSave, placeholder }: RichT
             <FontIcon className="w-4 h-4" />
           </ToolbarButton>
           {showFontPicker && (
-            <div className="absolute top-10 left-0 z-50 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg p-2 shadow-lg min-w-32">
+            <div className="absolute top-10 left-0 z-50 bg-white border border-gray-200 rounded-lg p-2 shadow-lg min-w-32">
               {fonts.map((font) => (
                 <button
                   key={font.value}
@@ -187,7 +195,7 @@ export function RichTextEditor({ content, onChange, onSave, placeholder }: RichT
                     editor.chain().focus().setFontFamily(font.value).run();
                     setShowFontPicker(false);
                   }}
-                  className="w-full text-left px-2 py-1 text-sm hover:bg-gray-100 dark:hover:bg-gray-600 rounded"
+                  className="w-full text-left px-2 py-1 text-sm hover:bg-gray-100 rounded"
                   style={{ fontFamily: font.value }}
                 >
                   {font.name}
@@ -197,7 +205,7 @@ export function RichTextEditor({ content, onChange, onSave, placeholder }: RichT
           )}
         </div>
 
-        <div className="w-px h-6 bg-gray-300 dark:bg-gray-600 mx-1" />
+        <div className="w-px h-6 bg-gray-300 mx-1" />
         
         {/* Headings */}
         <ToolbarButton
@@ -216,7 +224,7 @@ export function RichTextEditor({ content, onChange, onSave, placeholder }: RichT
           <Type className="w-4 h-4" />
         </ToolbarButton>
 
-        <div className="w-px h-6 bg-gray-300 dark:bg-gray-600 mx-1" />
+        <div className="w-px h-6 bg-gray-300 mx-1" />
         
         {/* Lists */}
         <ToolbarButton
@@ -235,7 +243,7 @@ export function RichTextEditor({ content, onChange, onSave, placeholder }: RichT
           <ListOrdered className="w-4 h-4" />
         </ToolbarButton>
 
-        <div className="w-px h-6 bg-gray-300 dark:bg-gray-600 mx-1" />
+        <div className="w-px h-6 bg-gray-300 mx-1" />
         
         {/* Undo/Redo */}
         <ToolbarButton
@@ -252,23 +260,13 @@ export function RichTextEditor({ content, onChange, onSave, placeholder }: RichT
           <Redo className="w-4 h-4" />
         </ToolbarButton>
 
-        <div className="w-px h-6 bg-gray-300 dark:bg-gray-600 mx-1" />
-        
-        {/* Theme Toggle */}
-        <ToolbarButton
-          onClick={toggleTheme}
-          title={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
-        >
-          {theme === 'light' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
-        </ToolbarButton>
-
-        <div className="ml-auto text-xs text-gray-500 dark:text-gray-400">
+        <div className="ml-auto text-xs text-gray-500">
           Press Cmd+S to save version
         </div>
       </div>
 
       {/* Editor Content */}
-      <div className="flex-1 overflow-y-auto bg-white dark:bg-gray-900">
+      <div className="flex-1 overflow-y-auto bg-white">
         <EditorContent editor={editor} />
       </div>
     </div>
