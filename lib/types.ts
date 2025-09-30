@@ -22,7 +22,9 @@ export interface ChatMessage {
   timestamp: Date;
 }
 
-export type AIModel = 'claude-3-haiku-20240307' | 'claude-3-5-sonnet-20241022';
+export type AIModel = 'claude-3-5-haiku-20241022' | 'claude-3-5-sonnet-20241022';
+
+export type ViewMode = 'chat' | 'document' | 'compare' | 'tree';
 
 export interface EditorState {
   versions: Version[];
@@ -30,4 +32,5 @@ export interface EditorState {
   compareVersionId: string | null;
   chatHistory: ChatMessage[];
   selectedModel: AIModel;
+  viewMode: ViewMode;
 }

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
-import { Version, ChatMessage, EditorState, AIModel } from '@/lib/types';
+import { Version, ChatMessage, EditorState, AIModel, ViewMode } from '@/lib/types';
 
 interface EditorContextType {
   state: EditorState;
@@ -13,6 +13,7 @@ interface EditorContextType {
   getCompareVersion: () => Version | undefined;
   applyAIEdit: (prompt: string) => Promise<void>;
   setSelectedModel: (model: AIModel) => void;
+  setViewMode: (mode: ViewMode) => void;
 }
 
 const EditorContext = createContext<EditorContextType | undefined>(undefined);
@@ -36,7 +37,8 @@ export function EditorProvider({ children }: { children: React.ReactNode }) {
             id: `msg-${Date.now()}-${index}-${Math.random().toString(36).substr(2, 9)}`,
             timestamp: new Date(c.timestamp)
           })),
-          selectedModel: parsed.selectedModel || 'claude-3-haiku-20240307'
+          selectedModel: parsed.selectedModel || 'claude-3-5-haiku-20241022',
+          viewMode: parsed.viewMode || 'chat'
         };
       }
     }
@@ -56,7 +58,8 @@ export function EditorProvider({ children }: { children: React.ReactNode }) {
       currentVersionId: 'v0',
       compareVersionId: null,
       chatHistory: [],
-      selectedModel: 'claude-3-haiku-20240307' as AIModel,
+      selectedModel: 'claude-3-5-haiku-20241022' as AIModel,
+      viewMode: 'chat' as ViewMode,
     };
   });
 
@@ -180,6 +183,10 @@ export function EditorProvider({ children }: { children: React.ReactNode }) {
     }
   }, [getCurrentVersion, createVersion, state.selectedModel]);
 
+  const setViewMode = useCallback((mode: ViewMode) => {
+    setState(prev => ({ ...prev, viewMode: mode }));
+  }, []);
+
   return (
     <EditorContext.Provider
       value={{
@@ -192,6 +199,7 @@ export function EditorProvider({ children }: { children: React.ReactNode }) {
         getCompareVersion,
         applyAIEdit,
         setSelectedModel,
+        setViewMode,
       }}
     >
       {children}
