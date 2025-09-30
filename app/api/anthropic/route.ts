@@ -3,15 +3,24 @@ import { NextRequest, NextResponse } from 'next/server';
 
 export async function POST(request: NextRequest) {
   try {
-    const { prompt, content, model } = await request.json();
+    const { prompt, content, model, mode = 'edit' } = await request.json();
     
     // Check for API key in environment variable
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) {
       return NextResponse.json(
-        { error: 'Anthropic API key not configured. Please set ANTHROPIC_API_KEY in your .env.local file.' },
+        { error: 'Anthropic API key not configured. Please set ANTHROPIC_API_KEY in your environment variables.' },
         { status: 500 }
       );
+    }
+
+    // Different prompts based on mode
+    let userContent: string;
+    
+    if (mode === 'chat') {
+      userContent = `Document content: ${content}\n\nQuestion: ${prompt}`;
+    } else {
+      userContent = `Edit the following document according to this instruction: "${prompt}"\n\nOriginal document:\n${content}`;
     }
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -22,17 +31,12 @@ export async function POST(request: NextRequest) {
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
-        model: model || 'claude-3-haiku-20240307', // Default to Haiku if not specified
+        model: model || 'claude-3-5-haiku-20241022',
         max_tokens: 4000,
         messages: [
           {
             role: 'user',
-            content: `You are a document editor. Edit the following document according to this instruction: "${prompt}"
-            
-            Return ONLY the edited document text, no explanations or commentary.
-            
-            Original document:
-            ${content}`
+            content: userContent
           }
         ],
       }),
@@ -48,9 +52,20 @@ export async function POST(request: NextRequest) {
     }
 
     const data = await response.json();
-    const editedContent = data.content[0].text;
+    const responseText = data.content[0].text;
 
-    return NextResponse.json({ editedContent });
+    // Return different response based on mode
+    if (mode === 'chat') {
+      return NextResponse.json({ 
+        mode: 'chat',
+        response: responseText 
+      });
+    } else {
+      return NextResponse.json({ 
+        mode: 'edit',
+        editedContent: responseText 
+      });
+    }
   } catch (error) {
     console.error('Error in Anthropic API route:', error);
     return NextResponse.json(
