@@ -31,8 +31,9 @@ export function EditorProvider({ children }: { children: React.ReactNode }) {
             ...v,
             timestamp: new Date(v.timestamp)
           })),
-          chatHistory: parsed.chatHistory.map((c: any) => ({
+          chatHistory: parsed.chatHistory.map((c: any, index: number) => ({
             ...c,
+            id: `msg-${Date.now()}-${index}-${Math.random().toString(36).substr(2, 9)}`,
             timestamp: new Date(c.timestamp)
           })),
           selectedModel: parsed.selectedModel || 'claude-3-haiku-20240307'
@@ -79,7 +80,7 @@ export function EditorProvider({ children }: { children: React.ReactNode }) {
       };
 
       const newChatMessage: ChatMessage | null = prompt ? {
-        id: `msg-${Date.now()}`,
+        id: `msg-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
         prompt,
         versionCreated: versionNumber,
         timestamp: new Date(),
@@ -155,8 +156,24 @@ export function EditorProvider({ children }: { children: React.ReactNode }) {
         throw new Error(error.error || 'Failed to get AI response');
       }
 
-      const { editedContent } = await response.json();
+      const { editedContent, explanation } = await response.json();
+      
+      // Create the new version
       createVersion(editedContent, prompt);
+      
+      // Add to chat history with the explanation
+      const newChatMessage: ChatMessage = {
+        id: `msg-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        prompt,
+        response: explanation || 'Changes applied successfully.',
+        versionCreated: state.versions.length, // This will be the new version number
+        timestamp: new Date(),
+      };
+      
+      setState(prev => ({
+        ...prev,
+        chatHistory: [...prev.chatHistory, newChatMessage],
+      }));
     } catch (error) {
       console.error('Error applying AI edit:', error);
       throw error;

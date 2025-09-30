@@ -98,7 +98,13 @@ export function ChatInterface() {
                   {new Date(message.timestamp).toLocaleTimeString()}
                 </span>
               </div>
-              <p className="text-gray-800">{message.prompt}</p>
+              <p className="text-gray-800 font-medium">📝 {message.prompt}</p>
+              {message.response && (
+                <div className="mt-3 p-3 bg-gray-50 rounded-lg border border-gray-100">
+                  <p className="text-xs font-semibold text-gray-600 mb-1">What changed:</p>
+                  <p className="text-sm text-gray-700 whitespace-pre-wrap">{message.response}</p>
+                </div>
+              )}
             </div>
           ))
         )}

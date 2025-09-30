@@ -17,6 +17,7 @@ export interface Diff {
 export interface ChatMessage {
   id: string;
   prompt: string;
+  response?: string; // AI's explanation of what it changed
   versionCreated: number;
   timestamp: Date;
 }

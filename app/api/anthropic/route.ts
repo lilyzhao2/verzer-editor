@@ -20,7 +20,19 @@ export async function POST(request: NextRequest) {
     if (mode === 'chat') {
       userContent = `Document content: ${content}\n\nQuestion: ${prompt}`;
     } else {
-      userContent = `Edit the following document according to this instruction: "${prompt}"\n\nOriginal document:\n${content}`;
+      // Ask AI to return both the edited document AND an explanation
+      userContent = `Edit the following document according to this instruction: "${prompt}"
+
+IMPORTANT: Return your response in this exact format:
+[DOCUMENT]
+(Put the edited document text here - just the clean text, no explanations)
+[/DOCUMENT]
+[EXPLANATION]
+(Explain what changes you made and why)
+[/EXPLANATION]
+
+Original document:
+${content}`;
     }
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -61,9 +73,25 @@ export async function POST(request: NextRequest) {
         response: responseText 
       });
     } else {
+      // Parse the structured response for edit mode
+      const documentMatch = responseText.match(/\[DOCUMENT\]([\s\S]*?)\[\/DOCUMENT\]/);
+      const explanationMatch = responseText.match(/\[EXPLANATION\]([\s\S]*?)\[\/EXPLANATION\]/);
+      
+      let editedContent = responseText; // fallback to full response if parsing fails
+      let explanation = '';
+      
+      if (documentMatch && documentMatch[1]) {
+        editedContent = documentMatch[1].trim();
+      }
+      
+      if (explanationMatch && explanationMatch[1]) {
+        explanation = explanationMatch[1].trim();
+      }
+      
       return NextResponse.json({ 
         mode: 'edit',
-        editedContent: responseText 
+        editedContent,
+        explanation
       });
     }
   } catch (error) {

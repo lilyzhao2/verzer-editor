@@ -1,27 +1,50 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useEditor } from '@/contexts/EditorContext';
 import { computeDiff } from '@/lib/diff-utils';
-import { Check, X, CheckCircle } from 'lucide-react';
+import { Check, X, CheckCircle, Save } from 'lucide-react';
+import { RichTextEditor } from './RichTextEditor';
 
 export function DocumentEditor() {
   const { updateVersion, getCurrentVersion, getCompareVersion, createVersion } = useEditor();
   const currentVersion = getCurrentVersion();
   const compareVersion = getCompareVersion();
   const [localContent, setLocalContent] = useState(currentVersion?.content || '');
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [acceptedChanges, setAcceptedChanges] = useState<Set<number>>(new Set());
+  const saveTimeoutRef = useRef<NodeJS.Timeout>();
 
   useEffect(() => {
     setLocalContent(currentVersion?.content || '');
     setAcceptedChanges(new Set());
+    setHasUnsavedChanges(false);
   }, [currentVersion]);
 
-  const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const newContent = e.target.value;
+  const handleContentChange = (newContent: string) => {
     setLocalContent(newContent);
-    if (currentVersion) {
-      updateVersion(currentVersion.id, newContent);
+    setHasUnsavedChanges(true);
+    
+    // Auto-save after 10 seconds of no typing
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+    }
+    
+    saveTimeoutRef.current = setTimeout(() => {
+      handleSaveVersion();
+    }, 10000);
+  };
+
+  const handleSaveVersion = () => {
+    if (hasUnsavedChanges && currentVersion) {
+      // Update the current version with manual edits
+      updateVersion(currentVersion.id, localContent);
+      setHasUnsavedChanges(false);
+      
+      // Clear any pending auto-save
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
     }
   };
 
@@ -118,28 +141,44 @@ export function DocumentEditor() {
     <div className="h-full flex flex-col">
       <div className="px-6 py-3 border-b bg-gray-50">
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-gray-800">
-            Version {currentVersion?.number} 
-            {currentVersion?.isOriginal && ' (Original)'}
-          </h2>
-          <span className="text-sm text-gray-500">
-            {currentVersion?.timestamp && new Date(currentVersion.timestamp).toLocaleString()}
-          </span>
+          <div>
+            <h2 className="text-lg font-semibold text-gray-800">
+              Version {currentVersion?.number} 
+              {currentVersion?.isOriginal && ' (Original)'}
+              {hasUnsavedChanges && (
+                <span className="ml-2 text-sm text-amber-600">(edited)</span>
+              )}
+            </h2>
+            {currentVersion?.prompt && (
+              <p className="mt-1 text-sm text-gray-600">
+                {currentVersion.prompt.includes('Manual edit') ? '✏️ ' : '🤖 '}
+                {currentVersion.prompt}
+              </p>
+            )}
+          </div>
+          <div className="flex items-center gap-3">
+            {hasUnsavedChanges && (
+              <button
+                onClick={handleSaveVersion}
+                className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                <Save className="w-4 h-4" />
+                Save Changes
+              </button>
+            )}
+            <span className="text-sm text-gray-500">
+              {currentVersion?.timestamp && new Date(currentVersion.timestamp).toLocaleString()}
+            </span>
+          </div>
         </div>
-        {currentVersion?.prompt && (
-          <p className="mt-1 text-sm text-gray-600">
-            Created from: &ldquo;{currentVersion.prompt}&rdquo;
-          </p>
-        )}
       </div>
       
-      <div className="flex-1 p-6">
-        <textarea
-          value={localContent}
-          onChange={handleTextChange}
+      <div className="flex-1">
+        <RichTextEditor
+          content={localContent}
+          onChange={handleContentChange}
+          onSave={handleSaveVersion}
           placeholder="Start writing your document here..."
-          className="w-full h-full p-4 border border-gray-200 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent font-sans text-gray-800 leading-relaxed"
-          style={{ minHeight: '500px' }}
         />
       </div>
     </div>
