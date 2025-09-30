@@ -6,7 +6,7 @@ import { computeDiff } from '@/lib/diff-utils';
 import { Check, X, CheckCircle } from 'lucide-react';
 
 export function DocumentEditor() {
-  const { state, updateVersion, getCurrentVersion, getCompareVersion, createVersion } = useEditor();
+  const { updateVersion, getCurrentVersion, getCompareVersion, createVersion } = useEditor();
   const currentVersion = getCurrentVersion();
   const compareVersion = getCompareVersion();
   const [localContent, setLocalContent] = useState(currentVersion?.content || '');
@@ -128,7 +128,7 @@ export function DocumentEditor() {
         </div>
         {currentVersion?.prompt && (
           <p className="mt-1 text-sm text-gray-600">
-            Created from: "{currentVersion.prompt}"
+            Created from: &ldquo;{currentVersion.prompt}&rdquo;
           </p>
         )}
       </div>
