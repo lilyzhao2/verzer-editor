@@ -139,18 +139,18 @@ export function DocumentEditor() {
 
   return (
     <div className="h-full flex flex-col">
-      <div className="px-6 py-3 border-b bg-gray-50">
+      <div className="px-6 py-3 border-b bg-gray-50 dark:bg-gray-700">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-lg font-semibold text-gray-800">
+            <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-200">
               Version {currentVersion?.number} 
               {currentVersion?.isOriginal && ' (Original)'}
               {hasUnsavedChanges && (
-                <span className="ml-2 text-sm text-amber-600">(edited)</span>
+                <span className="ml-2 text-sm text-amber-600 dark:text-amber-400">(edited)</span>
               )}
             </h2>
             {currentVersion?.prompt && (
-              <p className="mt-1 text-sm text-gray-600">
+              <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
                 {currentVersion.prompt.includes('Manual edit') ? '✏️ ' : '🤖 '}
                 {currentVersion.prompt}
               </p>
@@ -166,7 +166,7 @@ export function DocumentEditor() {
                 Save Changes
               </button>
             )}
-            <span className="text-sm text-gray-500">
+            <span className="text-sm text-gray-500 dark:text-gray-400">
               {currentVersion?.timestamp && new Date(currentVersion.timestamp).toLocaleString()}
             </span>
           </div>

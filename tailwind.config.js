@@ -5,8 +5,15 @@ module.exports = {
     './components/**/*.{js,ts,jsx,tsx,mdx}',
     './app/**/*.{js,ts,jsx,tsx,mdx}',
   ],
+  darkMode: 'class',
   theme: {
-    extend: {},
+    extend: {
+      fontFamily: {
+        'sans': ['Inter', 'system-ui', 'sans-serif'],
+        'serif': ['Georgia', 'serif'],
+        'mono': ['JetBrains Mono', 'monospace'],
+      },
+    },
   },
   plugins: [
     require('@tailwindcss/typography'),
