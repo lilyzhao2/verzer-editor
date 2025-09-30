@@ -44,9 +44,9 @@ export function ChatInterface() {
           {/* Model Selector */}
           <div className="flex items-center gap-2">
             <button
-              onClick={() => handleModelChange('claude-3-haiku-20240307')}
+              onClick={() => handleModelChange('claude-3-5-haiku-20241022')}
               className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center gap-1.5 ${
-                state.selectedModel === 'claude-3-haiku-20240307'
+                state.selectedModel === 'claude-3-5-haiku-20241022'
                   ? 'bg-blue-100 text-blue-700 border-2 border-blue-300'
                   : 'bg-gray-100 text-gray-600 border-2 border-transparent hover:bg-gray-200'
               }`}
@@ -72,7 +72,7 @@ export function ChatInterface() {
         
         {/* Model Description */}
         <p className="text-xs text-gray-500 mt-2">
-          {state.selectedModel === 'claude-3-haiku-20240307' 
+          {state.selectedModel === 'claude-3-5-haiku-20241022' 
             ? '⚡ Fast & affordable - Best for quick edits and iterations'
             : '🎨 Higher quality - Best for creative writing and complex edits'}
         </p>
@@ -98,7 +98,12 @@ export function ChatInterface() {
                   {new Date(message.timestamp).toLocaleTimeString()}
                 </span>
               </div>
-              <p className="text-gray-800">{message.prompt}</p>
+              <p className="text-gray-800 font-medium mb-2">✏️ {message.prompt}</p>
+              {message.response && (
+                <div className="mt-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                  <p className="text-sm text-gray-700 whitespace-pre-wrap">{message.response}</p>
+                </div>
+              )}
             </div>
           ))
         )}

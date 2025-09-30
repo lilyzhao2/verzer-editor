@@ -17,11 +17,13 @@ export interface Diff {
 export interface ChatMessage {
   id: string;
   prompt: string;
-  versionCreated: number;
+  response?: string; // AI's explanation of changes
+  versionCreated?: number; // Only for edit mode
   timestamp: Date;
+  mode: 'chat' | 'edit';
 }
 
-export type AIModel = 'claude-3-haiku-20240307' | 'claude-3-5-sonnet-20241022';
+export type AIModel = 'claude-3-5-haiku-20241022' | 'claude-3-5-sonnet-20241022';
 
 export interface EditorState {
   versions: Version[];

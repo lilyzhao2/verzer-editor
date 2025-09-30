@@ -35,7 +35,7 @@ export function EditorProvider({ children }: { children: React.ReactNode }) {
             ...c,
             timestamp: new Date(c.timestamp)
           })),
-          selectedModel: parsed.selectedModel || 'claude-3-haiku-20240307'
+          selectedModel: parsed.selectedModel || 'claude-3-5-haiku-20241022'
         };
       }
     }
@@ -55,7 +55,7 @@ export function EditorProvider({ children }: { children: React.ReactNode }) {
       currentVersionId: 'v0',
       compareVersionId: null,
       chatHistory: [],
-      selectedModel: 'claude-3-haiku-20240307' as AIModel,
+      selectedModel: 'claude-3-5-haiku-20241022' as AIModel,
     };
   });
 
@@ -155,8 +155,23 @@ export function EditorProvider({ children }: { children: React.ReactNode }) {
         throw new Error(error.error || 'Failed to get AI response');
       }
 
-      const { editedContent } = await response.json();
+      const { editedContent, explanation } = await response.json();
       createVersion(editedContent, prompt);
+      
+      // Add to chat history with explanation
+      const newChatMessage: ChatMessage = {
+        id: `msg-${Date.now()}`,
+        prompt,
+        response: explanation || 'Document edited successfully.',
+        versionCreated: state.versions.length,
+        timestamp: new Date(),
+        mode: 'edit',
+      };
+      
+      setState(prev => ({
+        ...prev,
+        chatHistory: [...prev.chatHistory, newChatMessage],
+      }));
     } catch (error) {
       console.error('Error applying AI edit:', error);
       throw error;
