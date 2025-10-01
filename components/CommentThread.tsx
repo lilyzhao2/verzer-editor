@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { Comment, CommentReply, User } from '@/lib/types';
+import { formatTimeOnly } from '@/lib/dateUtils';
 import { MessageSquare, Check, X, Reply, Trash2, MoreVertical, Bot, Sparkles } from 'lucide-react';
 
 interface CommentThreadProps {
@@ -90,7 +91,7 @@ export function CommentThread({
               )}
             </div>
             <span className="text-xs text-gray-500">
-              {new Date(comment.timestamp).toLocaleString()}
+              {formatTimeOnly(comment.timestamp)}
             </span>
           </div>
         </div>
@@ -180,7 +181,7 @@ export function CommentThread({
                     <div className="flex items-center gap-2">
                       <span className="font-medium text-black text-xs">{replyUser?.name || 'Unknown'}</span>
                       <span className="text-xs text-gray-500">
-                        {new Date(reply.timestamp).toLocaleString()}
+                        {formatTimeOnly(reply.timestamp)}
                       </span>
                     </div>
                     <div className="text-sm text-black mt-1">

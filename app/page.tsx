@@ -13,6 +13,7 @@ import { TabBar } from '@/components/TabBar';
 import { ParallelView } from '@/components/ParallelView';
 import { DebugPanel } from '@/components/DebugPanel';
 import { MessageSquare, FileText, GitBranch, Settings, Scale, Layers, Bug, ChevronDown } from 'lucide-react';
+import { formatVersionNumber } from '@/lib/formatVersion';
 
 function ViewModeTabs() {
   const { state, setViewMode, getCurrentVersion, setCurrentVersion } = useEditor();
@@ -64,7 +65,7 @@ function ViewModeTabs() {
           >
             {state.versions.map((version) => (
               <option key={version.id} value={version.id}>
-                v{version.number.toUpperCase()}
+                {formatVersionNumber(version.number)}
               </option>
             ))}
           </select>
@@ -95,7 +96,7 @@ function ViewModeTabs() {
 function MainContent() {
   const { state, setCurrentVersion } = useEditor();
   const [chatMinimized, setChatMinimized] = useState(false);
-  const [chatWidth, setChatWidth] = useState(450); // pixels
+  const [chatWidth, setChatWidth] = useState(550); // pixels
   
   // Auto-minimize chat in context view
   useEffect(() => {
@@ -113,7 +114,7 @@ function MainContent() {
   const handleMouseMove = (e: MouseEvent) => {
     if (!isResizing) return;
     const newWidth = window.innerWidth - e.clientX;
-    if (newWidth >= 300 && newWidth <= 800) {
+    if (newWidth >= 300 && newWidth <= 1000) {
       setChatWidth(newWidth);
     }
   };
@@ -231,9 +232,9 @@ function MainContent() {
         {renderMainView()}
       </div>
 
-      {/* AI Agent Chat - Present for most views except document and context */}
+      {/* AI Agent Chat - Present for all views except parallel */}
       {/* Right Sidebar - AI Chat */}
-      {state.viewMode !== 'document' && state.viewMode !== 'context' && (
+      {state.viewMode !== 'parallel' && (
         <>
           {!chatMinimized && (
             <div

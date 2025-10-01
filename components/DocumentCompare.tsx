@@ -24,7 +24,7 @@ interface Change {
 }
 
 export function DocumentCompare() {
-  const { state } = useEditor();
+  const { state, setCompareVersionId } = useEditor();
   const currentVersion = state.versions.find(v => v.id === state.currentVersionId);
   const compareVersion = state.versions.find(v => v.id === state.compareVersionId);
   
@@ -309,10 +309,52 @@ export function DocumentCompare() {
     }
   };
   
-  if (!currentVersion || !compareVersion) {
+  if (!currentVersion) {
     return (
-      <div className="h-full flex items-center justify-center text-gray-500">
-        <p className="text-lg">Select two versions to compare</p>
+      <div className="h-full flex items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <h2 className="text-xl font-semibold text-gray-600 mb-2">No current version</h2>
+          <p className="text-lg">Please select a current version first</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!compareVersion) {
+    return (
+      <div className="h-full flex flex-col">
+        {/* Version Selector */}
+        <div className="px-4 py-3 border-b bg-gray-50">
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <label className="text-sm font-medium text-gray-700">Compare:</label>
+              <select
+                value={state.compareVersionId || ''}
+                onChange={(e) => setCompareVersionId(e.target.value)}
+                className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg bg-white"
+              >
+                <option value="">Select a version to compare...</option>
+                {state.versions
+                  .filter(v => v.id !== state.currentVersionId)
+                  .map(version => (
+                    <option key={version.id} value={version.id}>
+                      V{version.number} - {version.prompt?.substring(0, 50) || 'No prompt'}...
+                    </option>
+                  ))}
+              </select>
+            </div>
+            <div className="text-sm text-gray-600">
+              Current: V{currentVersion.number}
+            </div>
+          </div>
+        </div>
+        
+        <div className="flex-1 flex items-center justify-center bg-gray-50">
+          <div className="text-center">
+            <h2 className="text-xl font-semibold text-gray-600 mb-2">Select a version to compare</h2>
+            <p className="text-lg">Choose a version from the dropdown above to start comparing</p>
+          </div>
+        </div>
       </div>
     );
   }
@@ -321,6 +363,33 @@ export function DocumentCompare() {
     <div className="h-full flex">
       {/* Main comparison area */}
       <div className="flex-1 flex flex-col">
+        {/* Version Selector */}
+        <div className="px-4 py-3 border-b bg-gray-50">
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <label className="text-sm font-medium text-gray-700">Compare:</label>
+              <select
+                value={state.compareVersionId || ''}
+                onChange={(e) => setCompareVersionId(e.target.value)}
+                className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg bg-white"
+              >
+                <option value="">Select a version to compare...</option>
+                {state.versions
+                  .filter(v => v.id !== state.currentVersionId)
+                  .map(version => (
+                    <option key={version.id} value={version.id}>
+                      V{version.number} - {version.prompt?.substring(0, 50) || 'No prompt'}...
+                    </option>
+                  ))}
+              </select>
+            </div>
+            <div className="text-sm text-gray-600">
+              {currentVersion && `Current: V${currentVersion.number}`}
+              {compareVersion && ` vs V${compareVersion.number}`}
+            </div>
+          </div>
+        </div>
+
         {/* Toolbar */}
         <div className="px-4 py-3 border-b bg-white flex items-center justify-between">
           <div className="flex items-center gap-4">

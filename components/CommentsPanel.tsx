@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import { formatTimeOnly } from '@/lib/dateUtils';
 import { MessageSquare, Search, Filter, X, CheckCircle, Circle } from 'lucide-react';
 
 interface Comment {
@@ -136,7 +137,7 @@ export function CommentsPanel({
                     <div>
                       <p className="text-sm font-medium text-gray-900">{comment.author}</p>
                       <p className="text-xs text-gray-500">
-                        {comment.timestamp.toLocaleString()}
+                        {formatTimeOnly(comment.timestamp)}
                       </p>
                     </div>
                   </div>
@@ -192,3 +193,4 @@ export function CommentsPanel({
     </div>
   );
 }
+

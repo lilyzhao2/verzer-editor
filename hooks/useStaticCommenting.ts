@@ -217,3 +217,4 @@ export function useStaticCommenting() {
     setIsCommentsPanelVisible
   };
 }
+

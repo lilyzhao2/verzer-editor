@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useEditor } from '@/contexts/EditorContext';
+import { formatTimestamp } from '@/lib/dateUtils';
 import { Lock, Unlock, RotateCcw, Clock, User, MessageSquare, GitBranch, Eye, History } from 'lucide-react';
 
 interface ParagraphLineageViewProps {
@@ -136,7 +137,7 @@ export function ParagraphLineageView({ versionId, onRevert }: ParagraphLineageVi
                   <User className="w-3 h-3" />
                   <span>{paragraphLineage.userName}</span>
                   <Clock className="w-3 h-3 ml-2" />
-                  <span>{new Date(paragraphLineage.timestamp).toLocaleString()}</span>
+                  <span>{formatTimestamp(paragraphLineage.timestamp)}</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <MessageSquare className="w-3 h-3" />

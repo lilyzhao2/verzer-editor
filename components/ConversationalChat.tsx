@@ -22,6 +22,31 @@ export function ConversationalChat() {
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // Function to format message content for better display
+  const formatMessageContent = (content: string): string => {
+    if (!content) return '';
+    
+    // Strip HTML tags first
+    let formatted = content.replace(/<[^>]*>/g, '');
+    
+    // Remove any remaining [EXPLANATION] tags
+    formatted = formatted.replace(/\[EXPLANATION\]/gi, '').replace(/\[\/EXPLANATION\]/gi, '');
+    
+    // Convert numbered lists to proper line breaks
+    formatted = formatted.replace(/(\d+\.\s)/g, '\n$1');
+    
+    // Convert bullet points to proper formatting
+    formatted = formatted.replace(/([•·▪▫])\s/g, '\n• ');
+    
+    // Clean up multiple spaces but preserve line breaks
+    formatted = formatted.replace(/[ \t]+/g, ' ');
+    
+    // Clean up multiple line breaks
+    formatted = formatted.replace(/\n\s*\n/g, '\n\n');
+    
+    return formatted;
+  };
+
   const handleCopyMessage = (content: string, messageId: string) => {
     navigator.clipboard.writeText(content);
     setCopiedMessageId(messageId);
@@ -392,8 +417,7 @@ export function ConversationalChat() {
         {messages.length === 0 && (
           <div className="flex items-center justify-center h-full">
             <div className="text-center">
-              <p className="text-base text-black mb-2">Start a conversation or give me instructions</p>
-              <p className="text-sm text-black">Try: "Make it more formal" or "What is this document about?"</p>
+              <p className="text-sm text-gray-500">No messages yet</p>
             </div>
           </div>
         )}
@@ -421,19 +445,16 @@ export function ConversationalChat() {
                     </span>
                   </div>
                 )}
-                <div 
-                  className="text-sm whitespace-pre-wrap leading-relaxed"
-                  dangerouslySetInnerHTML={{ 
-                    __html: message.content.replace(/<[^>]*>/g, '') // Strip HTML tags
-                  }}
-                />
+                <div className="text-sm whitespace-pre-wrap leading-relaxed">
+                  {formatMessageContent(message.content)}
+                </div>
                 <p className="text-xs opacity-60 mt-2">
                   {message.timestamp.toLocaleTimeString()}
                 </p>
                 
                 {/* Copy button - bottom right */}
                 <button
-                  onClick={() => handleCopyMessage(message.content.replace(/<[^>]*>/g, ''), message.id)}
+                  onClick={() => handleCopyMessage(formatMessageContent(message.content), message.id)}
                   className="absolute bottom-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity p-1.5 hover:bg-white/20 rounded"
                   title="Copy message"
                 >

@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { useEditor } from '@/contexts/EditorContext';
 import { useCompare } from '@/contexts/CompareContext';
 import { Version } from '@/lib/types';
+import { formatTimestamp } from '@/lib/dateUtils';
 import { ChevronDown, ChevronRight, Circle, CheckCircle, Star, Filter, Eye, EyeOff, ExternalLink, Archive } from 'lucide-react';
 
 interface TreeNode {
@@ -215,7 +216,7 @@ export function VersionTree() {
             )}
             
             <p className="text-xs text-black mt-1">
-              {new Date(node.version.timestamp).toLocaleString()}
+              {formatTimestamp(node.version.timestamp)}
             </p>
           </div>
           

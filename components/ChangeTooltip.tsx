@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { useEditor } from '@/contexts/EditorContext';
+import { formatTimestamp } from '@/lib/dateUtils';
 import { Clock, User, MessageSquare, GitBranch } from 'lucide-react';
 
 interface ChangeTooltipProps {
@@ -71,7 +72,7 @@ export function ChangeTooltip({ paragraphId, children }: ChangeTooltipProps) {
             <User className="w-3 h-3" />
             <span>{paragraphLineage.userName}</span>
             <Clock className="w-3 h-3 ml-2" />
-            <span>{new Date(paragraphLineage.timestamp).toLocaleString()}</span>
+            <span>{formatTimestamp(paragraphLineage.timestamp)}</span>
           </div>
 
           {/* Prompt */}
@@ -105,3 +106,4 @@ export function ChangeTooltip({ paragraphId, children }: ChangeTooltipProps) {
     </div>
   );
 }
+

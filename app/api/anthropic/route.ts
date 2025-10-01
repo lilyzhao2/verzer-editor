@@ -1,6 +1,35 @@
 // API route for Anthropic Claude integration
 import { NextRequest, NextResponse } from 'next/server';
 
+// Function to clean up explanation text formatting
+function cleanExplanationText(text: string): string {
+  if (!text) return text;
+  
+  // Remove any remaining [EXPLANATION] tags
+  text = text.replace(/\[EXPLANATION\]/gi, '').replace(/\[\/EXPLANATION\]/gi, '');
+  
+  // Convert numbered lists to proper formatting
+  text = text.replace(/(\d+\.\s)/g, '\n$1');
+  
+  // Convert bullet points to proper formatting
+  text = text.replace(/([•·▪▫])\s/g, '\n• ');
+  
+  // Clean up multiple spaces and line breaks
+  text = text.replace(/\s+/g, ' ');
+  text = text.replace(/\n\s+/g, '\n');
+  text = text.replace(/\n+/g, '\n');
+  
+  // Trim whitespace
+  text = text.trim();
+  
+  // If the text is very long, truncate it and add ellipsis
+  if (text.length > 500) {
+    text = text.substring(0, 500) + '...';
+  }
+  
+  return text;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -268,6 +297,9 @@ ${content}`;
         );
         explanation = explanationLines.join(' ').trim() || 'Changes applied successfully.';
       }
+      
+      // Clean up the explanation text
+      explanation = cleanExplanationText(explanation);
       
       console.log('AI Response parsed:', {
         hasDocumentTags: !!documentMatch,

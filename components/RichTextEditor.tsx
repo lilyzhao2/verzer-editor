@@ -51,7 +51,7 @@ import {
   ZoomOut,
   MessageSquare
 } from 'lucide-react';
-import { useState, useEffect, forwardRef, useImperativeHandle } from 'react';
+import { useState, useEffect, forwardRef, useImperativeHandle, useRef } from 'react';
 
 interface RichTextEditorProps {
   content: string;
@@ -88,6 +88,24 @@ export const RichTextEditor = forwardRef<any, RichTextEditorProps>(({
   const [showFontSizePicker, setShowFontSizePicker] = useState(false);
   const [showHighlightPicker, setShowHighlightPicker] = useState(false);
   const [isInitialRender, setIsInitialRender] = useState(true);
+  const toolbarRef = useRef<HTMLDivElement>(null);
+
+  // Close all dropdowns when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (toolbarRef.current && !toolbarRef.current.contains(event.target as Node)) {
+        setShowColorPicker(false);
+        setShowFontPicker(false);
+        setShowFontSizePicker(false);
+        setShowHighlightPicker(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
 
   const editor = useEditor({
     extensions: [
@@ -206,7 +224,7 @@ export const RichTextEditor = forwardRef<any, RichTextEditorProps>(({
   }) => (
     <button
       onClick={onClick}
-      className={`p-2 rounded hover:bg-gray-100 transition-colors ${
+      className={`p-2.5 rounded hover:bg-gray-100 transition-colors ${
         isActive ? 'bg-gray-200 text-blue-600' : 'text-gray-700'
       }`}
       title={title}
@@ -260,7 +278,7 @@ export const RichTextEditor = forwardRef<any, RichTextEditorProps>(({
   return (
     <div className="h-full flex flex-col" onKeyDown={handleKeyDown}>
       {/* Formatting Toolbar */}
-      <div className="border-b bg-white px-4 py-2 flex flex-wrap items-center gap-1">
+      <div ref={toolbarRef} className="border-b bg-white px-4 py-2 flex flex-wrap items-center gap-2 flex-shrink-0">
         {/* Text Formatting */}
         <ToolbarButton
           onClick={() => editor.chain().focus().toggleBold().run()}
@@ -294,7 +312,7 @@ export const RichTextEditor = forwardRef<any, RichTextEditorProps>(({
           <Strikethrough className="w-4 h-4" />
         </ToolbarButton>
 
-        <div className="w-px h-6 bg-gray-300 mx-1" />
+        <div className="w-px h-6 bg-gray-300 mx-2" />
         
         {/* Font Controls */}
         <div className="relative">
@@ -305,7 +323,7 @@ export const RichTextEditor = forwardRef<any, RichTextEditorProps>(({
             <FontIcon className="w-4 h-4" />
           </ToolbarButton>
           {showFontPicker && (
-            <div className="absolute top-10 left-0 z-50 bg-white border border-gray-200 rounded-lg p-2 shadow-lg min-w-32">
+            <div className="absolute top-10 left-0 z-[100] bg-white border border-gray-200 rounded-lg p-3 shadow-xl min-w-40 max-h-64 overflow-y-auto">
               {fonts.map((font) => (
                 <button
                   key={font.value}
@@ -331,7 +349,7 @@ export const RichTextEditor = forwardRef<any, RichTextEditorProps>(({
             <Type className="w-4 h-4" />
           </ToolbarButton>
           {showFontSizePicker && (
-            <div className="absolute top-10 left-0 z-50 bg-white border border-gray-200 rounded-lg p-2 shadow-lg min-w-20 max-h-48 overflow-y-auto">
+            <div className="absolute top-10 left-0 z-[100] bg-white border border-gray-200 rounded-lg p-3 shadow-xl min-w-24 max-h-64 overflow-y-auto">
               {fontSizes.map((size) => (
                 <button
                   key={size.value}
@@ -349,7 +367,7 @@ export const RichTextEditor = forwardRef<any, RichTextEditorProps>(({
           )}
         </div>
 
-        <div className="w-px h-6 bg-gray-300 mx-1" />
+        <div className="w-px h-6 bg-gray-300 mx-2" />
         
         {/* Text Color & Highlight */}
         <div className="relative">
@@ -360,7 +378,7 @@ export const RichTextEditor = forwardRef<any, RichTextEditorProps>(({
             <Palette className="w-4 h-4" />
           </ToolbarButton>
           {showColorPicker && (
-            <div className="absolute top-10 left-0 z-50 bg-white border border-gray-200 rounded-lg p-3 shadow-lg">
+            <div className="absolute top-10 left-0 z-[100] bg-white border border-gray-200 rounded-lg p-3 shadow-xl">
               <div className="text-xs text-black mb-2 font-medium">Text Color</div>
               <div className="grid grid-cols-4 gap-2">
                 {colors.map((color) => (
@@ -397,7 +415,7 @@ export const RichTextEditor = forwardRef<any, RichTextEditorProps>(({
             <Highlighter className="w-4 h-4" />
           </ToolbarButton>
           {showHighlightPicker && (
-            <div className="absolute top-10 left-0 z-50 bg-white border border-gray-200 rounded-lg p-3 shadow-lg">
+            <div className="absolute top-10 left-0 z-[100] bg-white border border-gray-200 rounded-lg p-3 shadow-xl">
               <div className="text-xs text-black mb-2 font-medium">Highlight Color</div>
               <div className="grid grid-cols-4 gap-2">
                 {highlightColors.map((color) => (
@@ -426,7 +444,7 @@ export const RichTextEditor = forwardRef<any, RichTextEditorProps>(({
           )}
         </div>
 
-        <div className="w-px h-6 bg-gray-300 mx-1" />
+        <div className="w-px h-6 bg-gray-300 mx-2" />
         
         {/* Headings */}
         <ToolbarButton
@@ -461,7 +479,7 @@ export const RichTextEditor = forwardRef<any, RichTextEditorProps>(({
           <Type className="w-4 h-4" />
         </ToolbarButton>
 
-        <div className="w-px h-6 bg-gray-300 mx-1" />
+        <div className="w-px h-6 bg-gray-300 mx-2" />
         
         {/* Text Alignment */}
         <ToolbarButton
@@ -496,7 +514,7 @@ export const RichTextEditor = forwardRef<any, RichTextEditorProps>(({
           <AlignJustify className="w-4 h-4" />
         </ToolbarButton>
 
-        <div className="w-px h-6 bg-gray-300 mx-1" />
+        <div className="w-px h-6 bg-gray-300 mx-2" />
         
         {/* Lists */}
         <ToolbarButton
@@ -522,7 +540,7 @@ export const RichTextEditor = forwardRef<any, RichTextEditorProps>(({
           <Minus className="w-4 h-4" />
         </ToolbarButton>
 
-        <div className="w-px h-6 bg-gray-300 mx-1" />
+        <div className="w-px h-6 bg-gray-300 mx-2" />
         
         {/* Undo/Redo */}
         <ToolbarButton
@@ -539,7 +557,7 @@ export const RichTextEditor = forwardRef<any, RichTextEditorProps>(({
           <Redo className="w-4 h-4" />
         </ToolbarButton>
 
-        <div className="w-px h-6 bg-gray-300 mx-1" />
+        <div className="w-px h-6 bg-gray-300 mx-2" />
 
         {/* Zoom Controls */}
         {onZoomChange && (
@@ -571,7 +589,7 @@ export const RichTextEditor = forwardRef<any, RichTextEditorProps>(({
               <ZoomIn className="w-5 h-5" />
             </ToolbarButton>
 
-            <div className="w-px h-6 bg-gray-300 mx-1" />
+            <div className="w-px h-6 bg-gray-300 mx-2" />
           </>
         )}
 
@@ -594,7 +612,7 @@ export const RichTextEditor = forwardRef<any, RichTextEditorProps>(({
           </ToolbarButton>
         )}
 
-        <div className="w-px h-6 bg-gray-300 mx-1" />
+        <div className="w-px h-6 bg-gray-300 mx-2" />
 
         {/* Comment */}
         {onAddComment && (
@@ -612,15 +630,21 @@ export const RichTextEditor = forwardRef<any, RichTextEditorProps>(({
           </ToolbarButton>
         )}
 
-        <div className="ml-auto text-xs text-black">
-          Press Cmd+S to save version
-        </div>
       </div>
 
 
       {/* Editor Content */}
       <div className={`flex-1 overflow-y-auto bg-white ${isPrintView ? 'print-view' : ''} relative`}>
-        <EditorContent editor={editor} />
+        <div 
+          style={{ 
+            transform: `scale(${zoomLevel / 100})`,
+            transformOrigin: 'top center',
+            width: `${100 / (zoomLevel / 100)}%`,
+            minHeight: `${100 / (zoomLevel / 100)}%`
+          }}
+        >
+          <EditorContent editor={editor} />
+        </div>
         {onAddComment && (
           <FloatingCommentButton 
             onAddComment={(text, pos, comment) => onAddComment(text, pos, comment)}

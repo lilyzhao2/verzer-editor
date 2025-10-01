@@ -160,7 +160,7 @@ export function DocumentEditor() {
   return (
     <div className="h-full flex flex-col overflow-hidden">
       {/* Main Header - All on one line */}
-      <div className="px-6 py-6 border-b bg-gray-50 flex-shrink-0">
+      <div className="px-6 py-8 border-b bg-gray-50 flex-shrink-0">
         <div className="flex items-center justify-between gap-5">
           {/* Left: Document Name & Version Info */}
           <div className="flex items-center gap-4">
@@ -193,38 +193,37 @@ export function DocumentEditor() {
               {currentVersion?.number === '0' && (
                 <button
                   onClick={() => setShowUpload(true)}
-                  className="flex items-center gap-2 px-5 py-3 bg-purple-600 text-white text-lg font-semibold rounded-lg hover:bg-purple-700 transition-colors"
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-600 text-white text-sm font-medium rounded hover:bg-purple-700 transition-colors"
                   title="Upload document"
                 >
-                  <Upload className="w-6 h-6" />
+                  <Upload className="w-4 h-4" />
                   Upload
                 </button>
               )}
 
             {/* Save Actions - Only show when there are unsaved changes */}
             {hasUnsavedChanges && (
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5">
                 <button
                   onClick={handleOverwriteVersion}
-                  className="flex items-center gap-2 px-5 py-3 bg-gray-600 text-white text-lg font-semibold rounded-lg hover:bg-gray-700 transition-colors"
+                  className="px-3 py-1.5 bg-gray-600 text-white text-sm font-medium rounded hover:bg-gray-700 transition-colors"
                   title={`Overwrite ${formatVersionNumber(currentVersion?.number || '0')}`}
                 >
-                  <Save className="w-6 h-6" />
                   Overwrite {formatVersionNumber(currentVersion?.number || '0')}
                 </button>
                 <button
                   onClick={handleSaveAsVariation}
-                  className="px-5 py-3 bg-amber-600 text-white text-lg font-semibold rounded-lg hover:bg-amber-700 transition-colors"
+                  className="px-3 py-1.5 bg-amber-600 text-white text-sm font-medium rounded hover:bg-amber-700 transition-colors"
                   title={`Save as new variation (${getNextVariationNumber()})`}
                 >
-                  Save to New Variation
+                  Save Variation
                 </button>
                 <button
                   onClick={handleSaveAsNewVersion}
-                  className="px-5 py-3 bg-blue-600 text-white text-lg font-semibold rounded-lg hover:bg-blue-700 transition-colors"
+                  className="px-3 py-1.5 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700 transition-colors"
                   title={`Save as new root version (${getNextRootVersion()})`}
                 >
-                  Save to New Version
+                  Save Version
                 </button>
               </div>
             )}
@@ -232,24 +231,24 @@ export function DocumentEditor() {
 
             <button
               onClick={() => setShowLineagePanel(!showLineagePanel)}
-              className={`flex items-center gap-2 px-5 py-3 text-lg font-semibold rounded-lg transition-colors ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded transition-colors ${
                 showLineagePanel 
                   ? 'bg-blue-600 text-white' 
                   : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
               }`}
               title="Show paragraph lineage and change tracking"
             >
-              <GitBranch className="w-6 h-6" />
+              <GitBranch className="w-4 h-4" />
               Lineage
             </button>
             
             {/* Share Button - Moved to rightmost position */}
             <button
               onClick={() => setShowShareModal(true)}
-              className="flex items-center gap-2 px-5 py-3 bg-gray-100 text-gray-700 text-lg font-semibold rounded-lg hover:bg-gray-200 transition-colors"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 text-gray-700 text-sm font-medium rounded hover:bg-gray-200 transition-colors"
               title="Share this document"
             >
-              <Share2 className="w-6 h-6" />
+              <Share2 className="w-4 h-4" />
               Share
             </button>
 
@@ -263,45 +262,34 @@ export function DocumentEditor() {
         {/* Editor */}
         <div 
           ref={editorContainerRef}
-          className={`flex-1 overflow-hidden relative ${
+          className={`flex-1 overflow-auto relative ${
             showLineagePanel 
               ? 'w-2/3' 
               : 'w-full'
           }`}
-          style={{ 
-            transform: `scale(${zoomLevel / 100})`,
-            transformOrigin: 'top left',
-            width: showLineagePanel 
-              ? `${(100 / (zoomLevel / 100)) * 0.67}%` 
-              : `${100 / (zoomLevel / 100)}%`,
-            height: `${100 / (zoomLevel / 100)}%`
-          }}
         >
-          <div className={`h-full ${isPrintView ? 'print-view' : ''}`}>
-            <RichTextEditor
-              content={localContent}
-              onChange={handleContentChange}
-              onSave={handleOverwriteVersion}
-              placeholder="Start writing your document here..."
-              isPrintView={isPrintView}
-              zoomLevel={zoomLevel}
-              onZoomChange={setZoomLevel}
-              documentName={state.documentName}
-              versionNumber={currentVersion?.number || '0'}
-              onDownload={() => {
-                const blob = new Blob([localContent], { type: 'text/html' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                const versionStr = currentVersion?.number || '0';
-                const cleanVersion = versionStr.replace(/\./g, '').toLowerCase();
-                a.download = `${state.documentName}_${cleanVersion}.doc`;
-                a.click();
-              }}
-              onPrint={() => window.print()}
-              ref={editorInstanceRef}
-            />
-          </div>
+          <RichTextEditor
+            content={localContent}
+            onChange={handleContentChange}
+            onSave={handleOverwriteVersion}
+            placeholder="Start writing your document here..."
+            isPrintView={isPrintView}
+            zoomLevel={zoomLevel}
+            onZoomChange={setZoomLevel}
+            documentName={state.documentName}
+            versionNumber={currentVersion?.number || '0'}
+            onDownload={() => {
+              const blob = new Blob([localContent], { type: 'text/html' });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              const versionStr = formatVersionNumber(currentVersion?.number || '0');
+              a.download = `${state.documentName}_${versionStr}.doc`;
+              a.click();
+            }}
+            onPrint={() => window.print()}
+            ref={editorInstanceRef}
+          />
         </div>
 
         {/* Lineage Panel */}

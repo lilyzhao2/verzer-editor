@@ -473,6 +473,10 @@ export function EditorProvider({ children }: { children: React.ReactNode }) {
 
   const createTodoSession = useCallback(async (prompt: string) => {
     try {
+      // Get current document content for context
+      const currentVersion = getCurrentVersion();
+      const documentContent = currentVersion?.content || '<p>No document content available</p>';
+      
       // Ask AI to decompose the task
       const response = await fetch('/api/anthropic', {
         method: 'POST',
@@ -493,16 +497,23 @@ You MUST return ONLY valid JSON with this exact structure:
 Request: "${prompt}"
 
 Break this into 3-7 clear tasks. Be specific and actionable. Return ONLY the JSON object, no other text.`,
-          content: '',
+          content: documentContent,
           model: state.selectedModel,
           mode: 'analyze'
         }),
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        console.error('Failed to decompose tasks:', errorData);
-        throw new Error(errorData.error || 'Failed to decompose tasks');
+        let errorMessage = 'Failed to decompose tasks';
+        try {
+          const errorData = await response.json();
+          console.error('Failed to decompose tasks:', errorData);
+          errorMessage = errorData.error || errorMessage;
+        } catch (parseError) {
+          console.error('Failed to parse error response:', parseError);
+          errorMessage = `API request failed with status ${response.status}`;
+        }
+        throw new Error(errorMessage);
       }
       
       const result = await response.json();
@@ -564,6 +575,9 @@ Break this into 3-7 clear tasks. Be specific and actionable. Return ONLY the JSO
       }));
     } catch (error) {
       console.error('Error creating todo session:', error);
+      // Show user-friendly error message
+      const errorMessage = error instanceof Error ? error.message : 'Failed to create todo session';
+      alert(`Error: ${errorMessage}`);
     }
   }, [state.selectedModel]);
 

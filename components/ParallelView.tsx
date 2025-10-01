@@ -3,6 +3,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useEditor } from '@/contexts/EditorContext';
 import { Version } from '@/lib/types';
+import { formatTimestamp } from '@/lib/dateUtils';
 import { 
   Send, Loader2, ChevronRight, ChevronDown,
   Star, Bot, User, Edit3, Plus, Minus, GitBranch, Archive,
@@ -321,26 +322,28 @@ export function ParallelView() {
         
         {/* Version Card */}
         <div 
-          className={`bg-white rounded-lg border-2 transition-all h-full cursor-pointer ${
+          className={`bg-white rounded-lg border-2 transition-all h-full ${
             version.isArchived ? 'opacity-50 border-gray-300' : 
             isCurrent ? 'border-blue-500 shadow-lg' : 'border-gray-200 hover:border-gray-300 hover:shadow-md'
           } ${depth > 0 ? 'ml-8' : ''}`}
           style={{ marginLeft: `${depth * 32}px` }}
-          onDoubleClick={() => {
-            setCurrentVersion(version.id);
-            setViewMode('document');
-          }}
-          title="Double-click to open in document view"
         >
           {/* Compact Version Header */}
           <div className="px-4 py-3 border-b bg-gray-50 rounded-t-lg">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <span className={`text-xs font-bold px-2 py-1 rounded ${
-                  isCurrent ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'
-                }`}>
+                <button
+                  onClick={() => {
+                    setCurrentVersion(version.id);
+                    setViewMode('document');
+                  }}
+                  className={`text-xs font-bold px-2 py-1 rounded hover:opacity-80 transition-opacity ${
+                    isCurrent ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                  }`}
+                  title="Click to open in document view"
+                >
                   V{version.number.toUpperCase().replace('B', 'V')}
-                </span>
+                </button>
                 
                 {version.isOriginal && (
                   <span className="text-xs bg-gray-100 text-black px-2 py-1 rounded">
@@ -412,7 +415,7 @@ export function ParallelView() {
           {/* Compact Timestamp */}
           <div className="px-4 py-2 border-b bg-white">
             <p className="text-xs text-gray-600">
-              {new Date(version.timestamp).toLocaleString()}
+              {formatTimestamp(version.timestamp)}
             </p>
           </div>
           
@@ -441,7 +444,7 @@ export function ParallelView() {
                     className="px-3 py-1.5 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 flex items-center gap-2"
                   >
                     <GitBranch className="w-4 h-4" />
-                    Save as Variation
+                    Save Variation
                   </button>
                   <button
                     onClick={() => {
@@ -462,7 +465,7 @@ export function ParallelView() {
                     className="px-3 py-1.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 flex items-center gap-2"
                   >
                     <Plus className="w-4 h-4" />
-                    Save as Version
+                    Save Version
                   </button>
                   <button
                     onClick={() => toggleInlineEdit(branch.id, version.id, version)}
@@ -478,11 +481,7 @@ export function ParallelView() {
                   collapseAll ? 'h-96' : 'h-64'
                 }`}
                 onClick={() => toggleInlineEdit(branch.id, version.id, version)}
-                onDoubleClick={() => {
-                  setCurrentVersion(version.id);
-                  setViewMode('document');
-                }}
-                title="Click to edit, double-click to open in document view"
+                title="Click to edit"
               >
                 <div dangerouslySetInnerHTML={{ __html: version.content }} />
               </div>
@@ -565,7 +564,7 @@ export function ParallelView() {
 
   return (
     <div className="h-full bg-gray-50 overflow-auto" ref={containerRef}>
-      <div className="max-w-full mx-auto p-4">
+      <div className="p-4">
         {/* Compact Header */}
         <div className="mb-4">
         <div className="flex items-center justify-between mb-2">
@@ -578,46 +577,44 @@ export function ParallelView() {
         </div>
           
           {/* Filters */}
-          <div className="flex items-center justify-between w-full">
-            <div className="flex items-center gap-4">
-              <Filter className="w-4 h-4 text-gray-500" />
-              
-              <button
-                onClick={() => setCollapseAll(!collapseAll)}
-                className={`px-3 py-2 text-sm rounded-lg transition-colors ${
-                  collapseAll 
-                    ? 'bg-purple-100 text-purple-800 border border-purple-300' 
-                    : 'bg-white text-gray-600 border border-gray-300 hover:bg-gray-50'
-                }`}
-              >
-                {collapseAll ? <ChevronRight className="w-4 h-4 inline mr-2" /> : <ChevronDown className="w-4 h-4 inline mr-2" />}
-                {collapseAll ? 'Expand All' : 'Collapse All'}
-              </button>
-              
-              <button
-                onClick={() => setShowOnlyStarred(!showOnlyStarred)}
-                className={`px-3 py-2 text-sm rounded-lg transition-colors ${
-                  showOnlyStarred 
-                    ? 'bg-yellow-100 text-yellow-800 border border-yellow-300' 
-                    : 'bg-white text-gray-600 border border-gray-300 hover:bg-gray-50'
-                }`}
-              >
-                <Star className={`w-4 h-4 inline mr-2 ${showOnlyStarred ? 'fill-current' : ''}`} />
-                Starred
-              </button>
-              
-              <button
-                onClick={() => setShowArchived(!showArchived)}
-                className={`px-3 py-2 text-sm rounded-lg transition-colors ${
-                  showArchived 
-                    ? 'bg-red-100 text-red-800 border border-red-300' 
-                    : 'bg-white text-gray-600 border border-gray-300 hover:bg-gray-50'
-                }`}
-              >
-                <Archive className={`w-4 h-4 inline mr-2 ${showArchived ? 'fill-current' : ''}`} />
-                Archived
-              </button>
-            </div>
+          <div className="flex items-center gap-6 w-full">
+            <Filter className="w-4 h-4 text-gray-500 flex-shrink-0" />
+            
+            <button
+              onClick={() => setCollapseAll(!collapseAll)}
+              className={`px-4 py-2 text-sm rounded-lg transition-colors ${
+                collapseAll 
+                  ? 'bg-purple-100 text-purple-800 border border-purple-300' 
+                  : 'bg-white text-gray-600 border border-gray-300 hover:bg-gray-50'
+              }`}
+            >
+              {collapseAll ? <ChevronRight className="w-4 h-4 inline mr-2" /> : <ChevronDown className="w-4 h-4 inline mr-2" />}
+              {collapseAll ? 'Expand All' : 'Collapse All'}
+            </button>
+            
+            <button
+              onClick={() => setShowOnlyStarred(!showOnlyStarred)}
+              className={`px-4 py-2 text-sm rounded-lg transition-colors ${
+                showOnlyStarred 
+                  ? 'bg-yellow-100 text-yellow-800 border border-yellow-300' 
+                  : 'bg-white text-gray-600 border border-gray-300 hover:bg-gray-50'
+              }`}
+            >
+              <Star className={`w-4 h-4 inline mr-2 ${showOnlyStarred ? 'fill-current' : ''}`} />
+              Starred
+            </button>
+            
+            <button
+              onClick={() => setShowArchived(!showArchived)}
+              className={`px-4 py-2 text-sm rounded-lg transition-colors ${
+                showArchived 
+                  ? 'bg-red-100 text-red-800 border border-red-300' 
+                  : 'bg-white text-gray-600 border border-gray-300 hover:bg-gray-50'
+              }`}
+            >
+              <Archive className={`w-4 h-4 inline mr-2 ${showArchived ? 'fill-current' : ''}`} />
+              Archived
+            </button>
             
             {/* Type Filter */}
             <div className="flex gap-1">
@@ -670,59 +667,48 @@ export function ParallelView() {
             </button>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4">
+          <div className="flex gap-4 overflow-x-auto pb-4 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 hover:scrollbar-thumb-gray-400">
             {branches.filter(b => !shouldHideBranch(b)).map(branch => (
-            <div key={branch.id} className="flex-shrink-0 w-full">
-              {/* Version Header */}
+            <div key={branch.id} className="flex-shrink-0 w-80 min-w-80">
+              {/* Branch Toggle Header */}
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
-                  <span className={`text-xs font-bold px-2 py-0.5 rounded ${
+                  <span className={`text-sm font-bold px-3 py-1 rounded ${
                     branch.rootVersion.id === state.currentVersionId ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'
                   }`}>
                     v{branch.rootVersion.number}
                   </span>
                   
                   {branch.rootVersion.isOriginal && (
-                    <span className="text-xs bg-gray-100 text-black px-2 py-0.5 rounded">
+                    <span className="text-xs bg-gray-100 text-black px-2 py-1 rounded">
                       Original
                     </span>
                   )}
                   
                   {isManualEdit(branch.rootVersion) && (
-                    <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded">
+                    <span className="text-xs bg-amber-100 text-amber-700 px-2 py-1 rounded">
                       ✏️ Manual
                     </span>
                   )}
                   
                   {isAIEdit(branch.rootVersion) && (
-                    <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded">
+                    <span className="text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded">
                       🤖 AI
                     </span>
                   )}
                 </div>
                 
-                <div className="flex items-center gap-1">
-                  <button
-                    onClick={() => toggleVersionStar(branch.rootVersion.id)}
-                    className={`p-1 rounded hover:bg-gray-100 ${
-                      branch.rootVersion.isStarred ? 'text-yellow-500' : 'text-gray-400'
-                    }`}
-                    title={branch.rootVersion.isStarred ? "Unstar version" : "Star version"}
-                  >
-                    <Star className={`w-4 h-4 ${branch.rootVersion.isStarred ? 'fill-current' : ''}`} />
-                  </button>
-                  
-                  <button
-                    onClick={() => toggleBranch(branch.id)}
-                    className="p-1 hover:bg-gray-200 rounded"
-                  >
-                    {branch.isExpanded ? (
-                      <ChevronDown className="w-4 h-4 text-gray-600" />
-                    ) : (
-                      <ChevronRight className="w-4 h-4 text-gray-600" />
-                    )}
-                  </button>
-                </div>
+                <button
+                  onClick={() => toggleBranch(branch.id)}
+                  className="p-2 hover:bg-gray-200 rounded-lg transition-colors"
+                  title={branch.isExpanded ? "Collapse branch" : "Expand branch"}
+                >
+                  {branch.isExpanded ? (
+                    <ChevronDown className="w-5 h-5 text-gray-600" />
+                  ) : (
+                    <ChevronRight className="w-5 h-5 text-gray-600" />
+                  )}
+                </button>
               </div>
 
               {/* Branch Content */}

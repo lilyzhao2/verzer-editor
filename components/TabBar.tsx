@@ -3,6 +3,7 @@
 import React from 'react';
 import { useEditor } from '@/contexts/EditorContext';
 import { X, Plus, Circle } from 'lucide-react';
+import { formatVersionNumber } from '@/lib/formatVersion';
 
 export function TabBar() {
   const { state, switchTab, closeTab, openTab } = useEditor();
@@ -17,7 +18,7 @@ export function TabBar() {
 
   return (
     <div className="flex items-center bg-gray-100 border-b border-gray-300 overflow-x-auto">
-      <div className="flex items-center">
+      <div className="flex items-center min-w-0">
         {state.tabs?.map((tab) => {
           const version = state.versions.find(v => v.id === tab.versionId);
           const isActive = state.activeTabId === tab.id;
@@ -26,8 +27,8 @@ export function TabBar() {
             <div
               key={tab.id}
               className={`
-                group flex items-center gap-2 px-4 py-2 border-r border-gray-300 cursor-pointer
-                min-w-[120px] max-w-[200px]
+                group flex items-center gap-2 px-5 py-3 border-r border-gray-300 cursor-pointer
+                min-w-[140px] max-w-[250px]
                 ${isActive 
                   ? 'bg-white text-gray-900' 
                   : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
@@ -40,7 +41,7 @@ export function TabBar() {
                   <Circle className="w-2 h-2 fill-amber-500 text-amber-500" />
                 )}
                 <span className="text-sm font-medium truncate">
-                  v{version?.number}
+                  {formatVersionNumber(version?.number || '0')}
                 </span>
                 {version?.note && (
                   <span className="text-xs text-gray-500 truncate">
