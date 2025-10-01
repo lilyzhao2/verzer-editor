@@ -168,43 +168,43 @@ export function DocumentEditor() {
   return (
     <div className="h-full flex flex-col overflow-hidden">
       {/* Main Header - All on one line */}
-      <div className="px-4 py-3 border-b bg-gray-50 flex-shrink-0">
-        <div className="flex items-center justify-between gap-4">
+      <div className="px-6 py-4 border-b bg-gray-50 flex-shrink-0">
+        <div className="flex items-center justify-between gap-5">
           {/* Left: Version Info */}
-          <div className="flex items-center gap-3">
-            <h2 className="text-lg font-semibold text-black">
+          <div className="flex items-center gap-4">
+            <h2 className="text-2xl font-bold text-black">
               V{currentVersion?.number.toUpperCase()}
               {hasUnsavedChanges && (
-                <span className="ml-2 w-3 h-3 bg-amber-500 rounded-full inline-block" title="Unsaved changes"></span>
+                <span className="ml-2 w-3.5 h-3.5 bg-amber-500 rounded-full inline-block" title="Unsaved changes"></span>
               )}
             </h2>
             
             {/* Note */}
             {currentVersion?.note && (
-              <span className="text-sm text-gray-600 italic truncate max-w-xs">
+              <span className="text-base text-gray-600 italic truncate max-w-xs">
                 {currentVersion.note}
               </span>
             )}
           </div>
           
           {/* Right: All Controls */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-4">
             {/* Document Name Input - Only show for v0 */}
             {currentVersion?.number === '0' && (
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-3">
                 <input
                   type="text"
                   value={documentName}
                   onChange={(e) => setDocumentName(e.target.value)}
-                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm font-medium text-black bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="px-4 py-2.5 border border-gray-300 rounded-lg text-base font-semibold text-black bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   placeholder="Document name"
                 />
                 <button
                   onClick={() => setShowUpload(true)}
-                  className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white text-sm font-medium rounded-lg hover:bg-purple-700 transition-colors"
+                  className="flex items-center gap-2 px-4 py-2.5 bg-purple-600 text-white text-base font-semibold rounded-lg hover:bg-purple-700 transition-colors"
                   title="Upload document"
                 >
-                  <Upload className="w-4 h-4" />
+                  <Upload className="w-5 h-5" />
                   Upload
                 </button>
               </div>
@@ -241,28 +241,28 @@ export function DocumentEditor() {
             {/* Collaboration */}
             <button
               onClick={() => setShowUserBranchModal(true)}
-              className="flex items-center gap-2 px-3 py-2 bg-purple-600 text-white text-sm font-medium rounded-lg hover:bg-purple-700 transition-colors"
-              title="Create a branch for another user to collaborate"
+              className="flex items-center gap-2 px-4 py-2.5 bg-purple-600 text-white text-base font-semibold rounded-lg hover:bg-purple-700 transition-colors"
+              title="Invite collaborators to this document"
             >
-              <Users className="w-4 h-4" />
-              New User Branch
+              <Users className="w-5 h-5" />
+              Invite Collaborators
             </button>
 
             <button
               onClick={() => setShowLineagePanel(!showLineagePanel)}
-              className={`flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg transition-colors ${
+              className={`flex items-center gap-2 px-4 py-2.5 text-base font-semibold rounded-lg transition-colors ${
                 showLineagePanel 
                   ? 'bg-blue-600 text-white' 
                   : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
               }`}
               title="Show paragraph lineage and change tracking"
             >
-              <GitBranch className="w-4 h-4" />
+              <GitBranch className="w-5 h-5" />
               Lineage
             </button>
 
             {/* Export Options */}
-            <div className="flex items-center gap-2 border-l pl-3">
+            <div className="flex items-center gap-3 border-l pl-4">
               <button
                 onClick={() => {
                   const blob = new Blob([localContent], { type: 'text/html' });
@@ -275,18 +275,18 @@ export function DocumentEditor() {
                   a.download = `${documentName}_${cleanVersion}.doc`;
                   a.click();
                 }}
-                className="flex items-center gap-2 px-3 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200 transition-colors"
+                className="flex items-center gap-2 px-4 py-2.5 bg-gray-100 text-gray-700 text-base font-semibold rounded-lg hover:bg-gray-200 transition-colors"
                 title="Download document"
               >
-                <FileText className="w-4 h-4" />
+                <FileText className="w-5 h-5" />
                 Download
               </button>
               <button
                 onClick={() => window.print()}
-                className="flex items-center gap-2 px-3 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
+                className="flex items-center gap-2 px-4 py-2.5 bg-gray-600 text-white text-base font-semibold rounded-lg hover:bg-gray-700 transition-colors"
                 title="Print/Save as PDF"
               >
-                <Printer className="w-4 h-4" />
+                <Printer className="w-5 h-5" />
                 Print
               </button>
             </div>
