@@ -2,8 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useEditor } from '@/contexts/EditorContext';
-import { computeDiff } from '@/lib/diff-utils';
-import { Check, X, CheckCircle, Save } from 'lucide-react';
+import { CheckCircle, Save } from 'lucide-react';
 import { RichTextEditor } from './RichTextEditor';
 
 export function DocumentEditor() {
@@ -63,25 +62,6 @@ export function DocumentEditor() {
     }
   };
 
-  const handleAcceptChange = (index: number) => {
-    setAcceptedChanges(prev => new Set(prev).add(index));
-  };
-
-  const handleRejectChange = (index: number) => {
-    setAcceptedChanges(prev => {
-      const next = new Set(prev);
-      next.delete(index);
-      return next;
-    });
-  };
-
-  const handleAcceptAll = () => {
-    if (compareVersion) {
-      createVersion(compareVersion.content, `Accepted all changes from v${compareVersion.number}`);
-      setAcceptedChanges(new Set());
-    }
-  };
-
   const renderDiffView = () => {
     if (!currentVersion || !compareVersion) return null;
 
@@ -98,7 +78,11 @@ export function DocumentEditor() {
             </p>
           </div>
           <button
-            onClick={handleAcceptAll}
+            onClick={() => {
+              if (compareVersion) {
+                createVersion(compareVersion.content, `Accepted all changes from v${compareVersion.number}`);
+              }
+            }}
             className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
           >
             <CheckCircle className="w-4 h-4" />

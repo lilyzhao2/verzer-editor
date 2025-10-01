@@ -3,13 +3,8 @@
 import React, { useState, useMemo } from 'react';
 import { useEditor } from '@/contexts/EditorContext';
 import { useCompare } from '@/contexts/CompareContext';
-import { CheckCircle, X, Sparkles, Layers, FileEdit } from 'lucide-react';
+import { CheckCircle, Sparkles, Layers, FileEdit } from 'lucide-react';
 import { TrackChangesCompare } from './TrackChangesCompare';
-
-interface ParagraphChoice {
-  paragraphIndex: number;
-  versionId: string;
-}
 
 export function CompareView() {
   const { state, createVersion } = useEditor();

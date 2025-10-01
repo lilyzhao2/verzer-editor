@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { useEditor } from '@/contexts/EditorContext';
-import { Send, Loader2, Sparkles, CheckCircle } from 'lucide-react';
+import { Send, Loader2, CheckCircle } from 'lucide-react';
 
 interface Message {
   id: string;
@@ -18,7 +18,7 @@ export function ConversationalChat() {
     {
       id: 'welcome',
       role: 'system',
-      content: 'Hi! I\'m your AI writing assistant. I can help you edit your document, answer questions about it, or explain what I\'ve changed. Just ask!',
+          content: 'Hi! I&apos;m your AI writing assistant. I can help you edit your document, answer questions about it, or explain what I&apos;ve changed. Just ask!',
       timestamp: new Date(),
     }
   ]);
@@ -205,7 +205,7 @@ export function ConversationalChat() {
           </button>
         </div>
         <p className="text-xs text-gray-500 mt-2">
-          💡 Try: "make it funnier" (command) or "what did you change?" (question)
+          💡 Try: &ldquo;make it funnier&rdquo; (command) or &ldquo;what did you change?&rdquo; (question)
         </p>
       </form>
     </div>
