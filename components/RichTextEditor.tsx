@@ -14,6 +14,7 @@ import Subscript from '@tiptap/extension-subscript';
 import Highlight from '@tiptap/extension-highlight';
 import HorizontalRule from '@tiptap/extension-horizontal-rule';
 import FontSize from 'tiptap-extension-font-size';
+import { CommentExtension } from '@/lib/tiptap-comment-extension';
 import { 
   Bold, 
   Italic, 
@@ -46,7 +47,8 @@ import {
   FileText,
   Printer,
   ZoomIn,
-  ZoomOut
+  ZoomOut,
+  MessageSquare
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 
@@ -62,6 +64,7 @@ interface RichTextEditorProps {
   versionNumber?: string;
   onDownload?: () => void;
   onPrint?: () => void;
+  onAddComment?: (selectedText: string, position: { start: number; end: number }) => void;
 }
 
 export function RichTextEditor({ 
@@ -75,7 +78,8 @@ export function RichTextEditor({
   documentName = 'Untitled',
   versionNumber = '0',
   onDownload,
-  onPrint
+  onPrint,
+  onAddComment
 }: RichTextEditorProps) {
   const [mounted, setMounted] = useState(false);
   const [showColorPicker, setShowColorPicker] = useState(false);
@@ -109,6 +113,11 @@ export function RichTextEditor({
         multicolor: true,
       }),
       HorizontalRule,
+      CommentExtension.configure({
+        HTMLAttributes: {
+          class: 'comment-highlight',
+        },
+      }),
       Placeholder.configure({
         placeholder: placeholder || 'Start writing your document...',
       }),
@@ -568,6 +577,22 @@ export function RichTextEditor({
         )}
 
         <div className="w-px h-6 bg-gray-300 mx-1" />
+
+        {/* Comment */}
+        {onAddComment && (
+          <ToolbarButton
+            onClick={() => {
+              const { from, to } = editor.state.selection;
+              const selectedText = editor.state.doc.textBetween(from, to);
+              if (selectedText.trim()) {
+                onAddComment(selectedText, { start: from, end: to });
+              }
+            }}
+            title="Add Comment (select text first)"
+          >
+            <MessageSquare className="w-4 h-4" />
+          </ToolbarButton>
+        )}
 
         <div className="ml-auto text-xs text-black">
           Press Cmd+S to save version

@@ -7,6 +7,18 @@
   font-size: 17px;
 }
 
+/* Comment highlights */
+.comment-highlight {
+  background-color: #fef3c7;
+  border-bottom: 2px solid #f59e0b;
+  cursor: pointer;
+  padding: 2px 0;
+}
+
+.comment-highlight:hover {
+  background-color: #fde68a;
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);

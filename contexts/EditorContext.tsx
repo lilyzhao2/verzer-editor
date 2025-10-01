@@ -1,7 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
-import { Version, ChatMessage, EditorState, AIModel, ViewMode, Checkpoint, PendingAIEdit, Comment, ProjectNote, ProjectConfig, EditorTab, TodoSession, TodoTask, ParagraphLineage, ChangeMetadata } from '@/lib/types';
+import { Version, ChatMessage, EditorState, AIModel, ViewMode, Checkpoint, PendingAIEdit, Comment, CommentReply, ProjectNote, ProjectConfig, EditorTab, TodoSession, TodoTask, ParagraphLineage, ChangeMetadata } from '@/lib/types';
 
 interface EditorContextType {
   state: EditorState;
@@ -37,9 +37,11 @@ interface EditorContextType {
   acceptAIEdit: () => void;
   rejectAIEdit: () => void;
   acceptPartialAIEdit: (content: string) => void;
-  addComment: (versionId: string, userId: string, content: string, position?: { start: number; end: number }) => void;
+  addComment: (versionId: string, userId: string, content: string, position?: { start: number; end: number }, selectedText?: string, paragraphId?: string) => void;
+  addCommentReply: (commentId: string, userId: string, content: string) => void;
   updateComment: (commentId: string, text: string) => void;
   deleteComment: (commentId: string) => void;
+  deleteCommentReply: (commentId: string, replyId: string) => void;
   resolveComment: (commentId: string) => void;
   addProjectNote: (title: string, content: string, relatedVersions?: string[], tags?: string[]) => void;
   updateProjectNote: (noteId: string, updates: Partial<ProjectNote>) => void;
@@ -1083,7 +1085,7 @@ Break this into 3-7 clear tasks. Be specific and actionable. Return ONLY the JSO
   }, [state.activeTodoSession, state.versions, updateTodoTask, applyAIEdit]);
 
   // Comment functions
-  const addComment = useCallback((versionId: string, userId: string, content: string, position?: { start: number; end: number }) => {
+  const addComment = useCallback((versionId: string, userId: string, content: string, position?: { start: number; end: number }, selectedText?: string, paragraphId?: string) => {
     // Parse @mentions from content
     const mentionRegex = /@(\w+)/g;
     const mentions: string[] = [];
@@ -1101,10 +1103,51 @@ Break this into 3-7 clear tasks. Be specific and actionable. Return ONLY the JSO
       position,
       resolved: false,
       mentions,
+      selectedText,
+      paragraphId,
+      replies: [],
     };
     setState(prev => ({
       ...prev,
       comments: [...prev.comments, newComment],
+    }));
+  }, []);
+
+  const addCommentReply = useCallback((commentId: string, userId: string, content: string) => {
+    // Parse @mentions from content
+    const mentionRegex = /@(\w+)/g;
+    const mentions: string[] = [];
+    let match;
+    while ((match = mentionRegex.exec(content)) !== null) {
+      mentions.push(match[1]);
+    }
+
+    const newReply: CommentReply = {
+      id: `reply-${Date.now()}`,
+      userId,
+      content,
+      timestamp: new Date(),
+      mentions,
+    };
+
+    setState(prev => ({
+      ...prev,
+      comments: prev.comments.map(comment =>
+        comment.id === commentId
+          ? { ...comment, replies: [...(comment.replies || []), newReply] }
+          : comment
+      ),
+    }));
+  }, []);
+
+  const deleteCommentReply = useCallback((commentId: string, replyId: string) => {
+    setState(prev => ({
+      ...prev,
+      comments: prev.comments.map(comment =>
+        comment.id === commentId
+          ? { ...comment, replies: (comment.replies || []).filter(r => r.id !== replyId) }
+          : comment
+      ),
     }));
   }, []);
 
@@ -1202,8 +1245,10 @@ Break this into 3-7 clear tasks. Be specific and actionable. Return ONLY the JSO
         rejectAIEdit,
         acceptPartialAIEdit,
         addComment,
+        addCommentReply,
         updateComment,
         deleteComment,
+        deleteCommentReply,
         resolveComment,
         addProjectNote,
         updateProjectNote,

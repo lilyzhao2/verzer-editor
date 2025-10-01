@@ -55,6 +55,17 @@ export interface Comment {
   resolved: boolean;
   position?: { start: number; end: number }; // Text selection position
   mentions?: string[]; // @mentions in the comment
+  selectedText?: string; // The text that was highlighted
+  replies?: CommentReply[]; // Thread of replies
+  paragraphId?: string; // Link to paragraph lineage
+}
+
+export interface CommentReply {
+  id: string;
+  userId: string;
+  content: string;
+  timestamp: Date;
+  mentions?: string[];
 }
 
 export interface ParagraphLineage {
