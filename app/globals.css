@@ -3,8 +3,13 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
-  /* Standard base font size */
-  font-size: 16px;
+  /* Force standard base font size */
+  font-size: 16px !important;
+}
+
+/* Force 16px base across all contexts */
+:root, html, body {
+  font-size: 16px !important;
 }
 
 /* Vertical text utilities */
@@ -123,11 +128,6 @@ body {
 
 html {
   font-size: 16px !important;
-}
-
-/* Force consistent font sizes across all elements */
-body, div, span, p, h1, h2, h3, h4, h5, h6, button, input, textarea, select {
-  font-size: inherit !important;
 }
 
 /* Override any potential zoom or scale issues */
