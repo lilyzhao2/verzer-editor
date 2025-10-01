@@ -14,7 +14,7 @@ import { ParallelView } from '@/components/ParallelView';
 import { DebugPanel } from '@/components/DebugPanel';
 import { SmartMerge } from '@/components/SmartMerge';
 import { WelcomePage } from '@/components/WelcomePage';
-import { MessageSquare, FileText, GitBranch, Settings, Scale, Layers, Bug, ChevronDown, GitMerge, Clock } from 'lucide-react';
+import { MessageCircle, FileText, GitBranch, Settings, Scale, Layers, Bug, ChevronDown, GitMerge, Clock } from 'lucide-react';
 import { formatVersionNumber } from '@/lib/formatVersion';
 
 function ViewModeTabs() {
@@ -23,7 +23,7 @@ function ViewModeTabs() {
   const tabs = [
     { id: 'context' as const, label: 'Context', icon: Settings, description: 'Project configuration' },
     { id: 'document' as const, label: 'Document', icon: FileText, description: 'Focus on writing' },
-    { id: 'parallel' as const, label: 'Parallel', icon: Layers, description: 'Work on multiple versions simultaneously' },
+          { id: 'parallel' as const, label: 'Parallel Work', icon: Layers, description: 'Work on multiple versions simultaneously' },
     { id: 'compare' as const, label: 'Compare', icon: Scale, description: 'Compare versions side-by-side' },
     { id: 'smartmerge' as const, label: 'Smart Merge', icon: GitMerge, description: 'Review and cherry-pick the best changes' },
     { id: 'iterate' as const, label: 'History (In Progress)', icon: Clock, description: 'Track changes and collaborate' },
@@ -250,7 +250,7 @@ function MainContent() {
         {renderMainView()}
       </div>
 
-      {/* AI Agent Chat - Present for all views except parallel */}
+      {/* Verzer AI Chat - Present for all views except parallel */}
       {/* Right Sidebar - AI Chat */}
       {state.viewMode !== 'parallel' && (
         <>
@@ -274,9 +274,9 @@ function MainContent() {
                 onClick={() => setChatMinimized(false)}
                 className="flex-1 flex flex-col items-center justify-center gap-3 hover:bg-gray-100 transition-colors py-4"
               >
-                <MessageSquare className="w-8 h-8 text-gray-700" />
+                <MessageCircle className="w-8 h-8 text-gray-700" />
                 <span className="text-sm font-medium text-gray-700 writing-mode-vertical-rl">
-                  AI Agent
+                  Verzer AI
                 </span>
               </button>
             ) : (
@@ -284,8 +284,8 @@ function MainContent() {
               <>
                 <div className="px-4 py-3 border-b bg-white flex items-center justify-between">
                   <h3 className="text-sm font-semibold text-gray-800 flex items-center gap-2">
-                    <MessageSquare className="w-4 h-4" />
-                    AI Agent
+                    <MessageCircle className="w-4 h-4" />
+                    Verzer AI
                   </h3>
                   <button
                     onClick={() => setChatMinimized(true)}

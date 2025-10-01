@@ -243,7 +243,7 @@ export function WelcomePage() {
                     
                     <div>
                       <strong className="text-gray-800">3. Use AI Assistance</strong>
-                      <p>Open the AI Agent panel on the right to get writing suggestions and improvements.</p>
+                      <p>Open the Verzer AI panel on the right to get writing suggestions and improvements.</p>
                     </div>
                     
                     <div>
