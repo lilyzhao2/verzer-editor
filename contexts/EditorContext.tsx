@@ -49,6 +49,7 @@ interface EditorContextType {
   toggleDebugMode: () => void;
   setLastSystemPrompt: (prompt: string) => void;
   addChatMessage: (prompt: string, response: string) => void;
+  setDocumentName: (name: string) => void;
   // Paragraph lineage tracking
   trackParagraphChange: (versionId: string, promptId: string, prompt: string, paragraphIndex: number, content: string) => void;
   lockParagraph: (paragraphId: string) => void;
@@ -127,7 +128,8 @@ export function EditorProvider({ children }: { children: React.ReactNode }) {
       debugMode: false,
       lastSystemPrompt: null,
       paragraphLineage: [],
-      changeMetadata: []
+      changeMetadata: [],
+      documentName: 'Untitled Document'
     };
   });
 
@@ -694,6 +696,13 @@ Break this into 3-7 clear tasks. Be specific and actionable. Return ONLY the JSO
     }));
   }, []);
 
+  const setDocumentName = useCallback((name: string) => {
+    setState(prev => ({
+      ...prev,
+      documentName: name,
+    }));
+  }, []);
+
   const addChatMessage = useCallback((prompt: string, response: string) => {
     const newChatMessage: ChatMessage = {
       id: `chat-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
@@ -1256,6 +1265,7 @@ Break this into 3-7 clear tasks. Be specific and actionable. Return ONLY the JSO
         toggleDebugMode,
         setLastSystemPrompt,
         addChatMessage,
+        setDocumentName,
         trackParagraphChange,
         lockParagraph,
         unlockParagraph,

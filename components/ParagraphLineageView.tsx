@@ -10,11 +10,16 @@ interface ParagraphLineageViewProps {
 }
 
 export function ParagraphLineageView({ versionId, onRevert }: ParagraphLineageViewProps) {
-  const { state, getParagraphLineage, lockParagraph, unlockParagraph, revertParagraph } = useEditor();
+  const { state, getParagraphLineage, lockParagraph, unlockParagraph, revertParagraph, addComment } = useEditor();
   const [selectedParagraph, setSelectedParagraph] = useState<string | null>(null);
   
   const lineage = getParagraphLineage(versionId);
   const currentVersion = state.versions.find(v => v.id === versionId);
+  
+  // Get comments linked to paragraphs
+  const paragraphComments = state.comments.filter(c => 
+    c.versionId === versionId && c.paragraphId
+  );
   
   if (!currentVersion) {
     return (
@@ -53,6 +58,9 @@ export function ParagraphLineageView({ versionId, onRevert }: ParagraphLineageVi
             );
           }
 
+          const paraComments = paragraphComments.filter(c => c.paragraphId === paragraphLineage.id);
+          const unresolvedCount = paraComments.filter(c => !c.resolved).length;
+          
           return (
             <div 
               key={paragraphLineage.id}
@@ -71,6 +79,17 @@ export function ParagraphLineageView({ versionId, onRevert }: ParagraphLineageVi
                   </span>
                   {paragraphLineage.isLocked && (
                     <Lock className="w-4 h-4 text-red-500" />
+                  )}
+                  {paraComments.length > 0 && (
+                    <div className="flex items-center gap-1">
+                      <MessageSquare className="w-4 h-4 text-blue-500" />
+                      <span className="text-xs font-medium text-blue-600">
+                        {paraComments.length}
+                        {unresolvedCount > 0 && (
+                          <span className="ml-1 text-amber-600">({unresolvedCount} unresolved)</span>
+                        )}
+                      </span>
+                    </div>
                   )}
                 </div>
                 <div className="flex items-center gap-1">

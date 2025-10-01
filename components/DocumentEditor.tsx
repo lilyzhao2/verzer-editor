@@ -21,7 +21,8 @@ export function DocumentEditor() {
     createCheckpoint,
     updateTabDirtyState,
     addComment,
-    resolveComment
+    resolveComment,
+    setDocumentName
   } = useEditor();
   const currentVersion = getCurrentVersion();
   const [localContent, setLocalContent] = useState(currentVersion?.content || '');
@@ -31,7 +32,6 @@ export function DocumentEditor() {
   const [showUpload, setShowUpload] = useState(false);
   const [zoomLevel, setZoomLevel] = useState(100);
   const [isPrintView, setIsPrintView] = useState(true); // Auto-enable print view
-  const [documentName, setDocumentName] = useState('Untitled');
   const [showUserBranchModal, setShowUserBranchModal] = useState(false);
   const [newUserName, setNewUserName] = useState('');
   const [showLineagePanel, setShowLineagePanel] = useState(false);
@@ -238,12 +238,20 @@ export function DocumentEditor() {
       {/* Main Header - All on one line */}
       <div className="px-6 py-4 border-b bg-gray-50 flex-shrink-0">
         <div className="flex items-center justify-between gap-5">
-          {/* Left: Version Info */}
+          {/* Left: Document Name & Version Info */}
           <div className="flex items-center gap-4">
-            <h2 className="text-2xl font-bold text-black">
+            <input
+              type="text"
+              value={state.documentName}
+              onChange={(e) => setDocumentName(e.target.value)}
+              className="text-xl font-bold text-black bg-transparent border-b-2 border-transparent hover:border-gray-300 focus:border-blue-500 focus:outline-none px-1 transition-colors"
+              placeholder="Document Name"
+            />
+            <div className="text-gray-400 text-xl">|</div>
+            <h2 className="text-xl font-semibold text-gray-700">
               {formatVersionNumber(currentVersion?.number || '0')}
               {hasUnsavedChanges && (
-                <span className="ml-2 w-3.5 h-3.5 bg-amber-500 rounded-full inline-block" title="Unsaved changes"></span>
+                <span className="ml-2 w-3 h-3 bg-amber-500 rounded-full inline-block" title="Unsaved changes"></span>
               )}
             </h2>
             

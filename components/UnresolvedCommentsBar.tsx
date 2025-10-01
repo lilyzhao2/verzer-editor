@@ -98,12 +98,14 @@ export function UnresolvedCommentsBar({
             </span>
           </div>
           
-          {/* Selected Text */}
+          {/* Selected Text Preview - Show only first 30 chars */}
           {currentComment.selectedText && (
             <div className="mb-2 p-2 bg-yellow-50 border-l-4 border-yellow-400 rounded">
               <p className="text-xs text-gray-600 mb-1">On text:</p>
               <p className="text-sm text-gray-900 italic line-clamp-2">
-                "{currentComment.selectedText}"
+                "{currentComment.selectedText.length > 30 
+                  ? currentComment.selectedText.substring(0, 30) + '...' 
+                  : currentComment.selectedText}"
               </p>
             </div>
           )}

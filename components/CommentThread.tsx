@@ -133,11 +133,15 @@ export function CommentThread({
         </div>
       </div>
 
-      {/* Selected Text */}
+      {/* Selected Text Preview - Show only first 50 chars */}
       {comment.selectedText && (
         <div className="mb-3 p-2 bg-yellow-50 border-l-4 border-yellow-400 rounded">
           <p className="text-xs text-gray-600 mb-1">Commented on:</p>
-          <p className="text-sm text-gray-900 italic">"{comment.selectedText}"</p>
+          <p className="text-sm text-gray-900 italic">
+            "{comment.selectedText.length > 50 
+              ? comment.selectedText.substring(0, 50) + '...' 
+              : comment.selectedText}"
+          </p>
           {onNavigate && (
             <button
               onClick={onNavigate}

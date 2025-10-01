@@ -198,4 +198,5 @@ export interface EditorState {
   lastSystemPrompt: string | null; // Last system prompt sent to AI
   paragraphLineage: ParagraphLineage[]; // Track paragraph-level changes
   changeMetadata: ChangeMetadata[]; // Track all changes with metadata
+  documentName: string; // Persistent document name
 }
