@@ -122,7 +122,21 @@ body {
 }
 
 html {
-  font-size: 16px;
+  font-size: 16px !important;
+}
+
+/* Force consistent font sizes across all elements */
+body, div, span, p, h1, h2, h3, h4, h5, h6, button, input, textarea, select {
+  font-size: inherit !important;
+}
+
+/* Override any potential zoom or scale issues */
+body {
+  transform: none !important;
+  zoom: 1 !important;
+  -webkit-text-size-adjust: 100% !important;
+  -moz-text-size-adjust: 100% !important;
+  -ms-text-size-adjust: 100% !important;
 }
 
 /* Tiptap Editor Styles */

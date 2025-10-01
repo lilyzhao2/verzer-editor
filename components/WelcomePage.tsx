@@ -182,7 +182,7 @@ export function WelcomePage() {
                       <Eye className="w-4 h-4 text-green-600 mt-1 flex-shrink-0" />
                       <div>
                         <strong className="text-gray-800">Can we see your content?</strong>
-                        <p>No, we cannot see your documents. All processing happens locally in your browser.</p>
+                        <p>No, we cannot see your documents. All data is stored locally in your browser only.</p>
                       </div>
                     </div>
                     
@@ -190,7 +190,7 @@ export function WelcomePage() {
                       <EyeOff className="w-4 h-4 text-red-600 mt-1 flex-shrink-0" />
                       <div>
                         <strong className="text-gray-800">Is your content confidential?</strong>
-                        <p>Yes! Your documents are never sent to our servers. They stay private on your device.</p>
+                        <p>Yes! Your documents are stored locally in your browser. Only AI processing requests are sent to Anthropic's servers.</p>
                       </div>
                     </div>
                     
@@ -198,7 +198,7 @@ export function WelcomePage() {
                       <Shield className="w-4 h-4 text-blue-600 mt-1 flex-shrink-0" />
                       <div>
                         <strong className="text-gray-800">Do we train on your answers?</strong>
-                        <p>No, we don't use your content to train AI models. Your writing stays yours.</p>
+                        <p>No, we don't use your content to train AI models. Anthropic may use requests for model improvement, but your content stays private to you.</p>
                       </div>
                     </div>
                     
@@ -206,7 +206,7 @@ export function WelcomePage() {
                       <FileText className="w-4 h-4 text-purple-600 mt-1 flex-shrink-0" />
                       <div>
                         <strong className="text-gray-800">Current storage system:</strong>
-                        <p>We currently have no persistent storage system. All data is stored locally in your browser. 
+                        <p>All document versions, comments, and settings are stored locally in your browser's localStorage. 
                         We're working on cloud sync options for the future!</p>
                       </div>
                     </div>
