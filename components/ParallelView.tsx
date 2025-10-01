@@ -565,14 +565,14 @@ export function ParallelView() {
 
   return (
     <div className="h-full bg-gray-50 overflow-auto" ref={containerRef}>
-      <div className="max-w-7xl mx-auto p-6">
-        {/* Header */}
-        <div className="mb-6">
-        <div className="flex items-center justify-between mb-3">
+      <div className="max-w-full mx-auto p-4">
+        {/* Compact Header */}
+        <div className="mb-4">
+        <div className="flex items-center justify-between mb-2">
           <div>
-            <h2 className="text-2xl font-bold text-black">Parallel Document Tree</h2>
-            <p className="text-gray-600 mt-1">
-              {branches.length} active {branches.length === 1 ? 'version' : 'versions'} • Work on multiple versions simultaneously
+            <h2 className="text-xl font-bold text-black">Parallel View</h2>
+            <p className="text-sm text-gray-600">
+              {branches.length} {branches.length === 1 ? 'version' : 'versions'} • Work simultaneously
             </p>
           </div>
         </div>
@@ -670,9 +670,9 @@ export function ParallelView() {
             </button>
           </div>
         ) : (
-          <div className="flex gap-4 overflow-x-auto pb-4 px-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4">
             {branches.filter(b => !shouldHideBranch(b)).map(branch => (
-            <div key={branch.id} className="flex-shrink-0" style={{ width: '450px' }}>
+            <div key={branch.id} className="flex-shrink-0 w-full">
               {/* Version Header */}
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">

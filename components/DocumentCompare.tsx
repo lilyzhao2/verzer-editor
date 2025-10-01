@@ -14,12 +14,13 @@ import * as Diff from 'diff';
 
 interface Change {
   id: string;
-  type: 'inserted' | 'deleted' | 'replaced' | 'moved';
+  type: 'inserted' | 'deleted' | 'replaced' | 'moved' | 'modification';
   leftText?: string;
   rightText?: string;
   leftIndex: number;
   rightIndex: number;
   position: number; // Percentage position in document (0-100)
+  similarity?: number; // For moved content similarity score
 }
 
 export function DocumentCompare() {
@@ -28,13 +29,16 @@ export function DocumentCompare() {
   const compareVersion = state.versions.find(v => v.id === state.compareVersionId);
   
   const [activeFilters, setActiveFilters] = useState<Set<string>>(
-    new Set(['inserted', 'deleted', 'replaced', 'moved'])
+    new Set(['inserted', 'deleted', 'replaced', 'moved', 'modification'])
   );
   const [starredChanges, setStarredChanges] = useState<Set<string>>(new Set());
   const [currentChangeIndex, setCurrentChangeIndex] = useState(0);
   const [searchTerm, setSearchTerm] = useState('');
   const [viewMode, setViewMode] = useState<'word' | 'sentence' | 'paragraph'>('word');
   const [showUnchanged, setShowUnchanged] = useState(true);
+  const [selectedChange, setSelectedChange] = useState<string | null>(null);
+  const [commentText, setCommentText] = useState('');
+  const [comments, setComments] = useState<Map<string, string>>(new Map());
   
   const leftPanelRef = useRef<HTMLDivElement>(null);
   const rightPanelRef = useRef<HTMLDivElement>(null);
@@ -47,7 +51,18 @@ export function DocumentCompare() {
     return div.textContent || '';
   };
   
-  // Compute all changes with word/sentence/paragraph-level diff
+  // Helper function to calculate text similarity
+  const calculateSimilarity = (text1: string, text2: string): number => {
+    const words1 = text1.toLowerCase().split(/\s+/);
+    const words2 = text2.toLowerCase().split(/\s+/);
+    const set1 = new Set(words1);
+    const set2 = new Set(words2);
+    const intersection = new Set([...set1].filter(x => set2.has(x)));
+    const union = new Set([...set1, ...set2]);
+    return intersection.size / union.size;
+  };
+
+  // Compute all changes with improved moved content detection
   const changes = useMemo((): Change[] => {
     if (!currentVersion || !compareVersion) return [];
     
@@ -70,23 +85,41 @@ export function DocumentCompare() {
     let rightIdx = 0;
     const totalLength = Math.max(leftText.length, rightText.length);
     
+    // First pass: detect basic changes
     for (let i = 0; i < diff.length; i++) {
       const part = diff[i];
       
       if (part.removed) {
         const nextPart = diff[i + 1];
         if (nextPart && nextPart.added) {
-          // Replacement
+          // Check if this might be a move or modification
+          const similarity = calculateSimilarity(part.value, nextPart.value);
           const position = (leftIdx / totalLength) * 100;
-          detectedChanges.push({
-            id: `change-${changeId++}`,
-            type: 'replaced',
-            leftText: part.value,
-            rightText: nextPart.value,
-            leftIndex: leftIdx,
-            rightIndex: rightIdx,
-            position: position
-          });
+          
+          if (similarity > 0.3) {
+            // High similarity suggests modification or move
+            detectedChanges.push({
+              id: `change-${changeId++}`,
+              type: similarity > 0.7 ? 'modification' : 'moved',
+              leftText: part.value,
+              rightText: nextPart.value,
+              leftIndex: leftIdx,
+              rightIndex: rightIdx,
+              position: position,
+              similarity: similarity
+            });
+          } else {
+            // Low similarity suggests replacement
+            detectedChanges.push({
+              id: `change-${changeId++}`,
+              type: 'replaced',
+              leftText: part.value,
+              rightText: nextPart.value,
+              leftIndex: leftIdx,
+              rightIndex: rightIdx,
+              position: position
+            });
+          }
           leftIdx += part.value.length;
           rightIdx += nextPart.value.length;
           i++; // Skip next
@@ -143,14 +176,23 @@ export function DocumentCompare() {
       
       if (isLeft) {
         if (part.removed) {
+          const changeId = changeObj?.id || `change-${i}-left`;
+          const isSelected = selectedChange === changeId;
           elements.push(
             <span
               key={`diff-${i}`}
               ref={(el) => changeObj && el && changeRefs.current.set(changeObj.id + '-left', el)}
-              className="bg-red-100 text-red-900 line-through decoration-red-500"
+              className={`bg-red-100 text-red-900 line-through decoration-red-500 cursor-pointer hover:bg-red-200 transition-colors ${
+                isSelected ? 'ring-2 ring-blue-500 ring-offset-1' : ''
+              }`}
               data-change-id={changeObj?.id}
+              onClick={() => setSelectedChange(changeId)}
+              title="Click to add comment"
             >
               {part.value}
+              {comments.has(changeId) && (
+                <span className="ml-1 text-blue-600 text-xs">💬</span>
+              )}
             </span>
           );
           idx += part.value.length;
@@ -160,14 +202,23 @@ export function DocumentCompare() {
         }
       } else {
         if (part.added) {
+          const changeId = changeObj?.id || `change-${i}-right`;
+          const isSelected = selectedChange === changeId;
           elements.push(
             <span
               key={`diff-${i}`}
               ref={(el) => changeObj && el && changeRefs.current.set(changeObj.id + '-right', el)}
-              className="bg-green-100 text-green-900 font-medium"
+              className={`bg-green-100 text-green-900 font-medium cursor-pointer hover:bg-green-200 transition-colors ${
+                isSelected ? 'ring-2 ring-blue-500 ring-offset-1' : ''
+              }`}
               data-change-id={changeObj?.id}
+              onClick={() => setSelectedChange(changeId)}
+              title="Click to add comment"
             >
               {part.value}
+              {comments.has(changeId) && (
+                <span className="ml-1 text-blue-600 text-xs">💬</span>
+              )}
             </span>
           );
           idx += part.value.length;
@@ -201,6 +252,7 @@ export function DocumentCompare() {
     deleted: changes.filter(c => c.type === 'deleted').length,
     replaced: changes.filter(c => c.type === 'replaced').length,
     moved: changes.filter(c => c.type === 'moved').length,
+    modification: changes.filter(c => c.type === 'modification').length,
     starred: starredChanges.size,
     total: changes.length
   }), [changes, starredChanges]);
@@ -393,7 +445,9 @@ export function DocumentCompare() {
                     change.type === 'inserted' ? 'bg-green-500 hover:bg-green-600' :
                     change.type === 'deleted' ? 'bg-red-500 hover:bg-red-600' :
                     change.type === 'replaced' ? 'bg-blue-500 hover:bg-blue-600' :
-                    'bg-purple-500 hover:bg-purple-600'
+                    change.type === 'moved' ? 'bg-purple-500 hover:bg-purple-600' :
+                    change.type === 'modification' ? 'bg-orange-500 hover:bg-orange-600' :
+                    'bg-gray-500 hover:bg-gray-600'
                   }`}
                   style={{ 
                     top: `${change.position}%`,
@@ -476,7 +530,70 @@ export function DocumentCompare() {
               onClick={() => toggleFilter('moved')}
             />
           )}
+          {stats.modification > 0 && (
+            <FilterButton
+              active={activeFilters.has('modification')}
+              count={stats.modification}
+              label="Modifications"
+              color="orange"
+              onClick={() => toggleFilter('modification')}
+            />
+          )}
         </div>
+
+        {/* Comment input */}
+        {selectedChange && (
+          <div className="p-4 border-b bg-blue-50">
+            <h3 className="text-sm font-semibold text-gray-700 mb-2">Add Comment</h3>
+            <div className="space-y-2">
+              <textarea
+                value={commentText}
+                onChange={(e) => setCommentText(e.target.value)}
+                placeholder="Add a comment about this change..."
+                className="w-full p-2 text-sm border border-gray-300 rounded resize-none"
+                rows={3}
+              />
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    if (commentText.trim()) {
+                      setComments(prev => new Map(prev.set(selectedChange, commentText)));
+                      setCommentText('');
+                      setSelectedChange(null);
+                    }
+                  }}
+                  className="px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700"
+                >
+                  Save
+                </button>
+                <button
+                  onClick={() => {
+                    setSelectedChange(null);
+                    setCommentText('');
+                  }}
+                  className="px-3 py-1 bg-gray-300 text-gray-700 text-sm rounded hover:bg-gray-400"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Comments list */}
+        {comments.size > 0 && (
+          <div className="p-4 border-b">
+            <h3 className="text-sm font-semibold text-gray-700 mb-2">Comments</h3>
+            <div className="space-y-2 max-h-40 overflow-y-auto">
+              {Array.from(comments.entries()).map(([changeId, comment]) => (
+                <div key={changeId} className="p-2 bg-white rounded border text-xs">
+                  <div className="font-medium text-gray-600 mb-1">Change {changeId}</div>
+                  <div className="text-gray-800">{comment}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
         
         {/* Change list */}
         <div className="flex-1 overflow-auto p-3 space-y-2">
