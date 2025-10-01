@@ -10,7 +10,7 @@ import { CompareView } from '@/components/CompareView';
 import { ClearDataButton } from '@/components/ClearDataButton';
 import { ProjectSetup } from '@/components/ProjectSetup';
 import { LegalCompare } from '@/components/LegalCompare';
-import { CompareDocuments } from '@/components/CompareDocuments';
+import { DocumentCompare } from '@/components/DocumentCompare';
 import { TabBar } from '@/components/TabBar';
 import { ParallelView } from '@/components/ParallelView';
 import { DebugPanel } from '@/components/DebugPanel';
@@ -205,7 +205,7 @@ function MainContent() {
 
     // Compare View: Professional document comparison
     if (state.viewMode === 'compare') {
-      return <CompareDocuments />;
+      return <DocumentCompare />;
     }
 
     // Iterate View: Compare and iterate on versions
