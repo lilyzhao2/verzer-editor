@@ -52,27 +52,30 @@ export function DocumentEditor() {
   const handleContentChange = useCallback((newContent: string) => {
     if (isUpdatingRef.current) return;
     
-    setLocalContent(newContent);
-    setHasUnsavedChanges(true);
-    
-    // Update tab dirty state
-    const activeTab = state.tabs?.find(t => t.id === state.activeTabId);
-    if (activeTab && !activeTab.isDirty) {
-      updateTabDirtyState(activeTab.id, true);
-    }
-    
-    // Auto-save checkpoint after 10 seconds of no typing
-    if (saveTimeoutRef.current) {
-      clearTimeout(saveTimeoutRef.current);
-    }
-    
-    saveTimeoutRef.current = setTimeout(() => {
-      if (currentVersion) {
-        createCheckpoint(currentVersion.id, newContent, 'auto-save');
-        setHasUnsavedChanges(false);
+    // Defer state updates to avoid setState during render
+    setTimeout(() => {
+      setLocalContent(newContent);
+      setHasUnsavedChanges(true);
+      
+      // Update tab dirty state
+      const activeTab = state.tabs?.find(t => t.id === state.activeTabId);
+      if (activeTab && !activeTab.isDirty) {
+        updateTabDirtyState(activeTab.id, true);
       }
-    }, 10000);
-  }, [currentVersion, createCheckpoint]);
+      
+      // Auto-save checkpoint after 10 seconds of no typing
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+      
+      saveTimeoutRef.current = setTimeout(() => {
+        if (currentVersion) {
+          createCheckpoint(currentVersion.id, newContent, 'auto-save');
+          setHasUnsavedChanges(false);
+        }
+      }, 10000);
+    }, 0);
+  }, [currentVersion, createCheckpoint, state.tabs, state.activeTabId, updateTabDirtyState]);
 
   const handleOverwriteVersion = () => {
     if (hasUnsavedChanges && currentVersion) {

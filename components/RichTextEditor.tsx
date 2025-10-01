@@ -168,9 +168,11 @@ export const RichTextEditor = forwardRef<any, RichTextEditorProps>(({
   }, []);
 
   // Update content when it changes from outside (e.g., version switch)
-  if (editor && editor.getHTML() !== content) {
-    editor.commands.setContent(content);
-  }
+  useEffect(() => {
+    if (editor && editor.getHTML() !== content) {
+      editor.commands.setContent(content);
+    }
+  }, [editor, content]);
 
   // Handle keyboard shortcuts
   const handleKeyDown = (e: React.KeyboardEvent) => {

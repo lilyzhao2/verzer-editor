@@ -24,7 +24,7 @@ function ViewModeTabs() {
     { id: 'context' as const, label: 'Context', icon: Settings, description: 'Project configuration' },
     { id: 'document' as const, label: 'Document', icon: FileText, description: 'Focus on writing' },
     { id: 'parallel' as const, label: 'Parallel', icon: Layers, description: 'Work on multiple versions simultaneously' },
-    { id: 'compare' as const, label: 'Compare', icon: Scale, description: 'Legal document comparison' },
+    { id: 'compare' as const, label: 'Compare', icon: Scale, description: 'Compare versions side-by-side' },
     { id: 'smartmerge' as const, label: 'Smart Merge', icon: GitMerge, description: 'Review and cherry-pick the best changes' },
     { id: 'iterate' as const, label: 'History (In Progress)', icon: Clock, description: 'Track changes and collaborate' },
   ];

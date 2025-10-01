@@ -45,192 +45,302 @@ export function DocumentCompare() {
   const rightPanelRef = useRef<HTMLDivElement>(null);
   const changeRefs = useRef<Map<string, HTMLElement>>(new Map());
   
-  // Strip HTML for comparison
+  // Strip HTML and extract paragraphs
   const stripHTML = (html: string): string => {
     const div = document.createElement('div');
     div.innerHTML = html;
     return div.textContent || '';
   };
   
-  // Helper function to calculate text similarity
+  // Extract paragraphs from HTML
+  const extractParagraphs = (html: string): string[] => {
+    const div = document.createElement('div');
+    div.innerHTML = html;
+    const paragraphs: string[] = [];
+    
+    // Get all paragraph-like elements
+    const elements = div.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li');
+    elements.forEach(el => {
+      const text = (el.textContent || '').trim();
+      if (text) {
+        paragraphs.push(text);
+      }
+    });
+    
+    return paragraphs.length > 0 ? paragraphs : [div.textContent || ''].filter(Boolean);
+  };
+  
+  // Extract sentences from text
+  const extractSentences = (text: string): string[] => {
+    // Split on sentence boundaries (., !, ?) followed by space or newline
+    return text.split(/[.!?]+\s+/).filter(s => s.trim().length > 0);
+  };
+  
+  // Extract words from text
+  const extractWords = (text: string): string[] => {
+    return text.split(/\s+/).filter(w => w.trim().length > 0);
+  };
+  
+  // Advanced similarity calculation using Levenshtein distance
   const calculateSimilarity = (text1: string, text2: string): number => {
-    const words1 = text1.toLowerCase().split(/\s+/);
-    const words2 = text2.toLowerCase().split(/\s+/);
+    const words1 = text1.toLowerCase().split(/\s+/).filter(Boolean);
+    const words2 = text2.toLowerCase().split(/\s+/).filter(Boolean);
+    
+    if (words1.length === 0 && words2.length === 0) return 1;
+    if (words1.length === 0 || words2.length === 0) return 0;
+    
     const set1 = new Set(words1);
     const set2 = new Set(words2);
     const intersection = new Set([...set1].filter(x => set2.has(x)));
     const union = new Set([...set1, ...set2]);
+    
     return intersection.size / union.size;
   };
 
-  // Compute all changes with improved moved content detection
+  // Compute all changes with smart paragraph/sentence/word tracking
   const changes = useMemo((): Change[] => {
     if (!currentVersion || !compareVersion) return [];
     
-    const leftText = stripHTML(compareVersion.content);
-    const rightText = stripHTML(currentVersion.content);
-    
-    // Choose diff function based on view mode
-    let diff;
-    if (viewMode === 'paragraph') {
-      diff = Diff.diffLines(leftText, rightText);
-    } else if (viewMode === 'sentence') {
-      diff = Diff.diffSentences(leftText, rightText);
-    } else {
-      diff = Diff.diffWords(leftText, rightText);
-    }
-    
     const detectedChanges: Change[] = [];
     let changeId = 0;
-    let leftIdx = 0;
-    let rightIdx = 0;
-    const totalLength = Math.max(leftText.length, rightText.length);
     
-    // First pass: detect basic changes
-    for (let i = 0; i < diff.length; i++) {
-      const part = diff[i];
-      
-      if (part.removed) {
-        const nextPart = diff[i + 1];
-        if (nextPart && nextPart.added) {
-          // Check if this might be a move or modification
-          const similarity = calculateSimilarity(part.value, nextPart.value);
-          const position = (leftIdx / totalLength) * 100;
-          
-          if (similarity > 0.3) {
-            // High similarity suggests modification or move
-            detectedChanges.push({
-              id: `change-${changeId++}`,
-              type: similarity > 0.7 ? 'modification' : 'moved',
-              leftText: part.value,
-              rightText: nextPart.value,
-              leftIndex: leftIdx,
-              rightIndex: rightIdx,
-              position: position,
-              similarity: similarity
-            });
-          } else {
-            // Low similarity suggests replacement
-            detectedChanges.push({
-              id: `change-${changeId++}`,
-              type: 'replaced',
-              leftText: part.value,
-              rightText: nextPart.value,
-              leftIndex: leftIdx,
-              rightIndex: rightIdx,
-              position: position
-            });
-          }
-          leftIdx += part.value.length;
-          rightIdx += nextPart.value.length;
-          i++; // Skip next
-        } else {
-          // Deletion
-          const position = (leftIdx / totalLength) * 100;
+    // Extract units based on view mode
+    let leftUnits: string[];
+    let rightUnits: string[];
+    
+    if (viewMode === 'paragraph') {
+      leftUnits = extractParagraphs(compareVersion.content);
+      rightUnits = extractParagraphs(currentVersion.content);
+    } else if (viewMode === 'sentence') {
+      const leftText = stripHTML(compareVersion.content);
+      const rightText = stripHTML(currentVersion.content);
+      leftUnits = extractSentences(leftText);
+      rightUnits = extractSentences(rightText);
+    } else { // word
+      const leftText = stripHTML(compareVersion.content);
+      const rightText = stripHTML(currentVersion.content);
+      leftUnits = extractWords(leftText);
+      rightUnits = extractWords(rightText);
+    }
+    
+    // Build similarity matrix to detect moved content
+    const similarityMatrix: number[][] = [];
+    for (let i = 0; i < leftUnits.length; i++) {
+      similarityMatrix[i] = [];
+      for (let j = 0; j < rightUnits.length; j++) {
+        similarityMatrix[i][j] = calculateSimilarity(leftUnits[i], rightUnits[j]);
+      }
+    }
+    
+    // Track which units have been matched
+    const matchedLeft = new Set<number>();
+    const matchedRight = new Set<number>();
+    
+    // First pass: find exact or near-exact matches (moved content)
+    for (let i = 0; i < leftUnits.length; i++) {
+      for (let j = 0; j < rightUnits.length; j++) {
+        if (matchedLeft.has(i) || matchedRight.has(j)) continue;
+        
+        const similarity = similarityMatrix[i][j];
+        
+        // High similarity and position changed = moved
+        if (similarity > 0.85 && Math.abs(i - j) > 1) {
           detectedChanges.push({
             id: `change-${changeId++}`,
-            type: 'deleted',
-            leftText: part.value,
-            leftIndex: leftIdx,
-            rightIndex: rightIdx,
-            position: position
+            type: 'moved',
+            leftText: leftUnits[i],
+            rightText: rightUnits[j],
+            leftIndex: i,
+            rightIndex: j,
+            position: (i / leftUnits.length) * 100,
+            similarity: similarity
           });
-          leftIdx += part.value.length;
+          matchedLeft.add(i);
+          matchedRight.add(j);
         }
-      } else if (part.added) {
-        // Insertion
-        const position = (rightIdx / totalLength) * 100;
+        // Very high similarity at same position = minor modification
+        else if (similarity > 0.7 && i === j) {
+          if (similarity < 1.0) {
+            detectedChanges.push({
+              id: `change-${changeId++}`,
+              type: 'modification',
+              leftText: leftUnits[i],
+              rightText: rightUnits[j],
+              leftIndex: i,
+              rightIndex: j,
+              position: (i / leftUnits.length) * 100,
+              similarity: similarity
+            });
+          }
+          matchedLeft.add(i);
+          matchedRight.add(j);
+        }
+        // Medium similarity = replacement
+        else if (similarity > 0.3 && similarity <= 0.7 && i === j) {
+          detectedChanges.push({
+            id: `change-${changeId++}`,
+            type: 'replaced',
+            leftText: leftUnits[i],
+            rightText: rightUnits[j],
+            leftIndex: i,
+            rightIndex: j,
+            position: (i / leftUnits.length) * 100,
+            similarity: similarity
+          });
+          matchedLeft.add(i);
+          matchedRight.add(j);
+        }
+      }
+    }
+    
+    // Second pass: detect deletions and insertions
+    for (let i = 0; i < leftUnits.length; i++) {
+      if (!matchedLeft.has(i)) {
+        detectedChanges.push({
+          id: `change-${changeId++}`,
+          type: 'deleted',
+          leftText: leftUnits[i],
+          leftIndex: i,
+          rightIndex: -1,
+          position: (i / leftUnits.length) * 100
+        });
+      }
+    }
+    
+    for (let j = 0; j < rightUnits.length; j++) {
+      if (!matchedRight.has(j)) {
         detectedChanges.push({
           id: `change-${changeId++}`,
           type: 'inserted',
-          rightText: part.value,
-          leftIndex: leftIdx,
-          rightIndex: rightIdx,
-          position: position
+          rightText: rightUnits[j],
+          leftIndex: -1,
+          rightIndex: j,
+          position: (j / rightUnits.length) * 100
         });
-        rightIdx += part.value.length;
-      } else {
-        // Unchanged
-        leftIdx += part.value.length;
-        rightIdx += part.value.length;
       }
     }
     
-    return detectedChanges;
+    // Sort changes by position
+    return detectedChanges.sort((a, b) => a.position - b.position);
   }, [currentVersion, compareVersion, viewMode]);
   
-  // Render document with highlighting
+  // Render document with highlighting based on view mode
   const renderHighlightedDocument = (version: { content: string }, isLeft: boolean) => {
-    if (!version || !compareVersion) return null;
+    if (!version || !compareVersion || !currentVersion) return null;
     
-    const text = stripHTML(version.content);
-    const otherText = stripHTML(isLeft ? currentVersion?.content || '' : compareVersion.content);
+    // Extract units based on view mode
+    let units: string[];
+    if (viewMode === 'paragraph') {
+      units = extractParagraphs(version.content);
+    } else if (viewMode === 'sentence') {
+      const text = stripHTML(version.content);
+      units = extractSentences(text);
+    } else {
+      const text = stripHTML(version.content);
+      units = extractWords(text);
+    }
     
-    const diff = Diff.diffWords(isLeft ? text : otherText, isLeft ? otherText : text);
     const elements: React.ReactNode[] = [];
-    let idx = 0;
     
-    diff.forEach((part, i) => {
-      const changeObj = changes.find(c => 
-        (isLeft && c.leftIndex === idx) || (!isLeft && c.rightIndex === idx)
+    units.forEach((unit, idx) => {
+      // Find if this unit has a change
+      const change = changes.find(c => 
+        isLeft ? c.leftIndex === idx : c.rightIndex === idx
       );
       
-      if (isLeft) {
-        if (part.removed) {
-          const changeId = changeObj?.id || `change-${i}-left`;
-          const isSelected = selectedChange === changeId;
-          elements.push(
-            <span
-              key={`diff-${i}`}
-              ref={(el) => changeObj && el && changeRefs.current.set(changeObj.id + '-left', el)}
-              className={`bg-red-100 text-red-900 line-through decoration-red-500 cursor-pointer hover:bg-red-200 transition-colors ${
-                isSelected ? 'ring-2 ring-blue-500 ring-offset-1' : ''
-              }`}
-              data-change-id={changeObj?.id}
-              onClick={() => setSelectedChange(changeId)}
-              title="Click to add comment"
-            >
-              {part.value}
-              {comments.has(changeId) && (
-                <span className="ml-1 text-blue-600 text-xs">💬</span>
-              )}
-            </span>
-          );
-          idx += part.value.length;
-        } else if (!part.added) {
-          elements.push(<span key={`diff-${i}`}>{part.value}</span>);
-          idx += part.value.length;
+      if (change) {
+        const isSelected = selectedChange === change.id;
+        let bgColor = '';
+        let textColor = '';
+        let decoration = '';
+        let badge = '';
+        
+        if (isLeft) {
+          // Left side coloring
+          if (change.type === 'deleted') {
+            bgColor = 'bg-red-100';
+            textColor = 'text-red-900';
+            decoration = 'line-through decoration-red-500';
+          } else if (change.type === 'replaced') {
+            bgColor = 'bg-orange-100';
+            textColor = 'text-orange-900';
+            decoration = 'line-through decoration-orange-500';
+          } else if (change.type === 'moved') {
+            bgColor = 'bg-purple-100';
+            textColor = 'text-purple-900';
+            badge = '↓ Moved';
+          } else if (change.type === 'modification') {
+            bgColor = 'bg-yellow-100';
+            textColor = 'text-yellow-900';
+          }
+        } else {
+          // Right side coloring
+          if (change.type === 'inserted') {
+            bgColor = 'bg-green-100';
+            textColor = 'text-green-900';
+          } else if (change.type === 'replaced') {
+            bgColor = 'bg-blue-100';
+            textColor = 'text-blue-900';
+          } else if (change.type === 'moved') {
+            bgColor = 'bg-purple-100';
+            textColor = 'text-purple-900';
+            badge = '↑ Moved from above';
+          } else if (change.type === 'modification') {
+            bgColor = 'bg-yellow-100';
+            textColor = 'text-yellow-900';
+          }
         }
+        
+        const separator = viewMode === 'word' ? ' ' : viewMode === 'sentence' ? '. ' : '\n\n';
+        
+        elements.push(
+          <span
+            key={`unit-${idx}`}
+            ref={(el) => {
+              if (el) {
+                changeRefs.current.set(change.id + (isLeft ? '-left' : '-right'), el);
+              }
+            }}
+            className={`${bgColor} ${textColor} ${decoration} cursor-pointer hover:opacity-80 transition-all px-1 py-0.5 rounded ${
+              isSelected ? 'ring-2 ring-blue-500 ring-offset-1' : ''
+            } ${viewMode === 'paragraph' ? 'block mb-4 p-3 rounded-lg' : 'inline'}`}
+            onClick={() => {
+              setSelectedChange(change.id);
+              // Jump to corresponding unit in other panel
+              goToChange(changes.findIndex(c => c.id === change.id));
+            }}
+            title={`Click to jump to ${isLeft ? 'current' : 'original'} | ${change.type.toUpperCase()}${
+              change.similarity ? ` (${Math.round(change.similarity * 100)}% similar)` : ''
+            }`}
+          >
+            {badge && (
+              <span className="text-xs font-bold mr-2 opacity-75">
+                {badge}
+              </span>
+            )}
+            {unit}
+            {comments.has(change.id) && (
+              <span className="ml-1 text-blue-600 text-xs">💬</span>
+            )}
+            {separator === '\n\n' ? '' : separator}
+          </span>
+        );
       } else {
-        if (part.added) {
-          const changeId = changeObj?.id || `change-${i}-right`;
-          const isSelected = selectedChange === changeId;
-          elements.push(
-            <span
-              key={`diff-${i}`}
-              ref={(el) => changeObj && el && changeRefs.current.set(changeObj.id + '-right', el)}
-              className={`bg-green-100 text-green-900 font-medium cursor-pointer hover:bg-green-200 transition-colors ${
-                isSelected ? 'ring-2 ring-blue-500 ring-offset-1' : ''
-              }`}
-              data-change-id={changeObj?.id}
-              onClick={() => setSelectedChange(changeId)}
-              title="Click to add comment"
-            >
-              {part.value}
-              {comments.has(changeId) && (
-                <span className="ml-1 text-blue-600 text-xs">💬</span>
-              )}
-            </span>
-          );
-          idx += part.value.length;
-        } else if (!part.removed) {
-          elements.push(<span key={`diff-${i}`}>{part.value}</span>);
-          idx += part.value.length;
-        }
+        // Unchanged unit
+        const separator = viewMode === 'word' ? ' ' : viewMode === 'sentence' ? '. ' : '\n\n';
+        elements.push(
+          <span
+            key={`unit-${idx}`}
+            className={viewMode === 'paragraph' ? 'block mb-4' : 'inline'}
+          >
+            {unit}
+            {separator === '\n\n' ? '' : separator}
+          </span>
+        );
       }
     });
     
-    return <div className="whitespace-pre-wrap leading-relaxed">{elements}</div>;
+    return <div className={`${viewMode === 'paragraph' ? '' : 'whitespace-pre-wrap'} leading-relaxed`}>{elements}</div>;
   };
   
   // Filter changes
@@ -324,28 +434,32 @@ export function DocumentCompare() {
   if (!compareVersion) {
     return (
       <div className="h-full flex flex-col">
-        {/* Version Selector */}
+        {/* Version Selector - Improved UI */}
         <div className="px-4 py-3 border-b bg-gray-50">
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-6">
             <div className="flex items-center gap-2">
-              <label className="text-sm font-medium text-gray-700">Compare:</label>
+              <label className="text-sm font-semibold text-gray-700">Original:</label>
               <select
                 value={state.compareVersionId || ''}
                 onChange={(e) => setCompareVersionId(e.target.value)}
-                className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg bg-white text-gray-800"
+                className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg bg-white text-gray-800 font-medium"
               >
-                <option value="">Select a version to compare...</option>
+                <option value="">Select version...</option>
                 {state.versions
                   .filter(v => v.id !== state.currentVersionId)
                   .map(version => (
                     <option key={version.id} value={version.id}>
-                      V{version.number} - {version.prompt?.substring(0, 50) || 'No prompt'}...
+                      V{version.number} {version.note ? `- ${version.note}` : ''}
                     </option>
                   ))}
               </select>
             </div>
-            <div className="text-sm text-gray-800">
-              Current: V{currentVersion.number}
+            <span className="text-gray-400">vs</span>
+            <div className="flex items-center gap-2">
+              <label className="text-sm font-semibold text-gray-700">Current:</label>
+              <span className="px-3 py-1.5 text-sm bg-blue-50 text-blue-700 font-medium rounded-lg border border-blue-200">
+                V{currentVersion.number} {currentVersion.note ? `- ${currentVersion.note}` : ''}
+              </span>
             </div>
           </div>
         </div>
@@ -364,29 +478,32 @@ export function DocumentCompare() {
     <div className="h-full flex">
       {/* Main comparison area */}
       <div className="flex-1 flex flex-col">
-        {/* Version Selector */}
+        {/* Version Selector - Improved UI */}
         <div className="px-4 py-3 border-b bg-gray-50">
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-6">
             <div className="flex items-center gap-2">
-              <label className="text-sm font-medium text-gray-700">Compare:</label>
+              <label className="text-sm font-semibold text-gray-700">Original:</label>
               <select
                 value={state.compareVersionId || ''}
                 onChange={(e) => setCompareVersionId(e.target.value)}
-                className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg bg-white text-gray-800"
+                className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg bg-white text-gray-800 font-medium"
               >
-                <option value="">Select a version to compare...</option>
+                <option value="">Select version...</option>
                 {state.versions
                   .filter(v => v.id !== state.currentVersionId)
                   .map(version => (
                     <option key={version.id} value={version.id}>
-                      V{version.number} - {version.prompt?.substring(0, 50) || 'No prompt'}...
+                      V{version.number} {version.note ? `- ${version.note}` : ''}
                     </option>
                   ))}
               </select>
             </div>
-            <div className="text-sm text-gray-800">
-              {currentVersion && `Current: V${currentVersion.number}`}
-              {compareVersion && ` vs V${compareVersion.number}`}
+            <span className="text-gray-400">vs</span>
+            <div className="flex items-center gap-2">
+              <label className="text-sm font-semibold text-gray-700">Current:</label>
+              <span className="px-3 py-1.5 text-sm bg-blue-50 text-blue-700 font-medium rounded-lg border border-blue-200">
+                V{currentVersion.number} {currentVersion.note ? `- ${currentVersion.note}` : ''}
+              </span>
             </div>
           </div>
         </div>
@@ -443,26 +560,6 @@ export function DocumentCompare() {
               >
                 <ChevronDown className="w-5 h-5" />
               </button>
-            </div>
-            
-            {/* Search */}
-            <div className="relative">
-              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
-              <input
-                type="text"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="Search in changes..."
-                className="pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm w-64 text-gray-800 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
-              {searchTerm && (
-                <button
-                  onClick={() => setSearchTerm('')}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 p-1 hover:bg-gray-100 rounded"
-                >
-                  <X className="w-3 h-3" />
-                </button>
-              )}
             </div>
           </div>
           
@@ -598,6 +695,27 @@ export function DocumentCompare() {
           <div className="flex items-center gap-2 mb-3">
             <Filter className="w-4 h-4 text-gray-600" />
             <span className="text-sm font-semibold text-gray-700">Filter Changes</span>
+          </div>
+          
+          {/* Search in changes */}
+          <div className="relative mb-3">
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Search in changes..."
+              className="w-full pl-9 pr-8 py-2 border border-gray-300 rounded-lg text-sm text-gray-800 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+            {searchTerm && (
+              <button
+                onClick={() => setSearchTerm('')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-1 hover:bg-gray-100 rounded"
+                title="Clear search"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            )}
           </div>
           
           <FilterButton
@@ -772,7 +890,7 @@ interface FilterButtonProps {
   active: boolean;
   count: number;
   label: string;
-  color: 'green' | 'red' | 'blue' | 'purple';
+  color: 'green' | 'red' | 'blue' | 'purple' | 'orange' | 'yellow';
   onClick: () => void;
 }
 
@@ -781,7 +899,9 @@ function FilterButton({ active, count, label, color, onClick }: FilterButtonProp
     green: active ? 'bg-green-100 text-green-700 border-green-400' : 'bg-white text-gray-600 border-gray-300',
     red: active ? 'bg-red-100 text-red-700 border-red-400' : 'bg-white text-gray-600 border-gray-300',
     blue: active ? 'bg-blue-100 text-blue-700 border-blue-400' : 'bg-white text-gray-600 border-gray-300',
-    purple: active ? 'bg-purple-100 text-purple-700 border-purple-400' : 'bg-white text-gray-600 border-gray-300'
+    purple: active ? 'bg-purple-100 text-purple-700 border-purple-400' : 'bg-white text-gray-600 border-gray-300',
+    orange: active ? 'bg-orange-100 text-orange-700 border-orange-400' : 'bg-white text-gray-600 border-gray-300',
+    yellow: active ? 'bg-yellow-100 text-yellow-700 border-yellow-400' : 'bg-white text-gray-600 border-gray-300'
   };
   
   return (
