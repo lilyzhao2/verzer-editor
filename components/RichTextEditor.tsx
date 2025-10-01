@@ -20,9 +20,11 @@ export function RichTextEditor({ content, onChange, onSave, placeholder }: RichT
   const [mounted, setMounted] = useState(false);
   const [showColorPicker, setShowColorPicker] = useState(false);
   const [showFontPicker, setShowFontPicker] = useState(false);
+  const [isInitialRender, setIsInitialRender] = useState(true);
 
   useEffect(() => {
     setMounted(true);
+    setTimeout(() => setIsInitialRender(false), 100);
   }, []);
 
   const editor = useEditor({
@@ -40,7 +42,9 @@ export function RichTextEditor({ content, onChange, onSave, placeholder }: RichT
     content,
     immediatelyRender: false,
     onUpdate: ({ editor }) => {
-      onChange(editor.getHTML());
+      if (!isInitialRender) {
+        onChange(editor.getHTML());
+      }
     },
     editorProps: {
       attributes: {
