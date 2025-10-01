@@ -35,6 +35,10 @@ export interface ProjectConfig {
   promptTemplate?: string; // Custom prompt template with variables
   templateVariables?: Record<string, string>; // Variables that can be used in the template
   
+  // Smart Merge configuration
+  mergePresetId?: string; // Selected preset (quick-review, balanced-review, etc.)
+  customMergeRules?: any[]; // Custom merge rules for this project (type imported from smartMergeTypes)
+  
   createdAt: Date;
   isActive?: boolean; // Currently active configuration
 }
