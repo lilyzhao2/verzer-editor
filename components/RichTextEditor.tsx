@@ -42,7 +42,11 @@ import {
   Unlink,
   Table,
   Columns,
-  Separator
+  Separator,
+  FileText,
+  Printer,
+  ZoomIn,
+  ZoomOut
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 
@@ -52,9 +56,27 @@ interface RichTextEditorProps {
   onSave?: () => void;
   placeholder?: string;
   isPrintView?: boolean;
+  zoomLevel?: number;
+  onZoomChange?: (level: number) => void;
+  documentName?: string;
+  versionNumber?: string;
+  onDownload?: () => void;
+  onPrint?: () => void;
 }
 
-export function RichTextEditor({ content, onChange, onSave, placeholder, isPrintView = false }: RichTextEditorProps) {
+export function RichTextEditor({ 
+  content, 
+  onChange, 
+  onSave, 
+  placeholder, 
+  isPrintView = false,
+  zoomLevel = 100,
+  onZoomChange,
+  documentName = 'Untitled',
+  versionNumber = '0',
+  onDownload,
+  onPrint
+}: RichTextEditorProps) {
   const [mounted, setMounted] = useState(false);
   const [showColorPicker, setShowColorPicker] = useState(false);
   const [showFontPicker, setShowFontPicker] = useState(false);
@@ -489,6 +511,61 @@ export function RichTextEditor({ content, onChange, onSave, placeholder, isPrint
         >
           <Redo className="w-4 h-4" />
         </ToolbarButton>
+
+        <div className="w-px h-6 bg-gray-300 mx-1" />
+
+        {/* Zoom Controls */}
+        {onZoomChange && (
+          <>
+            <ToolbarButton
+              onClick={() => onZoomChange(Math.max(25, zoomLevel - 10))}
+              title="Zoom Out"
+            >
+              <ZoomOut className="w-4 h-4" />
+            </ToolbarButton>
+            
+            <select
+              value={zoomLevel}
+              onChange={(e) => onZoomChange(Number(e.target.value))}
+              className="px-2 py-1 border border-gray-300 rounded text-sm font-medium text-black bg-white"
+            >
+              <option value={50}>50%</option>
+              <option value={75}>75%</option>
+              <option value={100}>100%</option>
+              <option value={125}>125%</option>
+              <option value={150}>150%</option>
+              <option value={200}>200%</option>
+            </select>
+
+            <ToolbarButton
+              onClick={() => onZoomChange(Math.min(200, zoomLevel + 10))}
+              title="Zoom In"
+            >
+              <ZoomIn className="w-4 h-4" />
+            </ToolbarButton>
+
+            <div className="w-px h-6 bg-gray-300 mx-1" />
+          </>
+        )}
+
+        {/* Download/Print */}
+        {onDownload && (
+          <ToolbarButton
+            onClick={onDownload}
+            title="Download Document"
+          >
+            <FileText className="w-4 h-4" />
+          </ToolbarButton>
+        )}
+
+        {onPrint && (
+          <ToolbarButton
+            onClick={onPrint}
+            title="Print / Save as PDF"
+          >
+            <Printer className="w-4 h-4" />
+          </ToolbarButton>
+        )}
 
         <div className="w-px h-6 bg-gray-300 mx-1" />
 

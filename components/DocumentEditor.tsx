@@ -7,6 +7,7 @@ import { RichTextEditor } from './RichTextEditor';
 import { ProjectSetup } from './ProjectSetup';
 import { DocumentUpload } from './DocumentUpload';
 import { ParagraphLineageView } from './ParagraphLineageView';
+import { formatVersionNumber } from '@/lib/formatVersion';
 
 export function DocumentEditor() {
   const { 
@@ -173,7 +174,7 @@ export function DocumentEditor() {
           {/* Left: Version Info */}
           <div className="flex items-center gap-4">
             <h2 className="text-2xl font-bold text-black">
-              V{currentVersion?.number.toUpperCase()}
+              {formatVersionNumber(currentVersion?.number || '0')}
               {hasUnsavedChanges && (
                 <span className="ml-2 w-3.5 h-3.5 bg-amber-500 rounded-full inline-block" title="Unsaved changes"></span>
               )}
@@ -216,10 +217,10 @@ export function DocumentEditor() {
                 <button
                   onClick={handleOverwriteVersion}
                   className="flex items-center gap-2 px-4 py-2.5 bg-gray-600 text-white text-base font-semibold rounded-lg hover:bg-gray-700 transition-colors"
-                  title={`Overwrite V${currentVersion?.number.toUpperCase()}`}
+                  title={`Overwrite ${formatVersionNumber(currentVersion?.number || '0')}`}
                 >
                   <Save className="w-5 h-5" />
-                  Overwrite V{currentVersion?.number.toUpperCase()}
+                  Overwrite {formatVersionNumber(currentVersion?.number || '0')}
                 </button>
                 <button
                   onClick={handleSaveAsVariation}
@@ -261,50 +262,6 @@ export function DocumentEditor() {
               Lineage
             </button>
 
-            {/* Export Options */}
-            <div className="flex items-center gap-3 border-l pl-4">
-              <button
-                onClick={() => {
-                  const blob = new Blob([localContent], { type: 'text/html' });
-                  const url = URL.createObjectURL(blob);
-                  const a = document.createElement('a');
-                  a.href = url;
-                  // Create filename with version number: untitled_v1b2.doc
-                  const versionStr = currentVersion?.number || '0';
-                  const cleanVersion = versionStr.replace(/\./g, '').toLowerCase(); // v1b2 -> v1b2
-                  a.download = `${documentName}_${cleanVersion}.doc`;
-                  a.click();
-                }}
-                className="flex items-center gap-2 px-4 py-2.5 bg-gray-100 text-gray-700 text-base font-semibold rounded-lg hover:bg-gray-200 transition-colors"
-                title="Download document"
-              >
-                <FileText className="w-5 h-5" />
-                Download
-              </button>
-              <button
-                onClick={() => window.print()}
-                className="flex items-center gap-2 px-4 py-2.5 bg-gray-600 text-white text-base font-semibold rounded-lg hover:bg-gray-700 transition-colors"
-                title="Print/Save as PDF"
-              >
-                <Printer className="w-5 h-5" />
-                Print
-              </button>
-            </div>
-
-            {/* Zoom Control */}
-            <select
-              value={zoomLevel}
-              onChange={(e) => setZoomLevel(Number(e.target.value))}
-              className="px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm font-medium text-black"
-            >
-              <option value={50}>50%</option>
-              <option value={75}>75%</option>
-              <option value={90}>90%</option>
-              <option value={100}>100%</option>
-              <option value={125}>125%</option>
-              <option value={150}>150%</option>
-              <option value={200}>200%</option>
-            </select>
           </div>
         </div>
       </div>
@@ -328,6 +285,21 @@ export function DocumentEditor() {
               onSave={handleOverwriteVersion}
               placeholder="Start writing your document here..."
               isPrintView={isPrintView}
+              zoomLevel={zoomLevel}
+              onZoomChange={setZoomLevel}
+              documentName={documentName}
+              versionNumber={currentVersion?.number || '0'}
+              onDownload={() => {
+                const blob = new Blob([localContent], { type: 'text/html' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                const versionStr = currentVersion?.number || '0';
+                const cleanVersion = versionStr.replace(/\./g, '').toLowerCase();
+                a.download = `${documentName}_${cleanVersion}.doc`;
+                a.click();
+              }}
+              onPrint={() => window.print()}
             />
           </div>
         </div>

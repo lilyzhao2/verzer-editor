@@ -24,7 +24,7 @@ function ViewModeTabs() {
     { id: 'document' as const, label: 'Document', icon: FileText, description: 'Focus on writing' },
     { id: 'parallel' as const, label: 'Parallel', icon: Layers, description: 'Work on multiple versions simultaneously' },
     { id: 'compare' as const, label: 'Compare', icon: Scale, description: 'Legal document comparison' },
-        { id: 'iterate' as const, label: 'History', icon: GitBranch, description: 'Track changes and collaborate' },
+        { id: 'iterate' as const, label: 'Collaboration', icon: GitBranch, description: 'Track changes and collaborate' },
   ];
 
   const { toggleDebugMode } = useEditor();

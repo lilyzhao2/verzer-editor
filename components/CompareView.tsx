@@ -298,7 +298,7 @@ export function CompareView() {
         <div className="px-6 py-4 bg-white border-b border-gray-200">
           <div className="flex items-center justify-between">
             <div>
-                  <h2 className="text-xl font-bold text-gray-800">History</h2>
+                  <h2 className="text-xl font-bold text-gray-800">Collaboration</h2>
             <p className="text-sm text-black mt-1">
               {selectedVersionsForCompare.length === 0 
                 ? 'Select 2 versions from the Version Tree to compare them →'
