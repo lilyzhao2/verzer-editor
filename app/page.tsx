@@ -7,14 +7,20 @@ import { VersionSelector } from '@/components/VersionSelector';
 import { DocumentEditor } from '@/components/DocumentEditor';
 import { ChatInterface } from '@/components/ChatInterface';
 import { CompareView } from '@/components/CompareView';
-import { MessageSquare, FileText, GitCompare } from 'lucide-react';
+import { ClearDataButton } from '@/components/ClearDataButton';
+import { ProjectSetup } from '@/components/ProjectSetup';
+import { LegalCompare } from '@/components/LegalCompare';
+import { TabBar } from '@/components/TabBar';
+import { MessageSquare, FileText, GitBranch, Settings, Scale } from 'lucide-react';
 
 function ViewModeTabs() {
   const { state, setViewMode } = useEditor();
   
   const tabs = [
+    { id: 'context' as const, label: 'Context', icon: Settings, description: 'Project configuration' },
     { id: 'document' as const, label: 'Document', icon: FileText, description: 'Focus on writing' },
-    { id: 'compare' as const, label: 'Compare', icon: GitCompare, description: 'Side-by-side versions' },
+    { id: 'compare' as const, label: 'Compare', icon: Scale, description: 'Legal document comparison' },
+    { id: 'iterate' as const, label: 'Iterate', icon: GitBranch, description: 'Compare and iterate on versions' },
   ];
 
   return (
@@ -44,7 +50,7 @@ function ViewModeTabs() {
 }
 
 function MainContent() {
-  const { state } = useEditor();
+  const { state, setCurrentVersion } = useEditor();
   const [chatMinimized, setChatMinimized] = useState(false);
   const [chatWidth, setChatWidth] = useState(450); // pixels
   const [isResizing, setIsResizing] = useState(false);
@@ -78,14 +84,75 @@ function MainContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isResizing]);
 
+  // Keyboard shortcuts for version switching
+  React.useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Check if Cmd (Mac) or Ctrl (Windows/Linux) is pressed
+      if (e.metaKey || e.ctrlKey) {
+        const key = e.key;
+        
+        // Switch to version by number (Cmd+1, Cmd+2, etc.)
+        if (key >= '0' && key <= '9') {
+          e.preventDefault();
+          const versionIndex = parseInt(key);
+          
+          // Get root versions only for shortcuts
+          const rootVersions = state.versions.filter(v => !v.number.includes('.'));
+          
+          if (versionIndex < rootVersions.length) {
+            setCurrentVersion(rootVersions[versionIndex].id);
+          }
+        }
+        
+        // Cmd+[ for previous version, Cmd+] for next version
+        if (key === '[') {
+          e.preventDefault();
+          const currentIndex = state.versions.findIndex(v => v.id === state.currentVersionId);
+          if (currentIndex > 0) {
+            setCurrentVersion(state.versions[currentIndex - 1].id);
+          }
+        }
+        
+        if (key === ']') {
+          e.preventDefault();
+          const currentIndex = state.versions.findIndex(v => v.id === state.currentVersionId);
+          if (currentIndex < state.versions.length - 1) {
+            setCurrentVersion(state.versions[currentIndex + 1].id);
+          }
+        }
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.versions, state.currentVersionId]);
+
   const renderMainView = () => {
-    // Document View: Document editor
+    // Context View: Project configuration
+    if (state.viewMode === 'context') {
+      return <ProjectSetup />;
+    }
+    
+    // Document View: Document editor with tabs
     if (state.viewMode === 'document') {
-      return <DocumentEditor />;
+      return (
+        <div className="h-full flex flex-col">
+          <TabBar />
+          <div className="flex-1 overflow-hidden">
+            <DocumentEditor />
+          </div>
+        </div>
+      );
     }
 
-    // Compare View: Multi-version comparison
+    // Compare View: Legal-style document comparison
     if (state.viewMode === 'compare') {
+      return <LegalCompare />;
+    }
+
+    // Iterate View: Compare and iterate on versions
+    if (state.viewMode === 'iterate') {
       return <CompareView />;
     }
 

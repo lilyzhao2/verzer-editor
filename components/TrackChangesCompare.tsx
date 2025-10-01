@@ -234,15 +234,20 @@ export function TrackChangesCompare() {
             </div>
             
             <div className="text-sm text-gray-500">
-              Comparing: {selectedVersionsForCompare.length > 0 ? selectedVersionsForCompare.map(id => {
-                const v = state.versions.find(ver => ver.id === id);
-                const colorIndex = selectedVersionsForCompare.indexOf(id);
-                return (
-                  <span key={id} className={`inline-block px-2 py-0.5 rounded text-xs font-bold ml-1 ${versionColors[colorIndex]}`}>
-                    v{v?.number}
-                  </span>
-                );
-              }) : 'Select from History →'}
+              {selectedVersionsForCompare.length > 0 ? (
+                <>
+                  Comparing {selectedVersionsForCompare.length} versions: 
+                  {selectedVersionsForCompare.map(id => {
+                    const v = state.versions.find(ver => ver.id === id);
+                    const colorIndex = selectedVersionsForCompare.indexOf(id) % 3; // Cycle through 3 colors
+                    return (
+                      <span key={id} className={`inline-block px-2 py-0.5 rounded text-xs font-bold ml-1 ${versionColors[colorIndex]}`}>
+                        v{v?.number}
+                      </span>
+                    );
+                  })}
+                </>
+              ) : 'Select from History →'}
             </div>
           </div>
 
@@ -369,7 +374,7 @@ export function TrackChangesCompare() {
                     {paraChanges.map((change) => {
                       const isAccepted = acceptedChanges.has(change.id);
                       const isRejected = rejectedChanges.has(change.id);
-                      const colorIndex = selectedVersionsForCompare.indexOf(change.versionId);
+                      const colorIndex = selectedVersionsForCompare.indexOf(change.versionId) % 3; // Cycle through colors
                       
                       return (
                         <div

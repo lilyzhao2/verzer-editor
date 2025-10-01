@@ -24,3 +24,30 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Tiptap Editor Styles */
+.tiptap {
+  min-height: 100%;
+  padding: 2rem;
+  outline: none;
+}
+
+.tiptap:focus {
+  outline: none;
+}
+
+/* Ensure the ProseMirror editor fills its container */
+.ProseMirror {
+  min-height: calc(100vh - 200px);
+  padding: 2rem;
+  outline: none;
+}
+
+.ProseMirror:focus {
+  outline: none;
+}
+
+/* Fix scrolling for the editor container */
+.ProseMirror-focused {
+  outline: none;
+}

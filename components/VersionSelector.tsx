@@ -3,13 +3,15 @@
 import React from 'react';
 import { useEditor } from '@/contexts/EditorContext';
 import { ChevronDown } from 'lucide-react';
+import { ClearDataButton } from './ClearDataButton';
 
 export function VersionSelector() {
   const { state, setCurrentVersion, getCurrentVersion } = useEditor();
   const currentVersion = getCurrentVersion();
 
   return (
-    <div className="flex items-center justify-end p-3 border-b bg-white border-gray-200">
+    <div className="flex items-center justify-between p-3 border-b bg-white border-gray-200">
+      <ClearDataButton />
       <div className="relative">
         <select
           value={currentVersion?.id || ''}

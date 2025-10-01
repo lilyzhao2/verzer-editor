@@ -17,10 +17,10 @@ export function CompareProvider({ children }: { children: React.ReactNode }) {
     setSelectedVersionsForCompare(prev => {
       if (prev.includes(versionId)) {
         return prev.filter(id => id !== versionId);
-      } else if (prev.length < 4) {
+      } else {
+        // No limit - compare as many versions as you want
         return [...prev, versionId];
       }
-      return prev;
     });
   }, []);
 
