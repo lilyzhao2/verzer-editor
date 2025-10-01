@@ -10,7 +10,7 @@ import { CompareView } from '@/components/CompareView';
 import { ClearDataButton } from '@/components/ClearDataButton';
 import { ProjectSetup } from '@/components/ProjectSetup';
 import { LegalCompare } from '@/components/LegalCompare';
-import { EnhancedCompare } from '@/components/EnhancedCompare';
+import { CompareDocuments } from '@/components/CompareDocuments';
 import { TabBar } from '@/components/TabBar';
 import { ParallelView } from '@/components/ParallelView';
 import { DebugPanel } from '@/components/DebugPanel';
@@ -203,9 +203,9 @@ function MainContent() {
       return <ParallelView />;
     }
 
-    // Compare View: Professional collaborative comparison tool
+    // Compare View: Professional document comparison
     if (state.viewMode === 'compare') {
-      return <EnhancedCompare />;
+      return <CompareDocuments />;
     }
 
     // Iterate View: Compare and iterate on versions
