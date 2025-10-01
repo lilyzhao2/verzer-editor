@@ -46,6 +46,8 @@ export function DocumentCompare() {
   const [showReviewPanel, setShowReviewPanel] = useState(false);
   const [reviewNote, setReviewNote] = useState('');
   const [showSaveSuccess, setShowSaveSuccess] = useState(false);
+  const [leftPanelWidth, setLeftPanelWidth] = useState(50); // Percentage
+  const [isDragging, setIsDragging] = useState(false);
   
   const leftPanelRef = useRef<HTMLDivElement>(null);
   const rightPanelRef = useRef<HTMLDivElement>(null);
@@ -74,6 +76,42 @@ export function DocumentCompare() {
       }
     }
   }, [compareVersion?.id, currentVersion?.id]);
+
+  // Handle split panel dragging
+  const handleMouseDown = (e: React.MouseEvent) => {
+    setIsDragging(true);
+    e.preventDefault();
+  };
+
+  const handleMouseMove = (e: MouseEvent) => {
+    if (!isDragging) return;
+    
+    const container = document.querySelector('.split-container');
+    if (!container) return;
+    
+    const rect = container.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const percentage = (x / rect.width) * 100;
+    
+    // Constrain between 20% and 80%
+    const constrainedPercentage = Math.max(20, Math.min(80, percentage));
+    setLeftPanelWidth(constrainedPercentage);
+  };
+
+  const handleMouseUp = () => {
+    setIsDragging(false);
+  };
+
+  useEffect(() => {
+    if (isDragging) {
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+      return () => {
+        document.removeEventListener('mousemove', handleMouseMove);
+        document.removeEventListener('mouseup', handleMouseUp);
+      };
+    }
+  }, [isDragging]);
   
   // Strip HTML and extract paragraphs
   const stripHTML = (html: string): string => {
@@ -782,9 +820,12 @@ export function DocumentCompare() {
 
         
         {/* Side-by-side with minimap */}
-        <div className="flex-1 flex overflow-hidden">
+        <div className="flex-1 flex overflow-hidden split-container">
           {/* Left panel */}
-          <div className="flex-1 flex flex-col border-r">
+          <div 
+            className="flex flex-col border-r"
+            style={{ width: `${leftPanelWidth}%` }}
+          >
             <div className="px-4 py-2 bg-gray-50 border-b">
               <div className="flex items-center justify-between">
               <h3 className="text-sm font-semibold text-gray-700">
@@ -906,8 +947,17 @@ export function DocumentCompare() {
             
           </div>
           
+          {/* Drag handle */}
+          <div 
+            className="w-1 bg-gray-300 hover:bg-gray-400 cursor-col-resize flex-shrink-0 transition-colors"
+            onMouseDown={handleMouseDown}
+          />
+          
           {/* Right panel */}
-          <div className="flex-1 flex flex-col">
+          <div 
+            className="flex flex-col"
+            style={{ width: `${100 - leftPanelWidth}%` }}
+          >
             <div className="px-4 py-2 bg-gray-50 border-b">
               <div className="flex items-center justify-between">
               <h3 className="text-sm font-semibold text-gray-700">
@@ -1010,7 +1060,7 @@ export function DocumentCompare() {
                 value={commentText}
                 onChange={(e) => setCommentText(e.target.value)}
                 placeholder="Add a comment about this change..."
-                className="w-full p-2 text-sm border border-gray-300 rounded resize-none"
+                className="w-full p-2 text-sm border border-gray-300 rounded resize-none text-black font-medium"
                 rows={3}
               />
               <div className="flex gap-2">
