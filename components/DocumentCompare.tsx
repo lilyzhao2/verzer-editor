@@ -40,6 +40,7 @@ export function DocumentCompare() {
   const [selectedChange, setSelectedChange] = useState<string | null>(null);
   const [commentText, setCommentText] = useState('');
   const [comments, setComments] = useState<Map<string, string>>(new Map());
+  const [scrollPositions, setScrollPositions] = useState({ left: 0, right: 0 });
   
   const leftPanelRef = useRef<HTMLDivElement>(null);
   const rightPanelRef = useRef<HTMLDivElement>(null);
@@ -500,7 +501,7 @@ export function DocumentCompare() {
     setStarredChanges(newStarred);
   };
   
-  // Synchronized scrolling
+  // Synchronized scrolling with minimap update
   const handleScroll = (source: 'left' | 'right') => {
     const sourcePanel = source === 'left' ? leftPanelRef.current : rightPanelRef.current;
     const targetPanel = source === 'left' ? rightPanelRef.current : leftPanelRef.current;
@@ -508,6 +509,12 @@ export function DocumentCompare() {
     if (sourcePanel && targetPanel) {
       const scrollPercentage = sourcePanel.scrollTop / (sourcePanel.scrollHeight - sourcePanel.clientHeight || 1);
       targetPanel.scrollTop = scrollPercentage * (targetPanel.scrollHeight - targetPanel.clientHeight);
+      
+      // Update scroll positions to trigger minimap re-render
+      setScrollPositions({
+        left: leftPanelRef.current?.scrollTop || 0,
+        right: rightPanelRef.current?.scrollTop || 0
+      });
     }
   };
   
@@ -529,7 +536,7 @@ export function DocumentCompare() {
         <div className="px-4 py-3 border-b bg-gray-50">
           <div className="flex items-center gap-6">
             <div className="flex items-center gap-2">
-              <label className="text-sm font-semibold text-gray-700">Original:</label>
+              <label className="text-sm font-semibold text-gray-700">Base Version:</label>
               <select
                 value={state.compareVersionId || ''}
                 onChange={(e) => setCompareVersionId(e.target.value)}
@@ -569,100 +576,28 @@ export function DocumentCompare() {
     <div className="h-full flex">
       {/* Main comparison area */}
       <div className="flex-1 flex flex-col">
-        {/* Version Selector - Improved UI */}
-        <div className="px-4 py-3 border-b bg-gray-50">
-          <div className="flex items-center gap-6">
-            <div className="flex items-center gap-2">
-              <label className="text-sm font-semibold text-gray-700">Original:</label>
-              <select
-                value={state.compareVersionId || ''}
-                onChange={(e) => setCompareVersionId(e.target.value)}
-                className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg bg-white text-gray-800 font-medium"
-              >
-                <option value="">Select version...</option>
-                {state.versions
-                  .filter(v => v.id !== state.currentVersionId)
-                  .map(version => (
-                    <option key={version.id} value={version.id}>
-                      V{version.number} {version.note ? `- ${version.note}` : ''}
-                    </option>
-                  ))}
-              </select>
-            </div>
-            <span className="text-gray-400">vs</span>
-            <div className="flex items-center gap-2">
-              <label className="text-sm font-semibold text-gray-700">Current:</label>
-              <span className="px-3 py-1.5 text-sm bg-blue-50 text-blue-700 font-medium rounded-lg border border-blue-200">
-                V{currentVersion.number} {currentVersion.note ? `- ${currentVersion.note}` : ''}
-              </span>
-            </div>
+        {/* Toolbar with View Mode Toggle */}
+        <div className="px-4 py-3 border-b bg-white flex items-center justify-between">
+          <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
+            <button
+              onClick={() => setViewMode('sentence')}
+              className={`px-3 py-1.5 text-xs font-medium rounded transition-colors ${
+                viewMode === 'sentence' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-700 hover:text-gray-900'
+              }`}
+            >
+              Sentence
+            </button>
+            <button
+              onClick={() => setViewMode('paragraph')}
+              className={`px-3 py-1.5 text-xs font-medium rounded transition-colors ${
+                viewMode === 'paragraph' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-700 hover:text-gray-900'
+              }`}
+            >
+              Paragraph
+            </button>
           </div>
         </div>
 
-        {/* Toolbar */}
-        <div className="px-4 py-3 border-b bg-white flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            {/* View Mode Toggle */}
-            <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
-              <button
-                onClick={() => setViewMode('sentence')}
-                className={`px-3 py-1.5 text-xs font-medium rounded transition-colors ${
-                  viewMode === 'sentence' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-700 hover:text-gray-900'
-                }`}
-              >
-                Sentence
-              </button>
-              <button
-                onClick={() => setViewMode('paragraph')}
-                className={`px-3 py-1.5 text-xs font-medium rounded transition-colors ${
-                  viewMode === 'paragraph' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-700 hover:text-gray-900'
-                }`}
-              >
-                Paragraph
-              </button>
-            </div>
-            
-            {/* Navigation */}
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => goToChange(currentChangeIndex - 1)}
-                disabled={currentChangeIndex === 0}
-                className="p-2 hover:bg-gray-100 rounded disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                title="Previous change"
-              >
-                <ChevronUp className="w-5 h-5" />
-              </button>
-              <span className="text-sm font-medium text-gray-800 min-w-[80px] text-center">
-                {filteredChanges.length > 0 ? `${currentChangeIndex + 1} / ${filteredChanges.length}` : '0 / 0'}
-              </span>
-              <button
-                onClick={() => goToChange(currentChangeIndex + 1)}
-                disabled={currentChangeIndex >= filteredChanges.length - 1}
-                className="p-2 hover:bg-gray-100 rounded disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                title="Next change"
-              >
-                <ChevronDown className="w-5 h-5" />
-              </button>
-            </div>
-          </div>
-          
-          {/* Stats */}
-          <div className="flex items-center gap-4 text-sm">
-            <span className="text-gray-600">
-              <span className="font-semibold text-green-600">+{stats.inserted}</span>
-              {' / '}
-              <span className="font-semibold text-red-600">-{stats.deleted}</span>
-              {' / '}
-              <span className="font-semibold text-blue-600">~{stats.replaced}</span>
-            </span>
-            {stats.starred > 0 && (
-              <span className="flex items-center gap-1 text-pink-600">
-                <Heart className="w-4 h-4 fill-pink-500" />
-                {stats.starred}
-              </span>
-            )}
-          </div>
-        </div>
         
         {/* Side-by-side with minimap */}
         <div className="flex-1 flex overflow-hidden">
@@ -671,7 +606,7 @@ export function DocumentCompare() {
             <div className="px-4 py-2 bg-gray-50 border-b">
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-semibold text-gray-700">
-                  Version {compareVersion.number} (Original)
+                  {compareVersion.prompt || `Version ${compareVersion.number}`}
                 </h3>
                 <button
                   onClick={() => toggleVersionStar(compareVersion.id)}
@@ -698,43 +633,95 @@ export function DocumentCompare() {
             </div>
           </div>
           
-          {/* Center minimap - smart positioning */}
-          <div className="w-16 bg-gray-50 border-r relative overflow-hidden flex-shrink-0">
-            {/* Only show bars at actual change locations */}
-            {changes.map((change) => {
-              const barHeight = viewMode === 'paragraph' ? 8 : viewMode === 'sentence' ? 4 : 2;
-              return (
+          {/* Enhanced Minimap with Controls */}
+          <div className="w-12 bg-white border-x relative flex-shrink-0 flex flex-col">
+            {/* Minimap Header - Clean */}
+            <div className="p-2 border-b bg-gray-50">
+            </div>
+            
+            {/* Minimap Body - Click anywhere to jump to that position */}
+            <div 
+              className="flex-1 relative cursor-pointer"
+              onClick={(e) => {
+                // Get click position relative to minimap
+                const rect = e.currentTarget.getBoundingClientRect();
+                const clickY = e.clientY - rect.top;
+                const percentage = clickY / rect.height;
+                
+                // Scroll both panels to that percentage
+                if (leftPanelRef.current) {
+                  const maxScroll = leftPanelRef.current.scrollHeight - leftPanelRef.current.clientHeight;
+                  leftPanelRef.current.scrollTop = percentage * maxScroll;
+                }
+                if (rightPanelRef.current) {
+                  const maxScroll = rightPanelRef.current.scrollHeight - rightPanelRef.current.clientHeight;
+                  rightPanelRef.current.scrollTop = percentage * maxScroll;
+                }
+                
+                // Update scroll positions
+                setScrollPositions({
+                  left: leftPanelRef.current?.scrollTop || 0,
+                  right: rightPanelRef.current?.scrollTop || 0
+                });
+              }}
+              title="Click to jump to position"
+            >
+              {/* Background gradient to show document length */}
+              <div className="absolute inset-0 bg-gradient-to-b from-gray-100 via-gray-50 to-gray-100 opacity-50 pointer-events-none"></div>
+              
+              {/* Simple scroll position trackers */}
+              {leftPanelRef.current && (
                 <div
-                  key={change.id}
-                  className={`absolute left-0 right-0 cursor-pointer transition-all group ${
-                    change.type === 'inserted' ? 'bg-green-500 hover:bg-green-600' :
-                    change.type === 'deleted' ? 'bg-red-500 hover:bg-red-600' :
-                    change.type === 'replaced' ? 'bg-blue-500 hover:bg-blue-600' :
-                    change.type === 'moved' ? 'bg-purple-500 hover:bg-purple-600' :
-                    change.type === 'modification' ? 'bg-orange-500 hover:bg-orange-600' :
-                    'bg-gray-500 hover:bg-gray-600'
-                  }`}
-                  style={{ 
-                    top: `${change.position}%`,
-                    height: `${barHeight}px`,
-                    minHeight: '2px'
+                  className="absolute left-0 w-1/2 bg-gray-300 opacity-30 pointer-events-none transition-all"
+                  style={{
+                    top: `${(scrollPositions.left / (leftPanelRef.current.scrollHeight - leftPanelRef.current.clientHeight || 1)) * 100}%`,
+                    height: `${(leftPanelRef.current.clientHeight / leftPanelRef.current.scrollHeight) * 100}%`,
+                    minHeight: '20px'
                   }}
-                  onClick={() => {
-                    const idx = filteredChanges.findIndex(c => c.id === change.id);
-                    if (idx !== -1) goToChange(idx);
+                />
+              )}
+              {rightPanelRef.current && (
+                <div
+                  className="absolute right-0 w-1/2 bg-gray-300 opacity-30 pointer-events-none transition-all"
+                  style={{
+                    top: `${(scrollPositions.right / (rightPanelRef.current.scrollHeight - rightPanelRef.current.clientHeight || 1)) * 100}%`,
+                    height: `${(rightPanelRef.current.clientHeight / rightPanelRef.current.scrollHeight) * 100}%`,
+                    minHeight: '20px'
                   }}
-                  title={`${change.type.toUpperCase()} - Click to view`}
-                >
-                  {/* Hover tooltip preview */}
-                  <div className="hidden group-hover:block absolute left-full ml-2 bg-gray-900 text-white text-xs p-2 rounded shadow-lg z-10 w-48 pointer-events-none">
-                    <div className="font-medium mb-1">{change.type.toUpperCase()}</div>
-                    <div className="line-clamp-2">
-                      {change.leftText || change.rightText || ''}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
+                />
+              )}
+              
+              {/* Change indicators */}
+              {filteredChanges.map((change, idx) => {
+                const isActive = idx === currentChangeIndex;
+                const barHeight = isActive ? 12 : viewMode === 'paragraph' ? 6 : 3;
+                const colors = {
+                  inserted: 'bg-green-500',
+                  deleted: 'bg-red-500',
+                  replaced: 'bg-blue-500',
+                  moved: 'bg-yellow-500',
+                  modification: 'bg-yellow-400'
+                };
+                
+                return (
+                  <div
+                    key={change.id}
+                    className={`absolute left-1 right-1 cursor-pointer transition-all hover:scale-110 ${
+                      colors[change.type] || 'bg-gray-500'
+                    } ${isActive ? 'ring-2 ring-blue-400 z-10' : ''}`}
+                    style={{ 
+                      top: `${change.position}%`,
+                      height: `${barHeight}px`,
+                      borderRadius: '2px',
+                      opacity: isActive ? 1 : 0.7
+                    }}
+                    onClick={() => goToChange(idx)}
+                    title={`${change.type} - Click to jump`}
+                  />
+                );
+              })}
+            </div>
+            
           </div>
           
           {/* Right panel */}
@@ -742,7 +729,7 @@ export function DocumentCompare() {
             <div className="px-4 py-2 bg-gray-50 border-b">
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-semibold text-gray-700">
-                  Version {currentVersion.number} (Current)
+                  {currentVersion.prompt || `Version ${currentVersion.number}`}
                 </h3>
                 <button
                   onClick={() => toggleVersionStar(currentVersion.id)}
@@ -775,10 +762,7 @@ export function DocumentCompare() {
       <div className="w-80 border-l flex flex-col bg-gray-50">
         {/* Filters */}
         <div className="p-4 border-b bg-white space-y-2">
-          <div className="flex items-center gap-2 mb-3">
-            <Filter className="w-4 h-4 text-gray-600" />
-            <span className="text-sm font-semibold text-gray-700">Filter Changes</span>
-          </div>
+          
           
           {/* Search in changes */}
           <div className="relative mb-3">
@@ -804,7 +788,7 @@ export function DocumentCompare() {
           <FilterButton
             active={activeFilters.has('inserted')}
             count={stats.inserted}
-            label="Insertions"
+            label="New"
             color="green"
             onClick={() => toggleFilter('inserted')}
           />
@@ -814,13 +798,6 @@ export function DocumentCompare() {
             label="Deletions"
             color="red"
             onClick={() => toggleFilter('deleted')}
-          />
-          <FilterButton
-            active={activeFilters.has('replaced')}
-            count={stats.replaced}
-            label="Replacements"
-            color="blue"
-            onClick={() => toggleFilter('replaced')}
           />
           {stats.moved > 0 && (
             <FilterButton
@@ -912,10 +889,15 @@ export function DocumentCompare() {
                 <span className={`px-2 py-1 rounded text-xs font-bold uppercase ${
                   change.type === 'inserted' ? 'bg-green-100 text-green-700' :
                   change.type === 'deleted' ? 'bg-red-100 text-red-700' :
-                  change.type === 'replaced' ? 'bg-blue-100 text-blue-700' :
-                  'bg-purple-100 text-purple-700'
+                  change.type === 'moved' ? 'bg-yellow-100 text-yellow-700' :
+                  change.type === 'modification' ? 'bg-yellow-100 text-yellow-700' :
+                  'bg-gray-100 text-gray-700'
                 }`}>
-                  {change.type === 'replaced' ? 'Changed' : change.type}
+                  {change.type === 'inserted' ? 'New' : 
+                   change.type === 'deleted' ? 'Deleted' :
+                   change.type === 'moved' ? 'Moved' :
+                   change.type === 'modification' ? 'Modified' :
+                   change.type}
                 </span>
                 <button
                   onClick={(e) => {

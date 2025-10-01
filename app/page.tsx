@@ -18,7 +18,7 @@ import { MessageCircle, FileText, GitBranch, Settings, Scale, Layers, Bug, Chevr
 import { formatVersionNumber } from '@/lib/formatVersion';
 
 function ViewModeTabs() {
-  const { state, setViewMode, getCurrentVersion, setCurrentVersion } = useEditor();
+  const { state, setViewMode, getCurrentVersion, setCurrentVersion, setCompareVersionId } = useEditor();
   
   const tabs = [
     { id: 'context' as const, label: 'Context', icon: Settings, description: 'Project configuration' },
@@ -64,6 +64,33 @@ function ViewModeTabs() {
 
       {/* Right: Utility Buttons */}
       <div className="flex items-center gap-3">
+        {/* Base Version Selector - only show on compare page */}
+        {state.viewMode === 'compare' && (
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1">
+              <div className={`w-2 h-2 rounded-full ${state.compareVersionId ? 'bg-green-500' : 'bg-red-500'}`}></div>
+              <span className="text-sm text-gray-600">Base:</span>
+            </div>
+            <div className="relative">
+              <select
+                value={state.compareVersionId || ''}
+                onChange={(e) => setCompareVersionId(e.target.value)}
+                className="appearance-none bg-gray-100 border border-gray-300 rounded-lg px-2 py-1.5 pr-7 text-xs font-medium text-gray-700 hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              >
+                <option value="">Select base version...</option>
+                {state.versions
+                  .filter(v => v.id !== state.currentVersionId)
+                  .map(version => (
+                    <option key={version.id} value={version.id}>
+                      V{version.number} {version.note ? `- ${version.note}` : ''}
+                    </option>
+                  ))}
+              </select>
+              <ChevronDown className="absolute right-1.5 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-500 pointer-events-none" />
+            </div>
+          </div>
+        )}
+
         {/* Version Selector */}
         <div className="relative">
           <select
