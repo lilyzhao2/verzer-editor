@@ -447,35 +447,53 @@ export function DocumentCompare() {
     
     // Calculate vertical alignment to show both elements at the same height
     if (leftEl && rightEl && leftPanel && rightPanel) {
-      // Get the position of elements relative to their containers
-      const leftRect = leftEl.getBoundingClientRect();
-      const rightRect = rightEl.getBoundingClientRect();
-      const leftPanelRect = leftPanel.getBoundingClientRect();
-      const rightPanelRect = rightPanel.getBoundingClientRect();
+      // Use offsetTop for absolute positioning within scroll container (works even when far away)
+      const leftOffsetTop = leftEl.offsetTop;
+      const rightOffsetTop = rightEl.offsetTop;
       
-      // Calculate scroll positions to align both elements at 1/3 from top of viewport
-      const targetPosition = window.innerHeight / 3;
+      // Check if elements are far apart (more than one screen height)
+      const distance = Math.abs(leftPanel.scrollTop - rightPanel.scrollTop + (leftOffsetTop - rightOffsetTop));
+      const isFarApart = distance > window.innerHeight;
       
-      const leftScrollTop = leftPanel.scrollTop + (leftRect.top - leftPanelRect.top) - targetPosition;
-      const rightScrollTop = rightPanel.scrollTop + (rightRect.top - rightPanelRect.top) - targetPosition;
-      
-      // Smooth scroll both panels to align the elements
-      leftPanel.scrollTo({ top: leftScrollTop, behavior: 'smooth' });
-      rightPanel.scrollTo({ top: rightScrollTop, behavior: 'smooth' });
+      if (isFarApart) {
+        // When far apart, scroll ONLY the opposite panel to show where the match is
+        // Keep the clicked panel in place
+        const targetOffset = leftPanel.clientHeight / 3;
+        
+        // Determine which panel was clicked by checking which element is currently visible
+        const leftIsVisible = leftOffsetTop >= leftPanel.scrollTop && 
+                              leftOffsetTop <= leftPanel.scrollTop + leftPanel.clientHeight;
+        
+        if (leftIsVisible) {
+          // Clicked on left, scroll right to show the match
+          const rightScrollTop = rightOffsetTop - targetOffset;
+          rightPanel.scrollTo({ top: Math.max(0, rightScrollTop), behavior: 'smooth' });
+        } else {
+          // Clicked on right (or from sidebar), scroll left to show the match  
+          const leftScrollTop = leftOffsetTop - targetOffset;
+          leftPanel.scrollTo({ top: Math.max(0, leftScrollTop), behavior: 'smooth' });
+        }
+      } else {
+        // When close together, align both panels at same height (original behavior)
+        const targetOffset = leftPanel.clientHeight / 3;
+        const leftScrollTop = leftOffsetTop - targetOffset;
+        const rightScrollTop = rightOffsetTop - targetOffset;
+        
+        leftPanel.scrollTo({ top: Math.max(0, leftScrollTop), behavior: 'smooth' });
+        rightPanel.scrollTo({ top: Math.max(0, rightScrollTop), behavior: 'smooth' });
+      }
     } else if (leftEl && leftPanel) {
       // Only left side exists (deleted content)
-      const leftRect = leftEl.getBoundingClientRect();
-      const leftPanelRect = leftPanel.getBoundingClientRect();
-      const targetPosition = window.innerHeight / 3;
-      const leftScrollTop = leftPanel.scrollTop + (leftRect.top - leftPanelRect.top) - targetPosition;
-      leftPanel.scrollTo({ top: leftScrollTop, behavior: 'smooth' });
+      const leftOffsetTop = leftEl.offsetTop;
+      const targetOffset = leftPanel.clientHeight / 3;
+      const leftScrollTop = leftOffsetTop - targetOffset;
+      leftPanel.scrollTo({ top: Math.max(0, leftScrollTop), behavior: 'smooth' });
     } else if (rightEl && rightPanel) {
       // Only right side exists (inserted content)
-      const rightRect = rightEl.getBoundingClientRect();
-      const rightPanelRect = rightPanel.getBoundingClientRect();
-      const targetPosition = window.innerHeight / 3;
-      const rightScrollTop = rightPanel.scrollTop + (rightRect.top - rightPanelRect.top) - targetPosition;
-      rightPanel.scrollTo({ top: rightScrollTop, behavior: 'smooth' });
+      const rightOffsetTop = rightEl.offsetTop;
+      const targetOffset = rightPanel.clientHeight / 3;
+      const rightScrollTop = rightOffsetTop - targetOffset;
+      rightPanel.scrollTo({ top: Math.max(0, rightScrollTop), behavior: 'smooth' });
     }
   };
   
