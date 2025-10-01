@@ -62,7 +62,7 @@ export function VersionTree() {
     });
   };
 
-  const renderNode = (node: TreeNode, isLast: boolean = false): React.ReactNode => {
+  const renderNode = (node: TreeNode): React.ReactNode => {
     const isExpanded = expandedNodes.has(node.version.id);
     const hasChildren = node.children.length > 0;
     const isCurrent = state.currentVersionId === node.version.id;
@@ -174,8 +174,8 @@ export function VersionTree() {
         {/* Children */}
         {hasChildren && isExpanded && (
           <div className="ml-6 mt-2 space-y-2 border-l-2 border-gray-200 pl-2">
-            {node.children.map((child, idx) => 
-              renderNode(child, idx === node.children.length - 1)
+            {node.children.map((child) => 
+              renderNode(child)
             )}
           </div>
         )}

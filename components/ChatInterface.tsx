@@ -101,7 +101,7 @@ export function ChatInterface() {
         ) : (
           // List View
           <div className="p-4 space-y-3">
-            {state.chatHistory.map((message, index) => {
+            {state.chatHistory.map((message) => {
             const prevVersion = message.versionCreated > 0 ? message.versionCreated - 1 : null;
             const isLatest = message.versionCreated === state.versions.length - 1;
             const isCurrent = state.currentVersionId === `v${message.versionCreated}`;

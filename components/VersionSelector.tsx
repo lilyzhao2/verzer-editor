@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { useEditor } from '@/contexts/EditorContext';
-import { ChevronDown, GitBranch } from 'lucide-react';
+import { ChevronDown } from 'lucide-react';
 
 export function VersionSelector() {
   const { state, setCurrentVersion, getCurrentVersion } = useEditor();

@@ -21,7 +21,7 @@ interface Change {
 }
 
 export function TrackChangesCompare() {
-  const { state, createVersion, getCurrentVersion } = useEditor();
+  const { state, createVersion } = useEditor();
   const { selectedVersionsForCompare } = useCompare();
   const [baseVersionId, setBaseVersionId] = useState(state.currentVersionId);
   const [granularity, setGranularity] = useState<GranularityLevel>('sentence');
@@ -182,7 +182,6 @@ export function TrackChangesCompare() {
     });
 
     // Create detailed prompt showing what was applied
-    const versionNumbers = [...new Set(acceptedChangesList.map(c => `v${c.versionNumber}`))].join(', ');
     const changesByVersion = new Map<string, number>();
     acceptedChangesList.forEach(c => {
       const count = changesByVersion.get(c.versionNumber) || 0;

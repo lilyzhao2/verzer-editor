@@ -7,7 +7,7 @@ import { VersionSelector } from '@/components/VersionSelector';
 import { DocumentEditor } from '@/components/DocumentEditor';
 import { ChatInterface } from '@/components/ChatInterface';
 import { CompareView } from '@/components/CompareView';
-import { MessageSquare, FileText, GitCompare, GitBranch } from 'lucide-react';
+import { MessageSquare, FileText, GitCompare } from 'lucide-react';
 
 function ViewModeTabs() {
   const { state, setViewMode } = useEditor();
@@ -75,6 +75,7 @@ function MainContent() {
         document.removeEventListener('mouseup', handleMouseUp);
       };
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isResizing]);
 
   const renderMainView = () => {

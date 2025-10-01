@@ -7,17 +7,15 @@ import { Check, X, CheckCircle, Save } from 'lucide-react';
 import { RichTextEditor } from './RichTextEditor';
 
 export function DocumentEditor() {
-  const { state, updateVersion, getCurrentVersion, getCompareVersion, createVersion, createCheckpoint, revertToCheckpoint } = useEditor();
+  const { state, updateVersion, getCurrentVersion, getCompareVersion, createVersion, createCheckpoint } = useEditor();
   const currentVersion = getCurrentVersion();
   const compareVersion = getCompareVersion();
   const [localContent, setLocalContent] = useState(currentVersion?.content || '');
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
-  const [acceptedChanges, setAcceptedChanges] = useState<Set<number>>(new Set());
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     setLocalContent(currentVersion?.content || '');
-    setAcceptedChanges(new Set());
     setHasUnsavedChanges(false);
   }, [currentVersion]);
 
@@ -55,10 +53,6 @@ export function DocumentEditor() {
     if (hasUnsavedChanges && currentVersion) {
       // "Save as New Version" creates next root-level version (v3)
       const prompt = `New version based on v${currentVersion.number}`;
-      
-      // Find next root-level version number
-      const rootVersions = state.versions.filter(v => !v.number.includes('.'));
-      const nextRootNumber = rootVersions.length.toString();
       
       // Create version with no parentId to make it root-level
       createVersion(localContent, prompt, 'v0'); // Parent is always v0 for root versions
