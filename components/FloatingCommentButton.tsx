@@ -28,14 +28,15 @@ export function FloatingCommentButton({ onAddComment, editorRef }: FloatingComme
       const text = editor.state.doc.textBetween(from, to);
 
       if (text && text.trim().length > 0) {
-        // Get the selection coordinates
-        const coords = editor.view.coordsAtPos(from);
+        // Get the selection coordinates - use end position for right-side placement
+        const startCoords = editor.view.coordsAtPos(from);
+        const endCoords = editor.view.coordsAtPos(to);
         const editorElement = editor.view.dom;
         const editorRect = editorElement.getBoundingClientRect();
 
-        // Calculate position relative to the viewport
-        const top = coords.top - editorRect.top + editorElement.scrollTop - 40; // 40px above selection
-        const left = coords.left - editorRect.left + editorElement.scrollLeft;
+        // Calculate position relative to the viewport - position to the right of selection
+        const top = startCoords.top - editorRect.top + editorElement.scrollTop;
+        const left = endCoords.left - editorRect.left + editorElement.scrollLeft + 10; // 10px to the right of selection
 
         setPosition({ top, left });
         setSelectedText(text);

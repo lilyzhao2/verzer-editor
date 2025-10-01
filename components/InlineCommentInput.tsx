@@ -44,8 +44,8 @@ export function InlineCommentInput({
     <div 
       className="absolute z-50 bg-white rounded-lg shadow-2xl border-2 border-blue-400 p-3 w-80 animate-fadeIn"
       style={{
-        top: `${position.top}px`,
-        left: `${position.left}px`,
+        top: `${position.top - 10}px`, // Slight offset up
+        left: `${Math.min(position.left, window.innerWidth - 340)}px`, // Prevent overflow on right
         maxWidth: '90vw'
       }}
     >

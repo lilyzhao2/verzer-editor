@@ -8,6 +8,7 @@ import { ProjectSetup } from './ProjectSetup';
 import { DocumentUpload } from './DocumentUpload';
 import { ParagraphLineageView } from './ParagraphLineageView';
 import { CommentSidebar } from './CommentSidebar';
+import { UnresolvedCommentsBar } from './UnresolvedCommentsBar';
 import { formatVersionNumber } from '@/lib/formatVersion';
 
 export function DocumentEditor() {
@@ -19,7 +20,8 @@ export function DocumentEditor() {
     createVersion, 
     createCheckpoint,
     updateTabDirtyState,
-    addComment
+    addComment,
+    resolveComment
   } = useEditor();
   const currentVersion = getCurrentVersion();
   const [localContent, setLocalContent] = useState(currentVersion?.content || '');
@@ -348,6 +350,22 @@ export function DocumentEditor() {
           </div>
         </div>
       </div>
+
+      {/* Unresolved Comments Bar */}
+      {currentVersion && (
+        <UnresolvedCommentsBar
+          comments={state.comments.filter(c => c.versionId === currentVersion.id)}
+          users={state.users}
+          currentUserId={state.currentUserId}
+          onNavigate={(comment) => {
+            if (comment.position) {
+              handleNavigateToComment(comment.position);
+            }
+          }}
+          onResolve={resolveComment}
+          onShowSidebar={() => setShowCommentSidebar(true)}
+        />
+      )}
 
       {/* Main Content Area */}
       <div className="flex-1 flex overflow-hidden">
