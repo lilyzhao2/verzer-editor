@@ -332,58 +332,58 @@ export function ParallelView() {
           }}
           title="Double-click to open in document view"
         >
-          {/* Version Header */}
-          <div className="px-6 py-4 border-b bg-gray-50 rounded-t-lg">
+          {/* Compact Version Header */}
+          <div className="px-4 py-3 border-b bg-gray-50 rounded-t-lg">
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <span className={`text-sm font-bold px-3 py-1 rounded-lg ${
+              <div className="flex items-center gap-2">
+                <span className={`text-xs font-bold px-2 py-1 rounded ${
                   isCurrent ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'
                 }`}>
                   V{version.number.toUpperCase().replace('B', 'V')}
                 </span>
                 
                 {version.isOriginal && (
-                  <span className="text-sm bg-gray-100 text-black px-3 py-1 rounded-lg">
+                  <span className="text-xs bg-gray-100 text-black px-2 py-1 rounded">
                     Original
                   </span>
                 )}
                 
                 {isManualEdit(version) && (
-                  <span className="text-sm bg-amber-100 text-amber-700 px-3 py-1 rounded-lg">
+                  <span className="text-xs bg-amber-100 text-amber-700 px-2 py-1 rounded">
                     ✏️ Manual
                   </span>
                 )}
                 
                 {isAIEdit(version) && (
-                  <span className="text-sm bg-purple-100 text-purple-700 px-3 py-1 rounded-lg">
+                  <span className="text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded">
                     🤖 AI
                   </span>
                 )}
               </div>
               
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1">
                 <button
                   onClick={() => toggleVersionStar(version.id)}
-                  className="p-2 hover:bg-gray-200 rounded-lg transition-colors"
+                  className="p-1.5 hover:bg-gray-200 rounded transition-colors"
                   title="Star version"
                 >
-                  <Star className={`w-5 h-5 ${version.isStarred ? 'text-yellow-500 fill-yellow-500' : 'text-gray-400'}`} />
+                  <Star className={`w-4 h-4 ${version.isStarred ? 'text-yellow-500 fill-yellow-500' : 'text-gray-400'}`} />
                 </button>
                 <button
                   onClick={() => toggleVersionArchive(version.id)}
-                  className="p-2 hover:bg-gray-200 rounded-lg transition-colors"
+                  className="p-1.5 hover:bg-gray-200 rounded transition-colors"
                   title={version.isArchived ? "Restore version" : "Archive version"}
                 >
-                  <Archive className={`w-5 h-5 ${version.isArchived ? 'text-red-500' : 'text-gray-400'}`} />
+                  <Archive className={`w-4 h-4 ${version.isArchived ? 'text-red-500' : 'text-gray-400'}`} />
                 </button>
                 <button
                   onClick={() => toggleInlineEdit(branch.id, version.id, version)}
-                  className={`p-2 hover:bg-gray-200 rounded-lg transition-colors ${
+                  className={`p-1.5 hover:bg-gray-200 rounded transition-colors ${
                     branch.editingVersions[version.id] ? 'bg-blue-100' : ''
                   }`}
                   title={branch.editingVersions[version.id] ? "Cancel edit" : "Edit inline"}
                 >
-                  <Edit3 className={`w-5 h-5 ${
+                  <Edit3 className={`w-4 h-4 ${
                     branch.editingVersions[version.id] ? 'text-blue-600' : 'text-gray-600'
                   }`} />
                 </button>
@@ -391,33 +391,33 @@ export function ParallelView() {
             </div>
           </div>
           
-          {/* Prompt/Change Label */}
+          {/* Compact Prompt/Change Label */}
           {version.prompt && (
-            <div className="px-6 py-3 border-b bg-white">
-              <p className="text-sm text-black line-clamp-2">
+            <div className="px-4 py-2 border-b bg-white">
+              <p className="text-xs text-black line-clamp-2">
                 {version.prompt}
               </p>
             </div>
           )}
           
-          {/* Version Note */}
+          {/* Compact Version Note */}
           {version.note && (
-            <div className="px-6 py-3 border-b bg-white">
-              <p className="text-sm text-blue-600 italic">
+            <div className="px-4 py-2 border-b bg-white">
+              <p className="text-xs text-blue-600 italic line-clamp-1">
                 📝 {version.note}
               </p>
             </div>
           )}
           
-          {/* Timestamp */}
-          <div className="px-6 py-3 border-b bg-white">
-            <p className="text-sm text-gray-600">
+          {/* Compact Timestamp */}
+          <div className="px-4 py-2 border-b bg-white">
+            <p className="text-xs text-gray-600">
               {new Date(version.timestamp).toLocaleString()}
             </p>
           </div>
           
-          {/* Document Content - Expandable and Editable */}
-          <div className="p-4 bg-white rounded-b-lg">
+          {/* Compact Document Content - Expandable and Editable */}
+          <div className="p-3 bg-white rounded-b-lg">
             
             {branch.editingVersions[version.id] ? (
               // Inline editor
