@@ -24,7 +24,8 @@ export function CommentSidebar({
     addCommentReply, 
     resolveComment, 
     deleteComment,
-    deleteCommentReply 
+    deleteCommentReply,
+    handleAIEdit 
   } = useEditor();
   
   const [filter, setFilter] = useState<'all' | 'unresolved' | 'resolved'>('all');
@@ -171,6 +172,16 @@ export function CommentSidebar({
               onResolve={resolveComment}
               onDelete={deleteComment}
               onDeleteReply={deleteCommentReply}
+              onAIResolve={async (commentId) => {
+                const comment = state.comments.find(c => c.id === commentId);
+                if (comment) {
+                  // Create AI prompt to resolve the comment
+                  const prompt = `Please address the following comment on the selected text "${comment.selectedText}": "${comment.content}". Make the necessary changes to resolve this feedback.`;
+                  await handleAIEdit(prompt);
+                  // Mark comment as resolved after AI edit
+                  resolveComment(commentId);
+                }
+              }}
               onNavigate={() => {
                 if (comment.position && onNavigateToComment) {
                   onNavigateToComment(comment.position);

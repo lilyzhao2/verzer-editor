@@ -7,6 +7,27 @@
   font-size: 17px;
 }
 
+/* Vertical text utilities */
+.writing-mode-vertical-rl {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+}
+
+/* Line clamp utilities */
+.line-clamp-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.line-clamp-3 {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
 /* Comment highlights */
 .comment-highlight {
   background-color: #fef3c7;
@@ -14,10 +35,23 @@
   cursor: pointer;
   padding: 2px 0;
   position: relative;
+  transition: all 0.2s ease;
 }
 
 .comment-highlight:hover {
   background-color: #fde68a;
+  border-bottom-color: #d97706;
+}
+
+.comment-highlight.resolved {
+  background-color: #f3f4f6;
+  border-bottom: 2px solid #9ca3af;
+  opacity: 0.7;
+}
+
+.comment-highlight.resolved:hover {
+  background-color: #e5e7eb;
+  opacity: 0.9;
 }
 
 /* Floating comment button animation */

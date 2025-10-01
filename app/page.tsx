@@ -24,7 +24,7 @@ function ViewModeTabs() {
     { id: 'document' as const, label: 'Document', icon: FileText, description: 'Focus on writing' },
     { id: 'parallel' as const, label: 'Parallel', icon: Layers, description: 'Work on multiple versions simultaneously' },
     { id: 'compare' as const, label: 'Compare', icon: Scale, description: 'Legal document comparison' },
-        { id: 'iterate' as const, label: 'Collaboration', icon: GitBranch, description: 'Track changes and collaborate' },
+        { id: 'iterate' as const, label: 'Cherry Pick', icon: GitBranch, description: 'Track changes and collaborate' },
   ];
 
   const { toggleDebugMode } = useEditor();
@@ -233,9 +233,9 @@ function MainContent() {
         {renderMainView()}
       </div>
 
-      {/* AI Agent Chat - Always Present (except in Parallel view) */}
+      {/* AI Agent Chat - Present for most views except document and context */}
       {/* Right Sidebar - AI Chat */}
-      {(
+      {state.viewMode !== 'document' && state.viewMode !== 'context' && (
         <>
           {!chatMinimized && (
             <div
@@ -255,10 +255,10 @@ function MainContent() {
               // Minimized State
               <button
                 onClick={() => setChatMinimized(false)}
-                className="flex-1 flex flex-col items-center justify-center gap-3 hover:bg-gray-100 transition-colors"
+                className="flex-1 flex flex-col items-center justify-center gap-3 hover:bg-gray-100 transition-colors py-4"
               >
-                <MessageSquare className="w-6 h-6 text-gray-600" />
-                <span className="text-xs text-gray-600 writing-mode-vertical transform rotate-180">
+                <MessageSquare className="w-8 h-8 text-gray-700" />
+                <span className="text-sm font-medium text-gray-700 writing-mode-vertical-rl">
                   AI Agent
                 </span>
               </button>
@@ -278,7 +278,7 @@ function MainContent() {
                   </button>
                 </div>
                 <div className="flex-1 overflow-hidden">
-                  <ChatInterface />
+                  <ChatInterface viewMode={state.viewMode} />
                 </div>
               </>
             )}

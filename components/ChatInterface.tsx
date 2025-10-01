@@ -7,9 +7,22 @@ import { VersionTree } from './VersionTree';
 import { ConversationalChat } from './ConversationalChat';
 import { GripVertical } from 'lucide-react';
 
-export function ChatInterface() {
+interface ChatInterfaceProps {
+  viewMode?: string;
+}
+
+export function ChatInterface({ viewMode }: ChatInterfaceProps) {
   const { state, setSelectedModel } = useEditor();
-  const [splitPosition, setSplitPosition] = useState(60); // percentage - 60% for tree, 40% for chat
+  
+  // Default split position based on view mode
+  const getDefaultSplitPosition = () => {
+    if (viewMode === 'context' || viewMode === 'document') {
+      return 10; // Collapsed tree - only 10% for tree, 90% for chat
+    }
+    return 40; // Default - 40% for tree, 60% for chat
+  };
+  
+  const [splitPosition, setSplitPosition] = useState(getDefaultSplitPosition());
   const [isResizing, setIsResizing] = useState(false);
 
   const handleModelChange = (model: AIModel) => {
@@ -56,25 +69,31 @@ export function ChatInterface() {
 
   return (
     <div id="chat-interface-container" className="h-full flex flex-col bg-gray-50">
-      {/* Top Section - AI Chat */}
+      {/* Top Section - Version Tree */}
       <div 
         className="overflow-hidden border-b border-gray-200"
         style={{ height: `${splitPosition}%` }}
       >
         <div className="h-full flex flex-col">
           <div className="px-5 py-3 bg-white border-b border-gray-200 flex items-center justify-between">
-            <span className="text-base font-semibold text-gray-800">AI Chat</span>
-            <select
-              value={state.selectedModel}
-              onChange={(e) => handleModelChange(e.target.value as AIModel)}
-              className="text-sm text-gray-700 bg-transparent border border-gray-300 rounded px-3 py-1.5 cursor-pointer hover:bg-gray-50 font-medium"
-            >
-              <option value="claude-3-5-haiku-20241022">Haiku</option>
-              <option value="claude-3-5-sonnet-20241022">Sonnet</option>
-            </select>
+            <span className="text-base font-semibold text-gray-800">Version Tree</span>
+            <div className="flex items-center gap-2">
+              <div className="text-sm text-gray-600 font-medium">
+                {state.versions.length} versions
+              </div>
+              {splitPosition < 20 && (
+                <button
+                  onClick={() => setSplitPosition(40)}
+                  className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+                  title="Expand tree"
+                >
+                  Expand
+                </button>
+              )}
+            </div>
           </div>
           <div className="flex-1 overflow-hidden">
-            <ConversationalChat />
+            <VersionTree />
           </div>
         </div>
       </div>
@@ -90,20 +109,25 @@ export function ChatInterface() {
         <GripVertical className="w-5 h-4 text-gray-400" />
       </div>
 
-      {/* Bottom Section - Version Tree */}
+      {/* Bottom Section - AI Chat */}
       <div 
         className="flex-1 overflow-hidden"
         style={{ height: `${100 - splitPosition}%` }}
       >
         <div className="h-full flex flex-col">
           <div className="px-5 py-3 bg-white border-b border-gray-200 flex items-center justify-between">
-            <span className="text-base font-semibold text-gray-800">Version Tree</span>
-            <div className="text-sm text-gray-600 font-medium">
-              {state.versions.length} versions
-            </div>
+            <span className="text-base font-semibold text-gray-800">AI Chat</span>
+            <select
+              value={state.selectedModel}
+              onChange={(e) => handleModelChange(e.target.value as AIModel)}
+              className="text-sm text-gray-700 bg-transparent border border-gray-300 rounded px-3 py-1.5 cursor-pointer hover:bg-gray-50 font-medium"
+            >
+              <option value="claude-3-5-haiku-20241022">Haiku</option>
+              <option value="claude-3-5-sonnet-20241022">Sonnet</option>
+            </select>
           </div>
           <div className="flex-1 overflow-hidden">
-            <VersionTree />
+            <ConversationalChat />
           </div>
         </div>
       </div>

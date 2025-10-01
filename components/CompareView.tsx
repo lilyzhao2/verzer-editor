@@ -5,7 +5,7 @@ import { useEditor } from '@/contexts/EditorContext';
 import { useCompare } from '@/contexts/CompareContext';
 import { CheckCircle, Sparkles, FileEdit, GitCompare, Star, Edit3, MessageSquare, User, Users, GitBranch } from 'lucide-react';
 import { TrackChangesCompare } from './TrackChangesCompare';
-import { ParagraphLineageView } from './ParagraphLineageView';
+import { TrackChangesWithComments } from './TrackChangesWithComments';
 import { CommentThread } from './CommentThread';
 import { SuggestChangesMode } from './SuggestChangesMode';
 import * as Diff from 'diff';
@@ -26,10 +26,9 @@ export function CompareView() {
   // Only track changes mode now
   const [paragraphChoices, setParagraphChoices] = useState<Map<number, string>>(new Map());
   const [showComments, setShowComments] = useState(false);
-  const [showLineagePanel, setShowLineagePanel] = useState(false);
   const [showSuggestMode, setShowSuggestMode] = useState(false);
   const [newComment, setNewComment] = useState('');
-  const [activeTab, setActiveTab] = useState<'comments' | 'lineage' | 'suggest'>('comments');
+  const [activeTab, setActiveTab] = useState<'comments' | 'suggest'>('comments');
   const [diffView, setDiffView] = useState<'normal' | 'diff'>('normal');
 
   const selectedVersionObjects = selectedVersionsForCompare
@@ -322,17 +321,6 @@ export function CompareView() {
             </div>
             <div className="flex items-center gap-3">
               <button
-                onClick={() => setShowLineagePanel(!showLineagePanel)}
-                className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-base font-semibold transition-colors ${
-                  showLineagePanel 
-                    ? 'bg-purple-600 text-white' 
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                <GitBranch className="w-5 h-5" />
-                Lineage
-              </button>
-              <button
                 onClick={() => setShowComments(!showComments)}
                 className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-base font-semibold transition-colors ${
                   showComments 
@@ -359,7 +347,9 @@ export function CompareView() {
             </div>
           </div>
         ) : selectedVersionsForCompare.length >= 2 ? (
-          <TrackChangesCompare />
+          <TrackChangesWithComments>
+            <TrackChangesCompare />
+          </TrackChangesWithComments>
         ) : (
           <div className="flex-1 flex items-center justify-center">
             <div className="text-center">
@@ -373,17 +363,6 @@ export function CompareView() {
         )}
       </div>
 
-      {/* Right Panel - Lineage */}
-      {showLineagePanel && selectedVersionsForCompare.length > 0 && (
-        <div className="w-96 border-l border-gray-200 bg-white">
-          <ParagraphLineageView 
-            versionId={selectedVersionsForCompare[0]}
-            onRevert={(paragraphId, targetVersionId) => {
-              console.log('Revert paragraph', paragraphId, 'to version', targetVersionId);
-            }}
-          />
-        </div>
-      )}
 
       {/* Right Panel - Comments & Users */}
       {showComments && (
@@ -401,17 +380,6 @@ export function CompareView() {
               >
                 <MessageSquare className="w-4 h-4 inline mr-1" />
                 Comments
-              </button>
-              <button
-                onClick={() => setActiveTab('lineage')}
-                className={`flex-1 px-3 py-2 text-sm font-medium rounded-lg transition-colors ${
-                  activeTab === 'lineage' 
-                    ? 'bg-blue-600 text-white' 
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                <GitBranch className="w-4 h-4 inline mr-1" />
-                Lineage
               </button>
               <button
                 onClick={() => setActiveTab('suggest')}
@@ -506,14 +474,6 @@ export function CompareView() {
               </>
             )}
 
-            {activeTab === 'lineage' && selectedVersionsForCompare.length > 0 && (
-              <ParagraphLineageView 
-                versionId={selectedVersionsForCompare[0]}
-                onRevert={(paragraphId, targetVersionId) => {
-                  console.log('Revert paragraph', paragraphId, 'to version', targetVersionId);
-                }}
-              />
-            )}
 
             {activeTab === 'suggest' && selectedVersionsForCompare.length > 0 && (
               <div className="p-4">

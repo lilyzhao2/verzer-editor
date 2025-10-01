@@ -2,13 +2,12 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useEditor } from '@/contexts/EditorContext';
-import { CheckCircle, Save, Upload, Printer, Plus, Minus, FileText, Users, GitBranch, MessageSquare } from 'lucide-react';
+import { CheckCircle, Save, Upload, Printer, Plus, Minus, FileText, Share2, GitBranch } from 'lucide-react';
 import { RichTextEditor } from './RichTextEditor';
 import { ProjectSetup } from './ProjectSetup';
 import { DocumentUpload } from './DocumentUpload';
 import { ParagraphLineageView } from './ParagraphLineageView';
-import { CommentSidebar } from './CommentSidebar';
-import { UnresolvedCommentsBar } from './UnresolvedCommentsBar';
+import { ShareModal } from './ShareModal';
 import { formatVersionNumber } from '@/lib/formatVersion';
 
 export function DocumentEditor() {
@@ -20,8 +19,6 @@ export function DocumentEditor() {
     createVersion, 
     createCheckpoint,
     updateTabDirtyState,
-    addComment,
-    resolveComment,
     setDocumentName
   } = useEditor();
   const currentVersion = getCurrentVersion();
@@ -32,16 +29,13 @@ export function DocumentEditor() {
   const [showUpload, setShowUpload] = useState(false);
   const [zoomLevel, setZoomLevel] = useState(100);
   const [isPrintView, setIsPrintView] = useState(true); // Auto-enable print view
-  const [showUserBranchModal, setShowUserBranchModal] = useState(false);
-  const [newUserName, setNewUserName] = useState('');
+  const [showShareModal, setShowShareModal] = useState(false);
   const [showLineagePanel, setShowLineagePanel] = useState(false);
-  const [showCommentSidebar, setShowCommentSidebar] = useState(false);
-  const [showAddCommentModal, setShowAddCommentModal] = useState(false);
-  const [commentText, setCommentText] = useState('');
-  const [selectedTextForComment, setSelectedTextForComment] = useState<{ text: string; position: { start: number; end: number } } | null>(null);
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const isUpdatingRef = useRef(false);
   const editorInstanceRef = useRef<any>(null);
+  const editorContainerRef = useRef<HTMLDivElement>(null);
+
 
   useEffect(() => {
     isUpdatingRef.current = true;
@@ -53,10 +47,6 @@ export function DocumentEditor() {
       isUpdatingRef.current = false;
     }, 100);
     
-    // Auto-show comment sidebar if there are comments for this version
-    if (currentVersion && state.comments.some(c => c.versionId === currentVersion.id)) {
-      setShowCommentSidebar(true);
-    }
   }, [currentVersion, state.comments]);
 
   const handleContentChange = useCallback((newContent: string) => {
@@ -165,78 +155,12 @@ export function DocumentEditor() {
     }
   };
 
-  const handleCreateUserBranch = () => {
-    if (!newUserName.trim()) return;
-    
-    if (currentVersion) {
-      const prompt = `👤 ${newUserName}'s version based on v${currentVersion.number}`;
-      // Create custom version ID with user name: v1b1_tony
-      const userName = newUserName.toLowerCase().replace(/\s+/g, '');
-      const customId = `v${Date.now()}_${userName}`;
-      createVersion(localContent, prompt, currentVersion.id, `${newUserName}'s edits`, customId);
-      setShowUserBranchModal(false);
-      setNewUserName('');
-    }
-  };
 
-  const handleAddComment = (selectedText: string, position: { start: number; end: number }, comment?: string) => {
-    if (!currentVersion) return;
-    
-    // If comment is provided directly (from inline input), use it
-    if (comment) {
-      addComment(
-        currentVersion.id,
-        state.currentUserId,
-        comment,
-        position,
-        selectedText
-      );
-      
-      // Show the sidebar to see the new comment
-      setShowCommentSidebar(true);
-    } else {
-      // Fallback to modal (for toolbar button)
-      setSelectedTextForComment({ text: selectedText, position });
-      setShowAddCommentModal(true);
-    }
-  };
-
-  const handleSubmitComment = () => {
-    if (!commentText.trim() || !selectedTextForComment || !currentVersion) return;
-    
-    addComment(
-      currentVersion.id,
-      state.currentUserId,
-      commentText,
-      selectedTextForComment.position,
-      selectedTextForComment.text
-    );
-    
-    setCommentText('');
-    setSelectedTextForComment(null);
-    setShowAddCommentModal(false);
-    setShowCommentSidebar(true); // Show sidebar after adding comment
-  };
-
-  const handleNavigateToComment = (position: { start: number; end: number }) => {
-    // Scroll to the commented text in the editor
-    if (editorInstanceRef.current) {
-      // Focus the editor and set selection
-      editorInstanceRef.current.commands.focus();
-      editorInstanceRef.current.commands.setTextSelection(position);
-      
-      // Scroll into view
-      const { node } = editorInstanceRef.current.view.domAtPos(position.start);
-      if (node && node.parentElement) {
-        node.parentElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }
-    }
-  };
 
   return (
     <div className="h-full flex flex-col overflow-hidden">
       {/* Main Header - All on one line */}
-      <div className="px-6 py-4 border-b bg-gray-50 flex-shrink-0">
+      <div className="px-6 py-6 border-b bg-gray-50 flex-shrink-0">
         <div className="flex items-center justify-between gap-5">
           {/* Left: Document Name & Version Info */}
           <div className="flex items-center gap-4">
@@ -265,125 +189,91 @@ export function DocumentEditor() {
           
           {/* Right: All Controls */}
           <div className="flex items-center gap-4">
-            {/* Document Name Input - Only show for v0 */}
-            {currentVersion?.number === '0' && (
-              <div className="flex items-center gap-3">
-                <input
-                  type="text"
-                  value={documentName}
-                  onChange={(e) => setDocumentName(e.target.value)}
-                  className="px-4 py-2.5 border border-gray-300 rounded-lg text-base font-semibold text-black bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="Document name"
-                />
+              {/* Upload Button - Only show for v0 */}
+              {currentVersion?.number === '0' && (
                 <button
                   onClick={() => setShowUpload(true)}
-                  className="flex items-center gap-2 px-4 py-2.5 bg-purple-600 text-white text-base font-semibold rounded-lg hover:bg-purple-700 transition-colors"
+                  className="flex items-center gap-2 px-5 py-3 bg-purple-600 text-white text-lg font-semibold rounded-lg hover:bg-purple-700 transition-colors"
                   title="Upload document"
                 >
-                  <Upload className="w-5 h-5" />
+                  <Upload className="w-6 h-6" />
                   Upload
                 </button>
-              </div>
-            )}
+              )}
 
             {/* Save Actions - Only show when there are unsaved changes */}
             {hasUnsavedChanges && (
               <div className="flex items-center gap-2">
                 <button
                   onClick={handleOverwriteVersion}
-                  className="flex items-center gap-2 px-4 py-2.5 bg-gray-600 text-white text-base font-semibold rounded-lg hover:bg-gray-700 transition-colors"
+                  className="flex items-center gap-2 px-5 py-3 bg-gray-600 text-white text-lg font-semibold rounded-lg hover:bg-gray-700 transition-colors"
                   title={`Overwrite ${formatVersionNumber(currentVersion?.number || '0')}`}
                 >
-                  <Save className="w-5 h-5" />
+                  <Save className="w-6 h-6" />
                   Overwrite {formatVersionNumber(currentVersion?.number || '0')}
                 </button>
                 <button
                   onClick={handleSaveAsVariation}
-                  className="px-4 py-2.5 bg-amber-600 text-white text-base font-semibold rounded-lg hover:bg-amber-700 transition-colors"
+                  className="px-5 py-3 bg-amber-600 text-white text-lg font-semibold rounded-lg hover:bg-amber-700 transition-colors"
                   title={`Save as new variation (${getNextVariationNumber()})`}
                 >
                   Save to New Variation
                 </button>
                 <button
                   onClick={handleSaveAsNewVersion}
-                  className="px-4 py-2.5 bg-blue-600 text-white text-base font-semibold rounded-lg hover:bg-blue-700 transition-colors"
+                  className="px-5 py-3 bg-blue-600 text-white text-lg font-semibold rounded-lg hover:bg-blue-700 transition-colors"
                   title={`Save as new root version (${getNextRootVersion()})`}
                 >
                   Save to New Version
                 </button>
               </div>
             )}
-            
-            {/* Collaboration */}
-            <button
-              onClick={() => setShowUserBranchModal(true)}
-              className="flex items-center gap-2 px-4 py-2.5 bg-purple-600 text-white text-base font-semibold rounded-lg hover:bg-purple-700 transition-colors"
-              title="Invite collaborators to this document"
-            >
-              <Users className="w-5 h-5" />
-              Invite Collaborators
-            </button>
 
-            <button
-              onClick={() => setShowCommentSidebar(!showCommentSidebar)}
-              className={`flex items-center gap-2 px-4 py-2.5 text-base font-semibold rounded-lg transition-colors ${
-                showCommentSidebar 
-                  ? 'bg-amber-600 text-white' 
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-              }`}
-              title="Show comments"
-            >
-              <MessageSquare className="w-5 h-5" />
-              Comments
-              {state.comments.filter(c => c.versionId === currentVersion?.id && !c.resolved).length > 0 && (
-                <span className="ml-1 bg-red-500 text-white text-xs rounded-full px-2 py-0.5 font-bold">
-                  {state.comments.filter(c => c.versionId === currentVersion?.id && !c.resolved).length}
-                </span>
-              )}
-            </button>
 
             <button
               onClick={() => setShowLineagePanel(!showLineagePanel)}
-              className={`flex items-center gap-2 px-4 py-2.5 text-base font-semibold rounded-lg transition-colors ${
+              className={`flex items-center gap-2 px-5 py-3 text-lg font-semibold rounded-lg transition-colors ${
                 showLineagePanel 
                   ? 'bg-blue-600 text-white' 
                   : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
               }`}
               title="Show paragraph lineage and change tracking"
             >
-              <GitBranch className="w-5 h-5" />
+              <GitBranch className="w-6 h-6" />
               Lineage
+            </button>
+            
+            {/* Share Button - Moved to rightmost position */}
+            <button
+              onClick={() => setShowShareModal(true)}
+              className="flex items-center gap-2 px-5 py-3 bg-gray-100 text-gray-700 text-lg font-semibold rounded-lg hover:bg-gray-200 transition-colors"
+              title="Share this document"
+            >
+              <Share2 className="w-6 h-6" />
+              Share
             </button>
 
           </div>
         </div>
       </div>
 
-      {/* Unresolved Comments Bar */}
-      {currentVersion && (
-        <UnresolvedCommentsBar
-          comments={state.comments.filter(c => c.versionId === currentVersion.id)}
-          users={state.users}
-          currentUserId={state.currentUserId}
-          onNavigate={(comment) => {
-            if (comment.position) {
-              handleNavigateToComment(comment.position);
-            }
-          }}
-          onResolve={resolveComment}
-          onShowSidebar={() => setShowCommentSidebar(true)}
-        />
-      )}
 
       {/* Main Content Area */}
       <div className="flex-1 flex overflow-hidden">
         {/* Editor */}
         <div 
-          className={`flex-1 overflow-hidden ${showLineagePanel || showCommentSidebar ? 'w-2/3' : 'w-full'}`}
+          ref={editorContainerRef}
+          className={`flex-1 overflow-hidden relative ${
+            showLineagePanel 
+              ? 'w-2/3' 
+              : 'w-full'
+          }`}
           style={{ 
             transform: `scale(${zoomLevel / 100})`,
             transformOrigin: 'top left',
-            width: showLineagePanel || showCommentSidebar ? `${(100 / (zoomLevel / 100)) * 0.67}%` : `${100 / (zoomLevel / 100)}%`,
+            width: showLineagePanel 
+              ? `${(100 / (zoomLevel / 100)) * 0.67}%` 
+              : `${100 / (zoomLevel / 100)}%`,
             height: `${100 / (zoomLevel / 100)}%`
           }}
         >
@@ -396,7 +286,7 @@ export function DocumentEditor() {
               isPrintView={isPrintView}
               zoomLevel={zoomLevel}
               onZoomChange={setZoomLevel}
-              documentName={documentName}
+              documentName={state.documentName}
               versionNumber={currentVersion?.number || '0'}
               onDownload={() => {
                 const blob = new Blob([localContent], { type: 'text/html' });
@@ -405,18 +295,17 @@ export function DocumentEditor() {
                 a.href = url;
                 const versionStr = currentVersion?.number || '0';
                 const cleanVersion = versionStr.replace(/\./g, '').toLowerCase();
-                a.download = `${documentName}_${cleanVersion}.doc`;
+                a.download = `${state.documentName}_${cleanVersion}.doc`;
                 a.click();
               }}
               onPrint={() => window.print()}
-              onAddComment={handleAddComment}
               ref={editorInstanceRef}
             />
           </div>
         </div>
 
         {/* Lineage Panel */}
-        {showLineagePanel && currentVersion && !showCommentSidebar && (
+        {showLineagePanel && currentVersion && (
           <div className="w-1/3 border-l border-gray-200 bg-white">
             <ParagraphLineageView 
               versionId={currentVersion.id}
@@ -426,16 +315,6 @@ export function DocumentEditor() {
               }}
             />
           </div>
-        )}
-
-        {/* Comment Sidebar */}
-        {showCommentSidebar && currentVersion && !showLineagePanel && (
-          <CommentSidebar
-            versionId={currentVersion.id}
-            onNavigateToComment={handleNavigateToComment}
-            isOpen={showCommentSidebar}
-            onToggle={() => setShowCommentSidebar(!showCommentSidebar)}
-          />
         )}
       </div>
 
@@ -460,112 +339,14 @@ export function DocumentEditor() {
         </div>
       )}
 
-      {/* User Branch Modal */}
-      {showUserBranchModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-black">Create User Branch</h3>
-              <button
-                onClick={() => {
-                  setShowUserBranchModal(false);
-                  setNewUserName('');
-                }}
-                className="text-gray-500 hover:text-gray-700"
-              >
-                ✕
-              </button>
-            </div>
-            <p className="text-sm text-gray-600 mb-4">
-              Create a branch for another user to collaborate on this document
-            </p>
-            <input
-              type="text"
-              value={newUserName}
-              onChange={(e) => setNewUserName(e.target.value)}
-              onKeyPress={(e) => e.key === 'Enter' && handleCreateUserBranch()}
-              placeholder="Enter collaborator's name"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-black mb-4"
-              autoFocus
-            />
-            <div className="flex gap-2 justify-end">
-              <button
-                onClick={() => {
-                  setShowUserBranchModal(false);
-                  setNewUserName('');
-                }}
-                className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleCreateUserBranch}
-                disabled={!newUserName.trim()}
-                className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Create Branch
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Share Modal */}
+      <ShareModal
+        isOpen={showShareModal}
+        onClose={() => setShowShareModal(false)}
+        documentName={state.documentName}
+        versionId={currentVersion?.id || 'v0'}
+      />
 
-      {/* Add Comment Modal */}
-      {showAddCommentModal && selectedTextForComment && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-black">Add Comment</h3>
-              <button
-                onClick={() => {
-                  setShowAddCommentModal(false);
-                  setCommentText('');
-                  setSelectedTextForComment(null);
-                }}
-                className="text-gray-500 hover:text-gray-700"
-              >
-                ✕
-              </button>
-            </div>
-            
-            {/* Selected Text */}
-            <div className="mb-4 p-3 bg-yellow-50 border-l-4 border-yellow-400 rounded">
-              <p className="text-xs text-gray-600 mb-1">Commenting on:</p>
-              <p className="text-sm text-gray-900 italic">"{selectedTextForComment.text}"</p>
-            </div>
-            
-            {/* Comment Input */}
-            <textarea
-              value={commentText}
-              onChange={(e) => setCommentText(e.target.value)}
-              placeholder="Type your comment... Use @ to mention someone"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-black mb-4"
-              rows={4}
-              autoFocus
-            />
-            
-            <div className="flex gap-2 justify-end">
-              <button
-                onClick={() => {
-                  setShowAddCommentModal(false);
-                  setCommentText('');
-                  setSelectedTextForComment(null);
-                }}
-                className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSubmitComment}
-                disabled={!commentText.trim()}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Add Comment
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

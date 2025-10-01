@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useEditor } from '@/contexts/EditorContext';
-import { Lock, Unlock, RotateCcw, Clock, User, MessageSquare, GitBranch } from 'lucide-react';
+import { Lock, Unlock, RotateCcw, Clock, User, MessageSquare, GitBranch, Eye, History } from 'lucide-react';
 
 interface ParagraphLineageViewProps {
   versionId: string;
@@ -29,7 +29,17 @@ export function ParagraphLineageView({ versionId, onRevert }: ParagraphLineageVi
     );
   }
 
-  const paragraphs = currentVersion.content.split('\n\n');
+  // Parse HTML content to extract plain text paragraphs
+  const stripHtml = (html: string) => {
+    const tmp = document.createElement('DIV');
+    tmp.innerHTML = html;
+    return tmp.textContent || tmp.innerText || '';
+  };
+
+  const paragraphs = currentVersion.content
+    .split(/<\/p>|<br\s*\/?>|\n\n/)
+    .map(p => stripHtml(p.replace(/<p[^>]*>/g, '')))
+    .filter(p => p.trim().length > 0);
   
   return (
     <div className="h-full flex flex-col bg-white">

@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { Comment, CommentReply, User } from '@/lib/types';
-import { MessageSquare, Check, X, Reply, Trash2, MoreVertical } from 'lucide-react';
+import { MessageSquare, Check, X, Reply, Trash2, MoreVertical, Bot, Sparkles } from 'lucide-react';
 
 interface CommentThreadProps {
   comment: Comment;
@@ -13,6 +13,7 @@ interface CommentThreadProps {
   onDelete: (commentId: string) => void;
   onDeleteReply: (commentId: string, replyId: string) => void;
   onNavigate?: () => void;
+  onAIResolve?: (commentId: string) => void;
 }
 
 export function CommentThread({
@@ -23,7 +24,8 @@ export function CommentThread({
   onResolve,
   onDelete,
   onDeleteReply,
-  onNavigate
+  onNavigate,
+  onAIResolve
 }: CommentThreadProps) {
   const [showReplyInput, setShowReplyInput] = useState(false);
   const [replyContent, setReplyContent] = useState('');
@@ -200,8 +202,32 @@ export function CommentThread({
         </div>
       )}
 
+      {/* Action Buttons */}
+      {!showReplyInput && (
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowReplyInput(true)}
+            className="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-700 font-medium"
+          >
+            <Reply className="w-4 h-4" />
+            Reply
+          </button>
+          
+          {!comment.resolved && onAIResolve && (
+            <button
+              onClick={() => onAIResolve(comment.id)}
+              className="flex items-center gap-2 text-sm text-purple-600 hover:text-purple-700 font-medium"
+              title="AI will create a new variation addressing this comment"
+            >
+              <Sparkles className="w-4 h-4" />
+              AI Resolve
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Reply Input */}
-      {showReplyInput ? (
+      {showReplyInput && (
         <div className="flex gap-2">
           <input
             type="text"
@@ -228,14 +254,6 @@ export function CommentThread({
             Cancel
           </button>
         </div>
-      ) : (
-        <button
-          onClick={() => setShowReplyInput(true)}
-          className="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-700 font-medium"
-        >
-          <Reply className="w-4 h-4" />
-          Reply
-        </button>
       )}
     </div>
   );

@@ -33,7 +33,6 @@ export function ParallelView() {
   const [showOnlyStarred, setShowOnlyStarred] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
   const [filterType, setFilterType] = useState<'all' | 'ai' | 'manual'>('all');
-  const [filterUser, setFilterUser] = useState<string>('all'); // Filter by user
   const [collapseAll, setCollapseAll] = useState(false);
   const [maxZoom, setMaxZoom] = useState(100);
 
@@ -72,9 +71,6 @@ export function ParallelView() {
       if (filterType === 'ai' && !isAIEdit(v)) return false;
       if (filterType === 'manual' && !isManualEdit(v)) return false;
       
-      // User filter
-      if (filterUser !== 'all' && v.userId !== filterUser) return false;
-      
       return true;
     });
     
@@ -88,7 +84,6 @@ export function ParallelView() {
         if (!showArchived && child.isArchived) return false;
         if (filterType === 'ai' && !isAIEdit(child)) return false;
         if (filterType === 'manual' && !isManualEdit(child)) return false;
-        if (filterUser !== 'all' && child.userId !== filterUser) return false;
         return true;
       }),
       isExpanded: !collapseAll,
@@ -103,7 +98,7 @@ export function ParallelView() {
     console.log('Parallel View - Root versions found:', rootVersions.length, rootVersions.map(v => v.number));
     console.log('Parallel View - All versions:', state.versions.length, state.versions.map(v => v.number));
     setBranches(initialBranches);
-  }, [state.versions, showOnlyStarred, showArchived, filterType, filterUser, collapseAll]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [state.versions, showOnlyStarred, showArchived, filterType, collapseAll]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Get all child versions of a parent
   const getChildVersions = (parentId: string): Version[] => {
@@ -333,19 +328,31 @@ export function ParallelView() {
           style={{ marginLeft: `${depth * 32}px` }}
         >
           {/* Version Header */}
-          <div className="px-4 py-2 border-b bg-gray-50 rounded-t-lg">
+          <div className="px-4 py-3 border-b bg-gray-50 rounded-t-lg">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <span className={`text-sm font-bold ${isCurrent ? 'text-blue-600' : 'text-gray-700'}`}>
-                  {version.number.includes('b') ? `V${version.number.replace('b', 'B')}` : `V${version.number}`}
+                <span className={`text-xs font-bold px-2 py-0.5 rounded ${
+                  isCurrent ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'
+                }`}>
+                  v{version.number}
                 </span>
-                {isAI ? (
-                  <Bot className="w-4 h-4 text-purple-600" />
-                ) : (
-                  <User className="w-4 h-4 text-blue-600" />
+                
+                {version.isOriginal && (
+                  <span className="text-xs bg-gray-100 text-black px-2 py-0.5 rounded">
+                    Original
+                  </span>
                 )}
-                {version.isStarred && (
-                  <Star className="w-4 h-4 text-yellow-500 fill-yellow-500" />
+                
+                {isManualEdit(version) && (
+                  <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded">
+                    ✏️ Manual
+                  </span>
+                )}
+                
+                {isAIEdit(version) && (
+                  <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded">
+                    🤖 AI
+                  </span>
                 )}
               </div>
               
@@ -377,37 +384,35 @@ export function ParallelView() {
                 </button>
               </div>
             </div>
-            
-            {/* Version note */}
-            {version.note && (
-              <div className="text-xs text-gray-600 mt-1">{version.note}</div>
-            )}
           </div>
           
           {/* Prompt/Change Label */}
           {version.prompt && (
-            <div className={`px-4 py-2 border-b ${
-              isAI 
-                ? 'bg-purple-50 border-purple-100' 
-                : 'bg-blue-50 border-blue-100'
-            }`}>
-              <div className="flex items-start gap-2">
-                <span className={`text-xs font-medium ${
-                  isAI ? 'text-purple-700' : 'text-blue-700'
-                }`}>
-                  {isAI ? '🤖 AI:' : '✏️ Manual:'}
-                </span>
-                <span className={`text-xs flex-1 ${
-                  isAI ? 'text-purple-900' : 'text-blue-900'
-                }`}>
-                  {version.prompt.replace(/^[✏️📝🤖💭]+\s*/, '')}
-                </span>
-              </div>
+            <div className="px-4 py-2 border-b bg-white">
+              <p className="text-xs text-black line-clamp-2">
+                {version.prompt}
+              </p>
             </div>
           )}
           
+          {/* Version Note */}
+          {version.note && (
+            <div className="px-4 py-2 border-b bg-white">
+              <p className="text-xs text-blue-600 italic">
+                📝 {version.note}
+              </p>
+            </div>
+          )}
+          
+          {/* Timestamp */}
+          <div className="px-4 py-2 border-b bg-white">
+            <p className="text-xs text-black">
+              {new Date(version.timestamp).toLocaleString()}
+            </p>
+          </div>
+          
           {/* Document Content - Expandable and Editable */}
-          <div className="p-4">
+          <div className="p-4 bg-white rounded-b-lg">
             
             {branch.editingVersions[version.id] ? (
               // Inline editor
@@ -464,7 +469,7 @@ export function ParallelView() {
               </div>
             ) : branch.isExpanded ? (
               <div
-                className={`prose prose-sm max-w-none overflow-y-auto text-black prose-headings:text-black prose-p:text-black prose-strong:text-black prose-em:text-black prose-li:text-black prose-ul:text-black prose-ol:text-black border border-gray-100 rounded p-3 cursor-pointer hover:border-gray-300 transition-colors ${
+                className={`prose prose-sm max-w-none overflow-y-auto text-black prose-headings:text-black prose-p:text-black prose-strong:text-black prose-em:text-black prose-li:text-black prose-ul:text-black prose-ol:text-black border border-gray-200 rounded-lg p-3 cursor-pointer hover:border-gray-300 transition-colors ${
                   collapseAll ? 'h-96' : 'h-64'
                 }`}
                 onClick={() => toggleInlineEdit(branch.id, version.id, version)}
@@ -478,7 +483,7 @@ export function ParallelView() {
               </div>
             ) : (
               <div 
-                className="text-sm text-gray-700 line-clamp-3 cursor-pointer hover:bg-gray-50 p-2 rounded"
+                className="text-sm text-gray-700 line-clamp-3 cursor-pointer hover:bg-gray-50 p-3 rounded-lg border border-gray-200"
                 onClick={() => setBranches(prev => prev.map(b => 
                   b.id === branch.id ? { ...b, isExpanded: true } : b
                 ))}
@@ -568,50 +573,52 @@ export function ParallelView() {
         </div>
           
           {/* Filters */}
-          <div className="flex items-center gap-2 flex-wrap">
-            <Filter className="w-4 h-4 text-gray-500" />
-            
-            <button
-              onClick={() => setCollapseAll(!collapseAll)}
-              className={`px-2 py-1 text-xs rounded transition-colors ${
-                collapseAll 
-                  ? 'bg-purple-100 text-purple-800 border border-purple-300' 
-                  : 'bg-white text-gray-600 border border-gray-300 hover:bg-gray-50'
-              }`}
-            >
-              {collapseAll ? <ChevronRight className="w-3 h-3 inline mr-1" /> : <ChevronDown className="w-3 h-3 inline mr-1" />}
-              {collapseAll ? 'Expand All' : 'Collapse All'}
-            </button>
-            
-            <button
-              onClick={() => setShowOnlyStarred(!showOnlyStarred)}
-              className={`px-2 py-1 text-xs rounded transition-colors ${
-                showOnlyStarred 
-                  ? 'bg-yellow-100 text-yellow-800 border border-yellow-300' 
-                  : 'bg-white text-gray-600 border border-gray-300 hover:bg-gray-50'
-              }`}
-            >
-              <Star className={`w-3 h-3 inline mr-1 ${showOnlyStarred ? 'fill-current' : ''}`} />
-              Starred
-            </button>
-            
-            <button
-              onClick={() => setShowArchived(!showArchived)}
-              className={`px-2 py-1 text-xs rounded transition-colors ${
-                showArchived 
-                  ? 'bg-red-100 text-red-800 border border-red-300' 
-                  : 'bg-white text-gray-600 border border-gray-300 hover:bg-gray-50'
-              }`}
-            >
-              <Archive className={`w-3 h-3 inline mr-1 ${showArchived ? 'fill-current' : ''}`} />
-              Archived
-            </button>
+          <div className="flex items-center justify-between w-full">
+            <div className="flex items-center gap-4">
+              <Filter className="w-4 h-4 text-gray-500" />
+              
+              <button
+                onClick={() => setCollapseAll(!collapseAll)}
+                className={`px-3 py-2 text-sm rounded-lg transition-colors ${
+                  collapseAll 
+                    ? 'bg-purple-100 text-purple-800 border border-purple-300' 
+                    : 'bg-white text-gray-600 border border-gray-300 hover:bg-gray-50'
+                }`}
+              >
+                {collapseAll ? <ChevronRight className="w-4 h-4 inline mr-2" /> : <ChevronDown className="w-4 h-4 inline mr-2" />}
+                {collapseAll ? 'Expand All' : 'Collapse All'}
+              </button>
+              
+              <button
+                onClick={() => setShowOnlyStarred(!showOnlyStarred)}
+                className={`px-3 py-2 text-sm rounded-lg transition-colors ${
+                  showOnlyStarred 
+                    ? 'bg-yellow-100 text-yellow-800 border border-yellow-300' 
+                    : 'bg-white text-gray-600 border border-gray-300 hover:bg-gray-50'
+                }`}
+              >
+                <Star className={`w-4 h-4 inline mr-2 ${showOnlyStarred ? 'fill-current' : ''}`} />
+                Starred
+              </button>
+              
+              <button
+                onClick={() => setShowArchived(!showArchived)}
+                className={`px-3 py-2 text-sm rounded-lg transition-colors ${
+                  showArchived 
+                    ? 'bg-red-100 text-red-800 border border-red-300' 
+                    : 'bg-white text-gray-600 border border-gray-300 hover:bg-gray-50'
+                }`}
+              >
+                <Archive className={`w-4 h-4 inline mr-2 ${showArchived ? 'fill-current' : ''}`} />
+                Archived
+              </button>
+            </div>
             
             {/* Type Filter */}
-            <div className="flex gap-1 ml-2">
+            <div className="flex gap-1">
               <button
                 onClick={() => setFilterType('all')}
-                className={`px-2 py-1 text-xs rounded-l transition-colors ${
+                className={`px-4 py-2 text-sm rounded-l-lg transition-colors ${
                   filterType === 'all'
                     ? 'bg-blue-600 text-white'
                     : 'bg-white text-gray-600 border border-gray-300 hover:bg-gray-50'
@@ -621,43 +628,26 @@ export function ParallelView() {
               </button>
               <button
                 onClick={() => setFilterType('ai')}
-                className={`px-2 py-1 text-xs transition-colors ${
+                className={`px-4 py-2 text-sm transition-colors ${
                   filterType === 'ai'
                     ? 'bg-purple-600 text-white'
                     : 'bg-white text-gray-600 border-t border-b border-gray-300 hover:bg-gray-50'
                 }`}
               >
-                <Bot className="w-3 h-3 inline mr-1" />
+                <Bot className="w-4 h-4 inline mr-2" />
                 AI
               </button>
               <button
                 onClick={() => setFilterType('manual')}
-                className={`px-2 py-1 text-xs rounded-r transition-colors ${
+                className={`px-4 py-2 text-sm rounded-r-lg transition-colors ${
                   filterType === 'manual'
                     ? 'bg-green-600 text-white'
                     : 'bg-white text-gray-600 border border-gray-300 hover:bg-gray-50'
                 }`}
               >
-                <Edit3 className="w-3 h-3 inline mr-1" />
+                <Edit3 className="w-4 h-4 inline mr-2" />
                 Manual
               </button>
-            </div>
-
-            {/* User/Collaborator Filter */}
-            <div className="flex items-center gap-1 ml-2">
-              <User className="w-3 h-3 text-gray-500" />
-              <select
-                value={filterUser}
-                onChange={(e) => setFilterUser(e.target.value)}
-                className="px-2 py-1 text-xs rounded border border-gray-300 bg-white text-gray-600 hover:bg-gray-50"
-              >
-                <option value="all">All Collaborators</option>
-                {state.users?.map(user => (
-                  <option key={user.id} value={user.id}>
-                    {user.name}
-                  </option>
-                ))}
-              </select>
             </div>
           </div>
         </div>
@@ -679,22 +669,55 @@ export function ParallelView() {
             {branches.filter(b => !shouldHideBranch(b)).map(branch => (
             <div key={branch.id} className="flex-shrink-0" style={{ width: '450px' }}>
               {/* Version Header */}
-              <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
-                  <h3 className="text-lg font-semibold text-black">
-                    {branch.rootVersion.number.includes('b') ? `V${branch.rootVersion.number.replace('b', 'B')}` : `V${branch.rootVersion.number}`}
-                  </h3>
-                </div>
-                <button
-                  onClick={() => toggleBranch(branch.id)}
-                  className="p-1 hover:bg-gray-200 rounded"
-                >
-                  {branch.isExpanded ? (
-                    <ChevronDown className="w-5 h-5 text-gray-600" />
-                  ) : (
-                    <ChevronRight className="w-5 h-5 text-gray-600" />
+                  <span className={`text-xs font-bold px-2 py-0.5 rounded ${
+                    branch.rootVersion.id === state.currentVersionId ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'
+                  }`}>
+                    v{branch.rootVersion.number}
+                  </span>
+                  
+                  {branch.rootVersion.isOriginal && (
+                    <span className="text-xs bg-gray-100 text-black px-2 py-0.5 rounded">
+                      Original
+                    </span>
                   )}
-                </button>
+                  
+                  {isManualEdit(branch.rootVersion) && (
+                    <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded">
+                      ✏️ Manual
+                    </span>
+                  )}
+                  
+                  {isAIEdit(branch.rootVersion) && (
+                    <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded">
+                      🤖 AI
+                    </span>
+                  )}
+                </div>
+                
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => toggleVersionStar(branch.rootVersion.id)}
+                    className={`p-1 rounded hover:bg-gray-100 ${
+                      branch.rootVersion.isStarred ? 'text-yellow-500' : 'text-gray-400'
+                    }`}
+                    title={branch.rootVersion.isStarred ? "Unstar version" : "Star version"}
+                  >
+                    <Star className={`w-4 h-4 ${branch.rootVersion.isStarred ? 'fill-current' : ''}`} />
+                  </button>
+                  
+                  <button
+                    onClick={() => toggleBranch(branch.id)}
+                    className="p-1 hover:bg-gray-200 rounded"
+                  >
+                    {branch.isExpanded ? (
+                      <ChevronDown className="w-4 h-4 text-gray-600" />
+                    ) : (
+                      <ChevronRight className="w-4 h-4 text-gray-600" />
+                    )}
+                  </button>
+                </div>
               </div>
 
               {/* Branch Content */}
