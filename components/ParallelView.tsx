@@ -321,64 +321,69 @@ export function ParallelView() {
         
         {/* Version Card */}
         <div 
-          className={`bg-white rounded-lg border-2 transition-all h-full ${
+          className={`bg-white rounded-lg border-2 transition-all h-full cursor-pointer ${
             version.isArchived ? 'opacity-50 border-gray-300' : 
-            isCurrent ? 'border-blue-500 shadow-lg' : 'border-gray-200 hover:border-gray-300'
+            isCurrent ? 'border-blue-500 shadow-lg' : 'border-gray-200 hover:border-gray-300 hover:shadow-md'
           } ${depth > 0 ? 'ml-8' : ''}`}
           style={{ marginLeft: `${depth * 32}px` }}
+          onDoubleClick={() => {
+            setCurrentVersion(version.id);
+            setViewMode('document');
+          }}
+          title="Double-click to open in document view"
         >
           {/* Version Header */}
-          <div className="px-4 py-3 border-b bg-gray-50 rounded-t-lg">
+          <div className="px-6 py-4 border-b bg-gray-50 rounded-t-lg">
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className={`text-xs font-bold px-2 py-0.5 rounded ${
+              <div className="flex items-center gap-3">
+                <span className={`text-sm font-bold px-3 py-1 rounded-lg ${
                   isCurrent ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'
                 }`}>
-                  v{version.number}
+                  V{version.number.toUpperCase().replace('B', 'V')}
                 </span>
                 
                 {version.isOriginal && (
-                  <span className="text-xs bg-gray-100 text-black px-2 py-0.5 rounded">
+                  <span className="text-sm bg-gray-100 text-black px-3 py-1 rounded-lg">
                     Original
                   </span>
                 )}
                 
                 {isManualEdit(version) && (
-                  <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded">
+                  <span className="text-sm bg-amber-100 text-amber-700 px-3 py-1 rounded-lg">
                     ✏️ Manual
                   </span>
                 )}
                 
                 {isAIEdit(version) && (
-                  <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded">
+                  <span className="text-sm bg-purple-100 text-purple-700 px-3 py-1 rounded-lg">
                     🤖 AI
                   </span>
                 )}
               </div>
               
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-2">
                 <button
                   onClick={() => toggleVersionStar(version.id)}
-                  className="p-1 hover:bg-gray-200 rounded"
+                  className="p-2 hover:bg-gray-200 rounded-lg transition-colors"
                   title="Star version"
                 >
-                  <Star className={`w-3 h-3 ${version.isStarred ? 'text-yellow-500 fill-yellow-500' : 'text-gray-400'}`} />
+                  <Star className={`w-5 h-5 ${version.isStarred ? 'text-yellow-500 fill-yellow-500' : 'text-gray-400'}`} />
                 </button>
                 <button
                   onClick={() => toggleVersionArchive(version.id)}
-                  className="p-1 hover:bg-gray-200 rounded"
+                  className="p-2 hover:bg-gray-200 rounded-lg transition-colors"
                   title={version.isArchived ? "Restore version" : "Archive version"}
                 >
-                  <Archive className={`w-3 h-3 ${version.isArchived ? 'text-red-500' : 'text-gray-400'}`} />
+                  <Archive className={`w-5 h-5 ${version.isArchived ? 'text-red-500' : 'text-gray-400'}`} />
                 </button>
                 <button
                   onClick={() => toggleInlineEdit(branch.id, version.id, version)}
-                  className={`p-1 hover:bg-gray-200 rounded ${
+                  className={`p-2 hover:bg-gray-200 rounded-lg transition-colors ${
                     branch.editingVersions[version.id] ? 'bg-blue-100' : ''
                   }`}
                   title={branch.editingVersions[version.id] ? "Cancel edit" : "Edit inline"}
                 >
-                  <Edit3 className={`w-3 h-3 ${
+                  <Edit3 className={`w-5 h-5 ${
                     branch.editingVersions[version.id] ? 'text-blue-600' : 'text-gray-600'
                   }`} />
                 </button>
@@ -388,8 +393,8 @@ export function ParallelView() {
           
           {/* Prompt/Change Label */}
           {version.prompt && (
-            <div className="px-4 py-2 border-b bg-white">
-              <p className="text-xs text-black line-clamp-2">
+            <div className="px-6 py-3 border-b bg-white">
+              <p className="text-sm text-black line-clamp-2">
                 {version.prompt}
               </p>
             </div>
@@ -397,16 +402,16 @@ export function ParallelView() {
           
           {/* Version Note */}
           {version.note && (
-            <div className="px-4 py-2 border-b bg-white">
-              <p className="text-xs text-blue-600 italic">
+            <div className="px-6 py-3 border-b bg-white">
+              <p className="text-sm text-blue-600 italic">
                 📝 {version.note}
               </p>
             </div>
           )}
           
           {/* Timestamp */}
-          <div className="px-4 py-2 border-b bg-white">
-            <p className="text-xs text-black">
+          <div className="px-6 py-3 border-b bg-white">
+            <p className="text-sm text-gray-600">
               {new Date(version.timestamp).toLocaleString()}
             </p>
           </div>
