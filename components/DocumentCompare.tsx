@@ -309,13 +309,15 @@ export function DocumentCompare() {
             bgColor = 'bg-orange-100';
             textColor = 'text-orange-900';
             decoration = 'line-through decoration-orange-500';
+            badge = `→`;
           } else if (change.type === 'moved') {
             bgColor = 'bg-yellow-100';
             textColor = 'text-yellow-900';
-            badge = `↓ Moved to position ${change.rightIndex + 1}`;
+            badge = `→`;
           } else if (change.type === 'modification') {
             bgColor = 'bg-yellow-100';
             textColor = 'text-yellow-900';
+            badge = `→`;
           }
         } else {
           // Right side coloring
@@ -325,13 +327,15 @@ export function DocumentCompare() {
           } else if (change.type === 'replaced') {
             bgColor = 'bg-blue-100';
             textColor = 'text-blue-900';
+            badge = `←`;
           } else if (change.type === 'moved') {
             bgColor = 'bg-yellow-100';
             textColor = 'text-yellow-900';
-            badge = `↑ Moved from position ${change.leftIndex + 1}`;
+            badge = `←`;
           } else if (change.type === 'modification') {
             bgColor = 'bg-yellow-100';
             textColor = 'text-yellow-900';
+            badge = `←`;
           }
         }
         
@@ -353,8 +357,8 @@ export function DocumentCompare() {
               // Jump to corresponding unit in other panel
               goToChange(changes.findIndex(c => c.id === change.id));
             }}
-            title={`Click to jump to ${isLeft ? 'current' : 'original'} | ${change.type.toUpperCase()}${
-              change.similarity ? ` (${Math.round(change.similarity * 100)}% similar)` : ''
+            title={`Click to see side-by-side comparison${
+              change.similarity ? ` • ${Math.round(change.similarity * 100)}% similar` : ''
             }`}
           >
             {badge && (
@@ -412,22 +416,65 @@ export function DocumentCompare() {
     total: changes.length
   }), [changes, starredChanges]);
   
-  // Navigate to change
+  // Navigate to change with synchronized scrolling - aligns both panels vertically
   const goToChange = (index: number) => {
     if (index < 0 || index >= filteredChanges.length) return;
     
     const change = filteredChanges[index];
     setCurrentChangeIndex(index);
+    setSelectedChange(change.id);
     
-    // Scroll to change in both panels
+    // Get elements in both panels
     const leftEl = changeRefs.current.get(change.id + '-left');
     const rightEl = changeRefs.current.get(change.id + '-right');
+    const leftPanel = leftPanelRef.current;
+    const rightPanel = rightPanelRef.current;
     
+    // Add flash highlight to show the connection
     if (leftEl) {
-      leftEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      leftEl.classList.add('ring-4', 'ring-blue-400', 'ring-offset-2');
+      setTimeout(() => {
+        leftEl.classList.remove('ring-4', 'ring-blue-400', 'ring-offset-2');
+      }, 2000);
     }
     if (rightEl) {
-      rightEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      rightEl.classList.add('ring-4', 'ring-blue-400', 'ring-offset-2');
+      setTimeout(() => {
+        rightEl.classList.remove('ring-4', 'ring-blue-400', 'ring-offset-2');
+      }, 2000);
+    }
+    
+    // Calculate vertical alignment to show both elements at the same height
+    if (leftEl && rightEl && leftPanel && rightPanel) {
+      // Get the position of elements relative to their containers
+      const leftRect = leftEl.getBoundingClientRect();
+      const rightRect = rightEl.getBoundingClientRect();
+      const leftPanelRect = leftPanel.getBoundingClientRect();
+      const rightPanelRect = rightPanel.getBoundingClientRect();
+      
+      // Calculate scroll positions to align both elements at 1/3 from top of viewport
+      const targetPosition = window.innerHeight / 3;
+      
+      const leftScrollTop = leftPanel.scrollTop + (leftRect.top - leftPanelRect.top) - targetPosition;
+      const rightScrollTop = rightPanel.scrollTop + (rightRect.top - rightPanelRect.top) - targetPosition;
+      
+      // Smooth scroll both panels to align the elements
+      leftPanel.scrollTo({ top: leftScrollTop, behavior: 'smooth' });
+      rightPanel.scrollTo({ top: rightScrollTop, behavior: 'smooth' });
+    } else if (leftEl && leftPanel) {
+      // Only left side exists (deleted content)
+      const leftRect = leftEl.getBoundingClientRect();
+      const leftPanelRect = leftPanel.getBoundingClientRect();
+      const targetPosition = window.innerHeight / 3;
+      const leftScrollTop = leftPanel.scrollTop + (leftRect.top - leftPanelRect.top) - targetPosition;
+      leftPanel.scrollTo({ top: leftScrollTop, behavior: 'smooth' });
+    } else if (rightEl && rightPanel) {
+      // Only right side exists (inserted content)
+      const rightRect = rightEl.getBoundingClientRect();
+      const rightPanelRect = rightPanel.getBoundingClientRect();
+      const targetPosition = window.innerHeight / 3;
+      const rightScrollTop = rightPanel.scrollTop + (rightRect.top - rightPanelRect.top) - targetPosition;
+      rightPanel.scrollTo({ top: rightScrollTop, behavior: 'smooth' });
     }
   };
   
