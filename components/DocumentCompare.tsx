@@ -724,7 +724,7 @@ export function DocumentCompare() {
                               Jump →
                 </button>
             </div>
-                          <div className="text-gray-800">{comment}</div>
+                          <div className="text-black font-medium">{comment}</div>
           </div>
                       );
                     })}
