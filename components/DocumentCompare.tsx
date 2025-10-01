@@ -50,7 +50,7 @@ export function DocumentCompare() {
   const rightPanelRef = useRef<HTMLDivElement>(null);
   const changeRefs = useRef<Map<string, HTMLElement>>(new Map());
   
-  // Load saved review notes when comparison changes
+  // Load saved review notes and comments when comparison changes
   useEffect(() => {
     if (compareVersion && currentVersion) {
       const key = `comparison-review-${compareVersion.id}-${currentVersion.id}`;
@@ -59,11 +59,17 @@ export function DocumentCompare() {
         try {
           const data = JSON.parse(saved);
           setReviewNote(data.note || '');
+          if (data.comments) {
+            setComments(new Map(Object.entries(data.comments)));
+          } else {
+            setComments(new Map());
+          }
         } catch (e) {
           console.error('Failed to load review notes:', e);
         }
       } else {
         setReviewNote('');
+        setComments(new Map());
       }
     }
   }, [compareVersion?.id, currentVersion?.id]);
@@ -166,8 +172,8 @@ export function DocumentCompare() {
       leftUnits = extractParagraphs(compareVersion.content);
       rightUnits = extractParagraphs(currentVersion.content);
     } else { // sentence
-      const leftText = stripHTML(compareVersion.content);
-      const rightText = stripHTML(currentVersion.content);
+    const leftText = stripHTML(compareVersion.content);
+    const rightText = stripHTML(currentVersion.content);
       leftUnits = extractSentences(leftText);
       rightUnits = extractSentences(rightText);
     }
@@ -215,16 +221,16 @@ export function DocumentCompare() {
         // Check if it's a move (different position) or modification (same position)
         if (Math.abs(i - j) > 0 && similarity > moveThreshold) {
           // It's moved
-          detectedChanges.push({
-            id: `change-${changeId++}`,
+            detectedChanges.push({
+              id: `change-${changeId++}`,
             type: 'moved',
             leftText: leftUnits[i],
             rightText: rightUnits[j],
             leftIndex: i,
             rightIndex: j,
             position: (i / leftUnits.length) * 100,
-            similarity: similarity
-          });
+              similarity: similarity
+            });
           matchedLeft.add(i);
           matchedRight.add(j);
         } else if (i === j && similarity > modThreshold && similarity < 1.0) {
@@ -243,9 +249,9 @@ export function DocumentCompare() {
           matchedRight.add(j);
         } else if (i === j && similarity > 0.3 && similarity <= modThreshold) {
           // Replacement at same position
-          detectedChanges.push({
-            id: `change-${changeId++}`,
-            type: 'replaced',
+            detectedChanges.push({
+              id: `change-${changeId++}`,
+              type: 'replaced',
             leftText: leftUnits[i],
             rightText: rightUnits[j],
             leftIndex: i,
@@ -266,9 +272,9 @@ export function DocumentCompare() {
     // Second pass: detect deletions and insertions
     for (let i = 0; i < leftUnits.length; i++) {
       if (!matchedLeft.has(i)) {
-        detectedChanges.push({
-          id: `change-${changeId++}`,
-          type: 'deleted',
+          detectedChanges.push({
+            id: `change-${changeId++}`,
+            type: 'deleted',
           leftText: leftUnits[i],
           leftIndex: i,
           rightIndex: -1,
@@ -303,7 +309,7 @@ export function DocumentCompare() {
     if (viewMode === 'paragraph') {
       units = extractParagraphs(version.content);
     } else { // sentence
-      const text = stripHTML(version.content);
+    const text = stripHTML(version.content);
       units = extractSentences(text);
     }
     
@@ -321,8 +327,8 @@ export function DocumentCompare() {
         let textColor = '';
         let decoration = '';
         let badge = '';
-        
-        if (isLeft) {
+      
+      if (isLeft) {
           // Left side coloring
           if (change.type === 'deleted') {
             bgColor = 'bg-red-100';
@@ -364,8 +370,8 @@ export function DocumentCompare() {
         
         const separator = viewMode === 'sentence' ? '. ' : '\n\n';
         
-        elements.push(
-          <span
+          elements.push(
+            <span
             key={`unit-${idx}`}
             ref={(el) => {
               if (el) {
@@ -373,7 +379,7 @@ export function DocumentCompare() {
               }
             }}
             className={`${bgColor} ${textColor} ${decoration} cursor-pointer hover:opacity-80 transition-all ${
-              isSelected ? 'ring-2 ring-blue-500 ring-offset-1' : ''
+                isSelected ? 'ring-2 ring-blue-500 ring-offset-1' : ''
             } ${viewMode === 'paragraph' ? 'block mb-4 p-3 rounded-lg' : 'inline px-1 py-0.5 rounded'}`}
             onClick={() => {
               setSelectedChange(change.id);
@@ -391,23 +397,23 @@ export function DocumentCompare() {
             )}
             {unit}
             {comments.has(change.id) && (
-              <span className="ml-1 text-blue-600 text-xs">💬</span>
-            )}
+                <span className="ml-1 text-blue-600 text-xs">💬</span>
+              )}
             {separator === '\n\n' ? '' : separator}
-          </span>
-        );
+            </span>
+          );
       } else {
         // Unchanged unit
         const separator = viewMode === 'sentence' ? '. ' : '\n\n';
-        elements.push(
-          <span
+          elements.push(
+            <span
             key={`unit-${idx}`}
             className={viewMode === 'paragraph' ? 'block mb-4 p-3 rounded-lg bg-gray-50' : 'inline'}
           >
             {unit}
             {separator === '\n\n' ? '' : separator}
-          </span>
-        );
+            </span>
+          );
       }
     });
     
@@ -618,27 +624,27 @@ export function DocumentCompare() {
       <div className="flex-1 flex flex-col">
         {/* Toolbar with View Mode Toggle */}
         <div className="px-4 py-3 border-b bg-white flex items-center justify-between">
-          <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
-            <button
-              onClick={() => setViewMode('sentence')}
-              className={`px-3 py-1.5 text-xs font-medium rounded transition-colors ${
+            <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
+              <button
+                onClick={() => setViewMode('sentence')}
+                className={`px-3 py-1.5 text-xs font-medium rounded transition-colors ${
                 viewMode === 'sentence' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-700 hover:text-gray-900'
-              }`}
-            >
-              Sentence
-            </button>
-            <button
-              onClick={() => setViewMode('paragraph')}
-              className={`px-3 py-1.5 text-xs font-medium rounded transition-colors ${
+                }`}
+              >
+                Sentence
+              </button>
+              <button
+                onClick={() => setViewMode('paragraph')}
+                className={`px-3 py-1.5 text-xs font-medium rounded transition-colors ${
                 viewMode === 'paragraph' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-700 hover:text-gray-900'
-              }`}
-            >
-              Paragraph
-            </button>
-          </div>
-          
+                }`}
+              >
+                Paragraph
+              </button>
+            </div>
+            
           {/* Toggle Review Notes */}
-          <button
+              <button
             onClick={() => setShowReviewPanel(!showReviewPanel)}
             className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-100 rounded transition-colors"
             title="Add review notes"
@@ -646,62 +652,119 @@ export function DocumentCompare() {
             <FileText className="w-4 h-4" />
             Review Notes
             {showReviewPanel ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-          </button>
+              </button>
         </div>
 
         {/* Collapsible Review Notes Panel */}
         {showReviewPanel && (
           <div className="border-b bg-blue-50 p-4">
-            <div className="max-w-4xl mx-auto">
-              <div className="flex items-center gap-2 mb-3">
+            <div className="max-w-4xl mx-auto space-y-4">
+              {/* Header */}
+              <div className="flex items-center gap-2">
                 <FileText className="w-5 h-5 text-blue-600" />
                 <h3 className="text-sm font-semibold text-gray-800">Comparison Review</h3>
                 <span className="text-xs text-gray-500">
                   (V{compareVersion.number} vs V{currentVersion.number})
-                </span>
+              </span>
+            </div>
+            
+              {/* Overall Notes */}
+              <div>
+                <label className="text-xs font-medium text-gray-700 mb-1 block">Overall Notes:</label>
+                <textarea
+                  value={reviewNote}
+                  onChange={(e) => setReviewNote(e.target.value)}
+                  placeholder="General thoughts about this comparison..."
+                  className="w-full h-20 p-3 border border-blue-200 rounded-lg text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                />
               </div>
-              
-              <textarea
-                value={reviewNote}
-                onChange={(e) => setReviewNote(e.target.value)}
-                placeholder="Add your review notes here... 
 
-Examples:
-• Which version do you prefer and why?
-• What sections work better in each version?
-• Any concerns or things to watch out for?
-• Notes for the merge process"
-                className="w-full h-32 p-3 border border-blue-200 rounded-lg text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
-              />
+              {/* Comments on Specific Changes */}
+              {comments.size > 0 && (
+                <div>
+                  <label className="text-xs font-medium text-gray-700 mb-2 block">Comments on Changes:</label>
+                  <div className="space-y-2 max-h-48 overflow-y-auto">
+                    {Array.from(comments.entries()).map(([changeId, comment]) => {
+                      const change = changes.find(c => c.id === changeId);
+                      if (!change) return null;
+                      
+                      const typeColors = {
+                        inserted: 'bg-green-50 border-green-200 text-green-800',
+                        deleted: 'bg-red-50 border-red-200 text-red-800',
+                        moved: 'bg-yellow-50 border-yellow-200 text-yellow-800',
+                        modification: 'bg-yellow-50 border-yellow-200 text-yellow-800',
+                        replaced: 'bg-blue-50 border-blue-200 text-blue-800'
+                      };
+                      
+                      const typeLabels = {
+                        inserted: 'New',
+                        deleted: 'Deleted',
+                        moved: 'Moved',
+                        modification: 'Modified',
+                        replaced: 'Replaced'
+                      };
+                      
+                      return (
+                        <div 
+                          key={changeId} 
+                          className={`p-2 rounded border ${typeColors[change.type]} text-xs`}
+                        >
+                          <div className="flex items-start justify-between gap-2 mb-1">
+                            <span className="font-semibold">
+                              {typeLabels[change.type]}: {(change.leftText || change.rightText || '').substring(0, 40)}...
+                            </span>
+                <button
+                              onClick={() => {
+                                const idx = changes.findIndex(c => c.id === changeId);
+                                if (idx !== -1) goToChange(idx);
+                              }}
+                              className="text-blue-600 hover:text-blue-800 font-medium whitespace-nowrap"
+                              title="Jump to this change"
+                            >
+                              Jump →
+                </button>
+            </div>
+                          <div className="text-gray-800">{comment}</div>
+          </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
               
-              <div className="flex items-center justify-between mt-3">
+              {/* Save Button */}
+              <div className="flex items-center justify-between pt-2 border-t border-blue-200">
                 <span className="text-xs text-gray-500">
-                  {reviewNote.length > 0 ? `${reviewNote.length} characters` : 'Start typing your review notes...'}
-                </span>
+                  {reviewNote.length > 0 || comments.size > 0 
+                    ? `${reviewNote.length} characters • ${comments.size} comments` 
+                    : 'Add notes and comments to save'}
+            </span>
                 <button
                   onClick={() => {
                     // Save to localStorage
                     const key = `comparison-review-${compareVersion.id}-${currentVersion.id}`;
+                    const commentsObj = Object.fromEntries(comments);
                     localStorage.setItem(key, JSON.stringify({
                       note: reviewNote,
+                      comments: commentsObj,
                       timestamp: new Date().toISOString(),
                       baseVersion: compareVersion.number,
                       currentVersion: currentVersion.number
                     }));
-                    alert('Review notes saved!');
+                    alert('Review saved!');
                   }}
-                  disabled={!reviewNote.trim()}
+                  disabled={!reviewNote.trim() && comments.size === 0}
                   className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                    reviewNote.trim() 
+                    (reviewNote.trim() || comments.size > 0)
                       ? 'bg-blue-600 text-white hover:bg-blue-700' 
                       : 'bg-gray-300 text-gray-500 cursor-not-allowed'
                   }`}
                 >
                   <Save className="w-4 h-4" />
-                  Save Notes
+                  Save Review
                 </button>
-              </div>
-            </div>
+          </div>
+        </div>
           </div>
         )}
 
@@ -712,9 +775,9 @@ Examples:
           <div className="flex-1 flex flex-col border-r">
             <div className="px-4 py-2 bg-gray-50 border-b">
               <div className="flex items-center justify-between">
-                <h3 className="text-sm font-semibold text-gray-700">
+              <h3 className="text-sm font-semibold text-gray-700">
                   {compareVersion.prompt || `Version ${compareVersion.number}`}
-                </h3>
+              </h3>
                 <button
                   onClick={() => toggleVersionStar(compareVersion.id)}
                   className="p-1 hover:bg-gray-200 rounded transition-colors"
@@ -810,23 +873,23 @@ Examples:
                   modification: 'bg-yellow-400'
                 };
                 
-                return (
-                  <div
-                    key={change.id}
+              return (
+                <div
+                  key={change.id}
                     className={`absolute left-1 right-1 cursor-pointer transition-all hover:scale-110 ${
                       colors[change.type] || 'bg-gray-500'
                     } ${isActive ? 'ring-2 ring-blue-400 z-10' : ''}`}
-                    style={{ 
-                      top: `${change.position}%`,
-                      height: `${barHeight}px`,
+                  style={{ 
+                    top: `${change.position}%`,
+                    height: `${barHeight}px`,
                       borderRadius: '2px',
                       opacity: isActive ? 1 : 0.7
                     }}
                     onClick={() => goToChange(idx)}
                     title={`${change.type} - Click to jump`}
                   />
-                );
-              })}
+              );
+            })}
             </div>
             
           </div>
@@ -835,9 +898,9 @@ Examples:
           <div className="flex-1 flex flex-col">
             <div className="px-4 py-2 bg-gray-50 border-b">
               <div className="flex items-center justify-between">
-                <h3 className="text-sm font-semibold text-gray-700">
+              <h3 className="text-sm font-semibold text-gray-700">
                   {currentVersion.prompt || `Version ${currentVersion.number}`}
-                </h3>
+              </h3>
                 <button
                   onClick={() => toggleVersionStar(currentVersion.id)}
                   className="p-1 hover:bg-gray-200 rounded transition-colors"
@@ -965,20 +1028,6 @@ Examples:
           </div>
         )}
 
-        {/* Comments list */}
-        {comments.size > 0 && (
-          <div className="p-4 border-b">
-            <h3 className="text-sm font-semibold text-gray-700 mb-2">Comments</h3>
-            <div className="space-y-2 max-h-40 overflow-y-auto">
-              {Array.from(comments.entries()).map(([changeId, comment]) => (
-                <div key={changeId} className="p-2 bg-white rounded border text-xs">
-                  <div className="font-medium text-gray-600 mb-1">Change {changeId}</div>
-                  <div className="text-gray-800">{comment}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
         
         {/* Change list */}
         <div className="flex-1 overflow-auto p-3 space-y-2">
