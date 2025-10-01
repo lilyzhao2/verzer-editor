@@ -21,31 +21,8 @@ interface EditorContextType {
 const EditorContext = createContext<EditorContextType | undefined>(undefined);
 
 export function EditorProvider({ children }: { children: React.ReactNode }) {
+  // Always start with default state to avoid hydration mismatch
   const [state, setState] = useState<EditorState>(() => {
-    // Try to load from localStorage
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('editorState');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        // Convert date strings back to Date objects
-        return {
-          ...parsed,
-          versions: parsed.versions.map((v: any) => ({
-            ...v,
-            timestamp: new Date(v.timestamp)
-          })),
-          chatHistory: parsed.chatHistory.map((c: any, index: number) => ({
-            ...c,
-            id: `msg-${Date.now()}-${index}-${Math.random().toString(36).substr(2, 9)}`,
-            timestamp: new Date(c.timestamp)
-          })),
-          selectedModel: parsed.selectedModel || 'claude-3-5-haiku-20241022',
-          viewMode: parsed.viewMode || 'document'
-        };
-      }
-    }
-
-    // Default initial state with empty document
     const initialVersion: Version = {
       id: 'v0',
       number: '0',
@@ -66,6 +43,35 @@ export function EditorProvider({ children }: { children: React.ReactNode }) {
       viewMode: 'document' as ViewMode,
     };
   });
+
+  // Load from localStorage after mount
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('editorState');
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          setState({
+            ...parsed,
+            versions: parsed.versions.map((v: any) => ({
+              ...v,
+              timestamp: new Date(v.timestamp),
+              checkpoints: v.checkpoints || []
+            })),
+            chatHistory: parsed.chatHistory.map((c: any, index: number) => ({
+              ...c,
+              id: `msg-${Date.now()}-${index}-${Math.random().toString(36).substr(2, 9)}`,
+              timestamp: new Date(c.timestamp)
+            })),
+            selectedModel: parsed.selectedModel || 'claude-3-5-haiku-20241022',
+            viewMode: parsed.viewMode || 'document'
+          });
+        } catch (error) {
+          console.error('Failed to load state:', error);
+        }
+      }
+    }
+  }, []);
 
   // Save to localStorage whenever state changes
   useEffect(() => {
