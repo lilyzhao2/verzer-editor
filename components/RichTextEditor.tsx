@@ -84,9 +84,6 @@ export const RichTextEditor = forwardRef<any, RichTextEditorProps>(({
 }, ref) => {
   const [mounted, setMounted] = useState(false);
   const [showColorPicker, setShowColorPicker] = useState(false);
-  const [showFontPicker, setShowFontPicker] = useState(false);
-  const [showFontSizePicker, setShowFontSizePicker] = useState(false);
-  const [showHighlightPicker, setShowHighlightPicker] = useState(false);
   const [isInitialRender, setIsInitialRender] = useState(true);
   const toolbarRef = useRef<HTMLDivElement>(null);
 
@@ -95,9 +92,6 @@ export const RichTextEditor = forwardRef<any, RichTextEditorProps>(({
     const handleClickOutside = (event: MouseEvent) => {
       if (toolbarRef.current && !toolbarRef.current.contains(event.target as Node)) {
         setShowColorPicker(false);
-        setShowFontPicker(false);
-        setShowFontSizePicker(false);
-        setShowHighlightPicker(false);
       }
     };
 
@@ -316,139 +310,52 @@ export const RichTextEditor = forwardRef<any, RichTextEditorProps>(({
 
         <div className="w-px h-6 bg-gray-300 mx-2" />
         
-        {/* Font Controls */}
+        {/* Font Controls - Normal Dropdowns */}
         <div className="relative">
-          <ToolbarButton
-            onClick={() => setShowFontPicker(!showFontPicker)}
+          <select
+            value={editor.getAttributes('textStyle').fontFamily || 'Arial'}
+            onChange={(e) => {
+              if (e.target.value === 'Arial') {
+                editor.chain().focus().unsetFontFamily().run();
+              } else {
+                editor.chain().focus().setFontFamily(e.target.value).run();
+              }
+            }}
+            className="px-2 py-1 text-sm border border-gray-300 rounded bg-white text-gray-800 font-medium min-w-24"
             title="Font Family"
           >
-            <FontIcon className="w-4 h-4" />
-          </ToolbarButton>
-          {showFontPicker && (
-            <div className="absolute top-10 left-0 z-[100] bg-white border border-gray-200 rounded-lg p-3 shadow-xl min-w-40 max-h-64 overflow-y-auto">
-              {fonts.map((font) => (
-                <button
-                  key={font.value}
-                  onClick={() => {
-                    editor.chain().focus().setFontFamily(font.value).run();
-                    setShowFontPicker(false);
-                  }}
-                  className="w-full text-left px-2 py-1 text-sm hover:bg-gray-100 rounded"
-                  style={{ fontFamily: font.value }}
-                >
-                  {font.name}
-                </button>
-              ))}
-            </div>
-          )}
+            {fonts.map((font) => (
+              <option key={font.value} value={font.value} style={{ fontFamily: font.value }}>
+                {font.name}
+              </option>
+            ))}
+          </select>
         </div>
 
         <div className="relative">
-          <ToolbarButton
-            onClick={() => setShowFontSizePicker(!showFontSizePicker)}
+          <select
+            value={editor.getAttributes('textStyle').fontSize || '14px'}
+            onChange={(e) => {
+              if (e.target.value === '14px') {
+                editor.chain().focus().unsetFontSize().run();
+              } else {
+                editor.chain().focus().setFontSize(e.target.value).run();
+              }
+            }}
+            className="px-2 py-1 text-sm border border-gray-300 rounded bg-white text-gray-800 font-medium min-w-16"
             title="Font Size"
           >
-            <Type className="w-4 h-4" />
-          </ToolbarButton>
-          {showFontSizePicker && (
-            <div className="absolute top-10 left-0 z-[100] bg-white border border-gray-200 rounded-lg p-3 shadow-xl min-w-24 max-h-64 overflow-y-auto">
-              {fontSizes.map((size) => (
-                <button
-                  key={size.value}
-                  onClick={() => {
-                    editor.chain().focus().setFontSize(size.value).run();
-                    setShowFontSizePicker(false);
-                  }}
-                  className="w-full text-left px-2 py-1 text-sm hover:bg-gray-100 rounded"
-                  style={{ fontSize: size.value }}
-                >
-                  {size.name}
-                </button>
-              ))}
-            </div>
-          )}
+            {fontSizes.map((size) => (
+              <option key={size.value} value={size.value}>
+                {size.name}
+              </option>
+            ))}
+          </select>
         </div>
 
         <div className="w-px h-6 bg-gray-300 mx-2" />
         
-        {/* Text Color & Highlight */}
-        <div className="relative">
-          <ToolbarButton
-            onClick={() => setShowColorPicker(!showColorPicker)}
-            title="Text Color"
-          >
-            <Palette className="w-4 h-4" />
-          </ToolbarButton>
-          {showColorPicker && (
-            <div className="absolute top-10 left-0 z-[100] bg-white border border-gray-200 rounded-lg p-3 shadow-xl">
-              <div className="text-xs text-black mb-2 font-medium">Text Color</div>
-              <div className="grid grid-cols-4 gap-2">
-                {colors.map((color) => (
-                  <button
-                    key={color}
-                    onClick={() => {
-                      editor.chain().focus().setColor(color).run();
-                      setShowColorPicker(false);
-                    }}
-                    className="w-8 h-8 rounded border border-gray-300 hover:border-gray-500 transition-colors"
-                    style={{ backgroundColor: color }}
-                    title={color === '#000000' ? 'Black (default)' : color}
-                  />
-                ))}
-              </div>
-              <button
-                onClick={() => {
-                  editor.chain().focus().unsetColor().run();
-                  setShowColorPicker(false);
-                }}
-                className="w-full mt-2 px-2 py-1 text-xs text-black hover:bg-gray-100 rounded"
-              >
-                Default (Black)
-              </button>
-            </div>
-          )}
-        </div>
-
-        <div className="relative">
-          <ToolbarButton
-            onClick={() => setShowHighlightPicker(!showHighlightPicker)}
-            title="Highlight Color"
-          >
-            <Highlighter className="w-4 h-4" />
-          </ToolbarButton>
-          {showHighlightPicker && (
-            <div className="absolute top-10 left-0 z-[100] bg-white border border-gray-200 rounded-lg p-3 shadow-xl">
-              <div className="text-xs text-black mb-2 font-medium">Highlight Color</div>
-              <div className="grid grid-cols-4 gap-2">
-                {highlightColors.map((color) => (
-                  <button
-                    key={color}
-                    onClick={() => {
-                      editor.chain().focus().setHighlight({ color }).run();
-                      setShowHighlightPicker(false);
-                    }}
-                    className="w-8 h-8 rounded border border-gray-300 hover:border-gray-500 transition-colors"
-                    style={{ backgroundColor: color }}
-                    title={color}
-                  />
-                ))}
-              </div>
-              <button
-                onClick={() => {
-                  editor.chain().focus().unsetHighlight().run();
-                  setShowHighlightPicker(false);
-                }}
-                className="w-full mt-2 px-2 py-1 text-xs text-black hover:bg-gray-100 rounded"
-              >
-                Remove Highlight
-              </button>
-            </div>
-          )}
-        </div>
-
-        <div className="w-px h-6 bg-gray-300 mx-2" />
-        
-        {/* Headings */}
+        {/* Headings - Moved to left */}
         <ToolbarButton
           onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
           isActive={editor.isActive('heading', { level: 1 })}
@@ -472,14 +379,77 @@ export const RichTextEditor = forwardRef<any, RichTextEditorProps>(({
         >
           <Heading3 className="w-4 h-4" />
         </ToolbarButton>
+
+        <div className="w-px h-6 bg-gray-300 mx-2" />
         
-        <ToolbarButton
-          onClick={() => editor.chain().focus().setParagraph().run()}
-          isActive={editor.isActive('paragraph')}
-          title="Paragraph"
-        >
-          <Type className="w-4 h-4" />
-        </ToolbarButton>
+        {/* Combined Color & Highlight Dropdown */}
+        <div className="relative">
+          <ToolbarButton
+            onClick={() => setShowColorPicker(!showColorPicker)}
+            title="Text Color & Highlight"
+          >
+            <Palette className="w-4 h-4" />
+          </ToolbarButton>
+          {showColorPicker && (
+            <div className="absolute top-10 left-0 z-[100] bg-white border border-gray-200 rounded-lg p-3 shadow-xl min-w-64">
+              {/* Text Color Section */}
+              <div className="mb-4">
+                <div className="text-sm text-gray-800 mb-2 font-semibold">Text Color</div>
+                <div className="grid grid-cols-4 gap-2">
+                  {colors.map((color) => (
+                    <button
+                      key={color}
+                      onClick={() => {
+                        editor.chain().focus().setColor(color).run();
+                        setShowColorPicker(false);
+                      }}
+                      className="w-8 h-8 rounded border border-gray-300 hover:border-gray-500 transition-colors"
+                      style={{ backgroundColor: color }}
+                      title={color === '#000000' ? 'Black (default)' : color}
+                    />
+                  ))}
+                </div>
+                <button
+                  onClick={() => {
+                    editor.chain().focus().unsetColor().run();
+                    setShowColorPicker(false);
+                  }}
+                  className="w-full mt-2 px-2 py-1 text-sm text-gray-800 hover:bg-gray-100 rounded font-medium"
+                >
+                  None (Default)
+                </button>
+              </div>
+              
+              {/* Highlight Color Section */}
+              <div>
+                <div className="text-sm text-gray-800 mb-2 font-semibold">Highlight Color</div>
+                <div className="grid grid-cols-4 gap-2">
+                  {highlightColors.map((color) => (
+                    <button
+                      key={color}
+                      onClick={() => {
+                        editor.chain().focus().setHighlight({ color }).run();
+                        setShowColorPicker(false);
+                      }}
+                      className="w-8 h-8 rounded border border-gray-300 hover:border-gray-500 transition-colors"
+                      style={{ backgroundColor: color }}
+                      title={color}
+                    />
+                  ))}
+                </div>
+                <button
+                  onClick={() => {
+                    editor.chain().focus().unsetHighlight().run();
+                    setShowColorPicker(false);
+                  }}
+                  className="w-full mt-2 px-2 py-1 text-sm text-gray-800 hover:bg-gray-100 rounded font-medium"
+                >
+                  None (Remove)
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
 
         <div className="w-px h-6 bg-gray-300 mx-2" />
         
@@ -636,16 +606,24 @@ export const RichTextEditor = forwardRef<any, RichTextEditorProps>(({
 
 
       {/* Editor Content */}
-      <div className={`flex-1 overflow-y-auto bg-white ${isPrintView ? 'print-view' : ''} relative`}>
+      <div className={`flex-1 overflow-auto bg-white ${isPrintView ? 'print-view' : ''} relative`}>
         <div 
+          className="flex justify-center items-start min-h-full"
           style={{ 
-            transform: `scale(${zoomLevel / 100})`,
-            transformOrigin: 'top center',
-            width: `${100 / (zoomLevel / 100)}%`,
-            minHeight: `${100 / (zoomLevel / 100)}%`
+            padding: '20px'
           }}
         >
-          <EditorContent editor={editor} />
+          <div 
+            style={{ 
+              transform: `scale(${zoomLevel / 100})`,
+              transformOrigin: 'center top',
+              width: `${100 / (zoomLevel / 100)}%`,
+              minHeight: `${100 / (zoomLevel / 100)}%`,
+              maxWidth: '100%'
+            }}
+          >
+            <EditorContent editor={editor} />
+          </div>
         </div>
         {onAddComment && (
           <FloatingCommentButton 

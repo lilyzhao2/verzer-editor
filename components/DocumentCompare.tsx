@@ -310,8 +310,8 @@ export function DocumentCompare() {
             textColor = 'text-orange-900';
             decoration = 'line-through decoration-orange-500';
           } else if (change.type === 'moved') {
-            bgColor = 'bg-purple-100';
-            textColor = 'text-purple-900';
+            bgColor = 'bg-yellow-100';
+            textColor = 'text-yellow-900';
             badge = `↓ Moved to position ${change.rightIndex + 1}`;
           } else if (change.type === 'modification') {
             bgColor = 'bg-yellow-100';
@@ -326,8 +326,8 @@ export function DocumentCompare() {
             bgColor = 'bg-blue-100';
             textColor = 'text-blue-900';
           } else if (change.type === 'moved') {
-            bgColor = 'bg-purple-100';
-            textColor = 'text-purple-900';
+            bgColor = 'bg-yellow-100';
+            textColor = 'text-yellow-900';
             badge = `↑ Moved from position ${change.leftIndex + 1}`;
           } else if (change.type === 'modification') {
             bgColor = 'bg-yellow-100';
@@ -780,7 +780,7 @@ export function DocumentCompare() {
               active={activeFilters.has('moved')}
               count={stats.moved}
               label="Moves"
-              color="purple"
+              color="yellow"
               onClick={() => toggleFilter('moved')}
             />
           )}
