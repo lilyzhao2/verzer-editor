@@ -5,7 +5,6 @@ import { useEditor } from '@/contexts/EditorContext';
 import { CheckCircle, Save, Upload, Printer, Plus, Minus, FileText, Share2, GitBranch } from 'lucide-react';
 import { RichTextEditor } from './RichTextEditor';
 import { ProjectSetup } from './ProjectSetup';
-import { DocumentUpload } from './DocumentUpload';
 import { ParagraphLineageView } from './ParagraphLineageView';
 import { ShareModal } from './ShareModal';
 import { formatVersionNumber } from '@/lib/formatVersion';
@@ -26,7 +25,7 @@ export function DocumentEditor() {
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [editingNote, setEditingNote] = useState(false);
   const [localNote, setLocalNote] = useState(currentVersion?.note || '');
-  const [showUpload, setShowUpload] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [zoomLevel, setZoomLevel] = useState(100);
   const [isPrintView, setIsPrintView] = useState(true); // Auto-enable print view
   const [showShareModal, setShowShareModal] = useState(false);
@@ -129,7 +128,55 @@ export function DocumentEditor() {
     
     setLocalContent(content);
     setHasUnsavedChanges(false); // No unsaved changes since we created a version
-    setShowUpload(false);
+  };
+
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (files && files.length > 0) {
+      await processFile(files[0]);
+    }
+  };
+
+  const processFile = async (file: File) => {
+    try {
+      // Extract text content from file
+      const content = await extractTextFromFile(file);
+      
+      if (!content || content.trim().length === 0) {
+        throw new Error('The file appears to be empty or could not be read.');
+      }
+      
+      handleDocumentUploaded(content, file.name);
+    } catch (error: any) {
+      console.error('Error processing file:', error);
+      alert(error.message || 'Error processing file. Please try again.');
+    }
+  };
+
+  const extractTextFromFile = async (file: File): Promise<string> => {
+    // Use server-side processing for all file types
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    const response = await fetch('/api/upload', {
+      method: 'POST',
+      body: formData
+    });
+    
+    if (!response.ok) {
+      // Try to parse as JSON, but handle HTML error pages
+      const contentType = response.headers.get('content-type');
+      if (contentType && contentType.includes('application/json')) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to process file');
+      } else {
+        // Got HTML error page instead of JSON
+        throw new Error(`Server error: ${response.status} ${response.statusText}. Please try again.`);
+      }
+    }
+    
+    const result = await response.json();
+    return result.text;
   };
 
   const handleSaveAsVariation = () => {
@@ -194,14 +241,23 @@ export function DocumentEditor() {
           <div className="flex items-center gap-4">
               {/* Upload Button - Only show for v0 */}
               {currentVersion?.number === '0' && (
-                <button
-                  onClick={() => setShowUpload(true)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-600 text-white text-sm font-medium rounded hover:bg-purple-700 transition-colors"
-                  title="Upload document"
-                >
-                  <Upload className="w-4 h-4" />
-                  Upload
-                </button>
+                <>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    onChange={handleFileSelect}
+                    accept=".txt,.html,.md,.markdown,.pdf,.docx,.doc"
+                    className="hidden"
+                  />
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-600 text-white text-sm font-medium rounded hover:bg-purple-700 transition-colors"
+                    title="Upload document"
+                  >
+                    <Upload className="w-4 h-4" />
+                    Upload
+                  </button>
+                </>
               )}
 
             {/* Save Actions - Only show when there are unsaved changes */}
@@ -309,26 +365,6 @@ export function DocumentEditor() {
         )}
       </div>
 
-      {/* Upload Modal */}
-      {showUpload && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-xl w-full mx-4">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold">Upload Document</h3>
-              <button
-                onClick={() => setShowUpload(false)}
-                className="text-gray-500 hover:text-gray-700"
-              >
-                ✕
-              </button>
-            </div>
-            <DocumentUpload
-              mode="document"
-              onContentExtracted={handleDocumentUploaded}
-            />
-          </div>
-        </div>
-      )}
 
       {/* Share Modal */}
       <ShareModal

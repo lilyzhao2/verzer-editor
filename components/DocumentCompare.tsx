@@ -45,6 +45,7 @@ export function DocumentCompare() {
   const [scrollPositions, setScrollPositions] = useState({ left: 0, right: 0 });
   const [showReviewPanel, setShowReviewPanel] = useState(false);
   const [reviewNote, setReviewNote] = useState('');
+  const [showSaveSuccess, setShowSaveSuccess] = useState(false);
   
   const leftPanelRef = useRef<HTMLDivElement>(null);
   const rightPanelRef = useRef<HTMLDivElement>(null);
@@ -739,31 +740,42 @@ export function DocumentCompare() {
                     ? `${reviewNote.length} characters • ${comments.size} comments` 
                     : 'Add notes and comments to save'}
             </span>
-                <button
-                  onClick={() => {
-                    // Save to localStorage
-                    const key = `comparison-review-${compareVersion.id}-${currentVersion.id}`;
-                    const commentsObj = Object.fromEntries(comments);
-                    localStorage.setItem(key, JSON.stringify({
-                      note: reviewNote,
-                      comments: commentsObj,
-                      timestamp: new Date().toISOString(),
-                      baseVersion: compareVersion.number,
-                      currentVersion: currentVersion.number
-                    }));
-                    alert('Review saved!');
-                  }}
-                  disabled={!reviewNote.trim() && comments.size === 0}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                    (reviewNote.trim() || comments.size > 0)
-                      ? 'bg-blue-600 text-white hover:bg-blue-700' 
-                      : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                  }`}
-                >
-                  <Save className="w-4 h-4" />
-                  Save Review
-                </button>
+                <div className="flex items-center gap-2">
+                  {showSaveSuccess && (
+                    <div className="flex items-center gap-1 text-green-600 text-xs">
+                      <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                      Saved!
+                    </div>
+                  )}
+                  <button
+                    onClick={() => {
+                      // Save to localStorage
+                      const key = `comparison-review-${compareVersion.id}-${currentVersion.id}`;
+                      const commentsObj = Object.fromEntries(comments);
+                      localStorage.setItem(key, JSON.stringify({
+                        note: reviewNote,
+                        comments: commentsObj,
+                        timestamp: new Date().toISOString(),
+                        baseVersion: compareVersion.number,
+                        currentVersion: currentVersion.number
+                      }));
+                      
+                      // Show subtle success indicator
+                      setShowSaveSuccess(true);
+                      setTimeout(() => setShowSaveSuccess(false), 2000);
+                    }}
+                    disabled={!reviewNote.trim() && comments.size === 0}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                      (reviewNote.trim() || comments.size > 0)
+                        ? 'bg-blue-600 text-white hover:bg-blue-700' 
+                        : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                    }`}
+                  >
+                    <Save className="w-4 h-4" />
+                    Save Review
+                  </button>
           </div>
+        </div>
         </div>
           </div>
         )}
