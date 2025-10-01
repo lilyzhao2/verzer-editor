@@ -102,8 +102,9 @@ export function ChatInterface() {
           // List View
           <div className="p-4 space-y-3">
             {state.chatHistory.map((message) => {
-            const prevVersion = message.versionCreated > 0 ? message.versionCreated - 1 : null;
-            const isLatest = message.versionCreated === state.versions.length - 1;
+            const currentVersionObj = state.versions.find(v => v.number === message.versionCreated);
+            const parentVersion = currentVersionObj?.parentId ? state.versions.find(v => v.id === currentVersionObj.parentId) : null;
+            const isLatest = currentVersionObj?.id === state.versions[state.versions.length - 1]?.id;
             const isCurrent = state.currentVersionId === `v${message.versionCreated}`;
             
             return (
@@ -125,12 +126,12 @@ export function ChatInterface() {
                     }`}>
                       v{message.versionCreated}
                     </span>
-                    {prevVersion !== null && (
+                    {parentVersion && (
                       <div className="flex items-center gap-1 text-xs text-gray-500">
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
                         </svg>
-                        <span className="font-medium">Based on v{prevVersion}</span>
+                        <span className="font-medium">Based on v{parentVersion.number}</span>
                       </div>
                     )}
                     {isLatest && (
@@ -183,17 +184,17 @@ export function ChatInterface() {
                       Jump to v{message.versionCreated}
                     </button>
                   )}
-                  <button
-                    onClick={() => {
-                      setCurrentVersion(`v${message.versionCreated}`);
-                      if (prevVersion !== null) {
-                        setCompareVersion(`v${prevVersion}`);
-                      }
-                    }}
-                    className="text-xs px-3 py-1.5 bg-gray-600 text-white rounded hover:bg-gray-700 transition-colors font-medium"
-                  >
-                    Compare
-                  </button>
+                  {parentVersion && (
+                    <button
+                      onClick={() => {
+                        setCurrentVersion(`v${message.versionCreated}`);
+                        setCompareVersion(parentVersion.id);
+                      }}
+                      className="text-xs px-3 py-1.5 bg-gray-600 text-white rounded hover:bg-gray-700 transition-colors font-medium"
+                    >
+                      Compare
+                    </button>
+                  )}
                 </div>
               </div>
             );
