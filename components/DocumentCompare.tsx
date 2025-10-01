@@ -8,7 +8,8 @@ import {
   ChevronDown,
   Filter,
   Search,
-  X
+  X,
+  Star
 } from 'lucide-react';
 import * as Diff from 'diff';
 
@@ -24,7 +25,7 @@ interface Change {
 }
 
 export function DocumentCompare() {
-  const { state, setCompareVersionId } = useEditor();
+  const { state, setCompareVersionId, toggleVersionStar } = useEditor();
   const currentVersion = state.versions.find(v => v.id === state.currentVersionId);
   const compareVersion = state.versions.find(v => v.id === state.compareVersionId);
   
@@ -331,7 +332,7 @@ export function DocumentCompare() {
               <select
                 value={state.compareVersionId || ''}
                 onChange={(e) => setCompareVersionId(e.target.value)}
-                className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg bg-white"
+                className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg bg-white text-gray-800"
               >
                 <option value="">Select a version to compare...</option>
                 {state.versions
@@ -343,7 +344,7 @@ export function DocumentCompare() {
                   ))}
               </select>
             </div>
-            <div className="text-sm text-gray-600">
+            <div className="text-sm text-gray-800">
               Current: V{currentVersion.number}
             </div>
           </div>
@@ -371,7 +372,7 @@ export function DocumentCompare() {
               <select
                 value={state.compareVersionId || ''}
                 onChange={(e) => setCompareVersionId(e.target.value)}
-                className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg bg-white"
+                className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg bg-white text-gray-800"
               >
                 <option value="">Select a version to compare...</option>
                 {state.versions
@@ -383,7 +384,7 @@ export function DocumentCompare() {
                   ))}
               </select>
             </div>
-            <div className="text-sm text-gray-600">
+            <div className="text-sm text-gray-800">
               {currentVersion && `Current: V${currentVersion.number}`}
               {compareVersion && ` vs V${compareVersion.number}`}
             </div>
@@ -398,7 +399,7 @@ export function DocumentCompare() {
               <button
                 onClick={() => setViewMode('word')}
                 className={`px-3 py-1.5 text-xs font-medium rounded transition-colors ${
-                  viewMode === 'word' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-600 hover:text-gray-900'
+                  viewMode === 'word' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-700 hover:text-gray-900'
                 }`}
               >
                 Word
@@ -406,7 +407,7 @@ export function DocumentCompare() {
               <button
                 onClick={() => setViewMode('sentence')}
                 className={`px-3 py-1.5 text-xs font-medium rounded transition-colors ${
-                  viewMode === 'sentence' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-600 hover:text-gray-900'
+                  viewMode === 'sentence' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-700 hover:text-gray-900'
                 }`}
               >
                 Sentence
@@ -414,7 +415,7 @@ export function DocumentCompare() {
               <button
                 onClick={() => setViewMode('paragraph')}
                 className={`px-3 py-1.5 text-xs font-medium rounded transition-colors ${
-                  viewMode === 'paragraph' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-600 hover:text-gray-900'
+                  viewMode === 'paragraph' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-700 hover:text-gray-900'
                 }`}
               >
                 Paragraph
@@ -431,7 +432,7 @@ export function DocumentCompare() {
               >
                 <ChevronUp className="w-5 h-5" />
               </button>
-              <span className="text-sm font-medium text-gray-700 min-w-[80px] text-center">
+              <span className="text-sm font-medium text-gray-800 min-w-[80px] text-center">
                 {filteredChanges.length > 0 ? `${currentChangeIndex + 1} / ${filteredChanges.length}` : '0 / 0'}
               </span>
               <button
@@ -446,13 +447,13 @@ export function DocumentCompare() {
             
             {/* Search */}
             <div className="relative">
-              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
               <input
                 type="text"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 placeholder="Search in changes..."
-                className="pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm w-64 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm w-64 text-gray-800 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
               {searchTerm && (
                 <button
@@ -488,9 +489,24 @@ export function DocumentCompare() {
           {/* Left panel */}
           <div className="flex-1 flex flex-col border-r">
             <div className="px-4 py-2 bg-gray-50 border-b">
-              <h3 className="text-sm font-semibold text-gray-700">
-                Version {compareVersion.number} (Original)
-              </h3>
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-gray-700">
+                  Version {compareVersion.number} (Original)
+                </h3>
+                <button
+                  onClick={() => toggleVersionStar(compareVersion.id)}
+                  className="p-1 hover:bg-gray-200 rounded transition-colors"
+                  title={compareVersion.starred ? "Unstar version" : "Star version"}
+                >
+                  <Star 
+                    className={`w-4 h-4 ${
+                      compareVersion.starred 
+                        ? 'fill-yellow-400 text-yellow-400' 
+                        : 'text-gray-400 hover:text-yellow-400'
+                    }`} 
+                  />
+                </button>
+              </div>
             </div>
             <div
               ref={leftPanelRef}
@@ -544,9 +560,24 @@ export function DocumentCompare() {
           {/* Right panel */}
           <div className="flex-1 flex flex-col">
             <div className="px-4 py-2 bg-gray-50 border-b">
-              <h3 className="text-sm font-semibold text-gray-700">
-                Version {currentVersion.number} (Current)
-              </h3>
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-gray-700">
+                  Version {currentVersion.number} (Current)
+                </h3>
+                <button
+                  onClick={() => toggleVersionStar(currentVersion.id)}
+                  className="p-1 hover:bg-gray-200 rounded transition-colors"
+                  title={currentVersion.starred ? "Unstar version" : "Star version"}
+                >
+                  <Star 
+                    className={`w-4 h-4 ${
+                      currentVersion.starred 
+                        ? 'fill-yellow-400 text-yellow-400' 
+                        : 'text-gray-400 hover:text-yellow-400'
+                    }`} 
+                  />
+                </button>
+              </div>
             </div>
             <div
               ref={rightPanelRef}
