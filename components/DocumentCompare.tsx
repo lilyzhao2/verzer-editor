@@ -58,22 +58,53 @@ export function DocumentCompare() {
     div.innerHTML = html;
     const paragraphs: string[] = [];
     
-    // Get all paragraph-like elements
-    const elements = div.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li');
+    // Get all paragraph elements (only <p> tags for true paragraphs)
+    const elements = div.querySelectorAll('p');
     elements.forEach(el => {
       const text = (el.textContent || '').trim();
       if (text) {
+        // Keep the full paragraph text, don't split it
         paragraphs.push(text);
       }
     });
     
-    return paragraphs.length > 0 ? paragraphs : [div.textContent || ''].filter(Boolean);
+    // If no paragraphs found, treat the entire content as one paragraph
+    if (paragraphs.length === 0) {
+      const fullText = div.textContent || '';
+      if (fullText.trim()) {
+        paragraphs.push(fullText.trim());
+      }
+    }
+    
+    return paragraphs;
   };
   
   // Extract sentences from text
   const extractSentences = (text: string): string[] => {
-    // Split on sentence boundaries (., !, ?) followed by space or newline
-    return text.split(/[.!?]+\s+/).filter(s => s.trim().length > 0);
+    // More sophisticated sentence splitting that handles abbreviations better
+    const sentences: string[] = [];
+    // Split on sentence boundaries but keep the delimiter
+    const parts = text.split(/([.!?]+[\s\n]+)/);
+    
+    let current = '';
+    for (let i = 0; i < parts.length; i++) {
+      if (i % 2 === 0) {
+        current = parts[i];
+      } else {
+        // This is a delimiter, add it to current and push
+        current += parts[i].trim();
+        if (current.trim()) {
+          sentences.push(current.trim());
+        }
+        current = '';
+      }
+    }
+    // Don't forget the last sentence if it doesn't end with punctuation
+    if (current.trim()) {
+      sentences.push(current.trim());
+    }
+    
+    return sentences.filter(s => s.length > 0);
   };
   
   // Extract words from text
@@ -131,15 +162,36 @@ export function DocumentCompare() {
     const matchedLeft = new Set<number>();
     const matchedRight = new Set<number>();
     
-    // First pass: find exact or near-exact matches (moved content)
+    // First pass: find moved content (check all high similarity matches first)
+    const moveThreshold = viewMode === 'paragraph' ? 0.6 : 0.7; // Lower threshold for paragraphs
+    const modThreshold = viewMode === 'paragraph' ? 0.85 : 0.9;
+    
+    // Find all potential moves first (high similarity, different positions)
     for (let i = 0; i < leftUnits.length; i++) {
+      if (matchedLeft.has(i)) continue;
+      
+      let bestMatch = -1;
+      let bestSimilarity = 0;
+      
+      // Find the best match for this left unit
       for (let j = 0; j < rightUnits.length; j++) {
-        if (matchedLeft.has(i) || matchedRight.has(j)) continue;
+        if (matchedRight.has(j)) continue;
         
         const similarity = similarityMatrix[i][j];
+        if (similarity > bestSimilarity && similarity > moveThreshold) {
+          bestMatch = j;
+          bestSimilarity = similarity;
+        }
+      }
+      
+      // If we found a good match
+      if (bestMatch !== -1) {
+        const j = bestMatch;
+        const similarity = bestSimilarity;
         
-        // High similarity and position changed = moved
-        if (similarity > 0.85 && Math.abs(i - j) > 1) {
+        // Check if it's a move (different position) or modification (same position)
+        if (Math.abs(i - j) > 0 && similarity > moveThreshold) {
+          // It's moved
           detectedChanges.push({
             id: `change-${changeId++}`,
             type: 'moved',
@@ -152,26 +204,22 @@ export function DocumentCompare() {
           });
           matchedLeft.add(i);
           matchedRight.add(j);
-        }
-        // Very high similarity at same position = minor modification
-        else if (similarity > 0.7 && i === j) {
-          if (similarity < 1.0) {
-            detectedChanges.push({
-              id: `change-${changeId++}`,
-              type: 'modification',
-              leftText: leftUnits[i],
-              rightText: rightUnits[j],
-              leftIndex: i,
-              rightIndex: j,
-              position: (i / leftUnits.length) * 100,
-              similarity: similarity
-            });
-          }
+        } else if (i === j && similarity > modThreshold && similarity < 1.0) {
+          // Minor modification at same position
+          detectedChanges.push({
+            id: `change-${changeId++}`,
+            type: 'modification',
+            leftText: leftUnits[i],
+            rightText: rightUnits[j],
+            leftIndex: i,
+            rightIndex: j,
+            position: (i / leftUnits.length) * 100,
+            similarity: similarity
+          });
           matchedLeft.add(i);
           matchedRight.add(j);
-        }
-        // Medium similarity = replacement
-        else if (similarity > 0.3 && similarity <= 0.7 && i === j) {
+        } else if (i === j && similarity > 0.3 && similarity <= modThreshold) {
+          // Replacement at same position
           detectedChanges.push({
             id: `change-${changeId++}`,
             type: 'replaced',
@@ -182,6 +230,10 @@ export function DocumentCompare() {
             position: (i / leftUnits.length) * 100,
             similarity: similarity
           });
+          matchedLeft.add(i);
+          matchedRight.add(j);
+        } else if (i === j && similarity === 1.0) {
+          // Exact match, no change
           matchedLeft.add(i);
           matchedRight.add(j);
         }
@@ -260,7 +312,7 @@ export function DocumentCompare() {
           } else if (change.type === 'moved') {
             bgColor = 'bg-purple-100';
             textColor = 'text-purple-900';
-            badge = '↓ Moved';
+            badge = `↓ Moved to position ${change.rightIndex + 1}`;
           } else if (change.type === 'modification') {
             bgColor = 'bg-yellow-100';
             textColor = 'text-yellow-900';
@@ -276,7 +328,7 @@ export function DocumentCompare() {
           } else if (change.type === 'moved') {
             bgColor = 'bg-purple-100';
             textColor = 'text-purple-900';
-            badge = '↑ Moved from above';
+            badge = `↑ Moved from position ${change.leftIndex + 1}`;
           } else if (change.type === 'modification') {
             bgColor = 'bg-yellow-100';
             textColor = 'text-yellow-900';
