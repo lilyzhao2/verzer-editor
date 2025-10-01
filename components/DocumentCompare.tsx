@@ -829,7 +829,7 @@ export function DocumentCompare() {
             <div className="px-4 py-2 bg-gray-50 border-b">
               <div className="flex items-center justify-between">
               <h3 className="text-sm font-semibold text-gray-700">
-                  {compareVersion.prompt || `Version ${compareVersion.number}`}
+                  {compareVersion.prompt || `Version ${compareVersion.number}`}:
               </h3>
                 <button
                   onClick={() => toggleVersionStar(compareVersion.id)}
@@ -961,7 +961,7 @@ export function DocumentCompare() {
             <div className="px-4 py-2 bg-gray-50 border-b">
               <div className="flex items-center justify-between">
               <h3 className="text-sm font-semibold text-gray-700">
-                  {currentVersion.prompt || `Version ${currentVersion.number}`}
+                  {currentVersion.prompt || `Version ${currentVersion.number}`}:
               </h3>
                 <button
                   onClick={() => toggleVersionStar(currentVersion.id)}

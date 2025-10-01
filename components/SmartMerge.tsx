@@ -42,6 +42,7 @@ export function SmartMerge() {
   const [showPreview, setShowPreview] = useState(true);
   const [currentChangeIndex, setCurrentChangeIndex] = useState(0);
   const [changes, setChanges] = useState<Change[]>([]);
+  const [isInitializing, setIsInitializing] = useState(true);
   
   const baseVersion = state.versions.find(v => v.id === baseVersionId);
   const selectedVersions = selectedVersionIds
@@ -137,6 +138,32 @@ export function SmartMerge() {
 
     return allChanges;
   }, [baseVersion, selectedVersionIds]);
+
+  // Auto-select versions based on compare tab or default to last two
+  useEffect(() => {
+    if (selectedVersionIds.length === 0) {
+      // Check if compare tab has versions selected
+      if (state.compareVersionId && state.currentVersionId) {
+        // Use the versions from compare tab
+        setBaseVersionId(state.compareVersionId);
+        setSelectedVersionIds([state.currentVersionId]);
+      } else {
+        // Default to last two versions
+        const sortedVersions = [...state.versions].sort((a, b) => 
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        );
+        
+        if (sortedVersions.length >= 2) {
+          setBaseVersionId(sortedVersions[1].id); // Second newest as base
+          setSelectedVersionIds([sortedVersions[0].id]); // Newest as selected
+        } else if (sortedVersions.length === 1) {
+          setBaseVersionId(sortedVersions[0].id);
+          setSelectedVersionIds([]);
+        }
+      }
+      setIsInitializing(false);
+    }
+  }, [state.versions, state.compareVersionId, state.currentVersionId, selectedVersionIds.length]);
 
   // Initialize changes when versions change
   useEffect(() => {
@@ -604,29 +631,30 @@ export function SmartMerge() {
     );
   };
 
-  // Empty state
+  // Show message if no versions available
   if (!baseVersion || selectedVersions.length === 0) {
     return (
-      <div className="h-full flex flex-col bg-gray-50">
-        <div className="px-6 py-4 border-b bg-white">
-          <h2 className="text-xl font-bold text-gray-900">Smart Merge</h2>
-          <p className="text-sm text-gray-600 mt-1">
-            Review and cherry-pick the best changes from multiple versions
+      <div className="h-full flex items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <GitMerge className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">
+            No Versions Available
+          </h3>
+          <p className="text-sm text-gray-600">
+            Create some versions first to use Smart Merge
           </p>
         </div>
-        <div className="flex-1 flex items-center justify-center">
-          <div className="max-w-md w-full p-6">
-            <div className="text-center mb-6">
-              <GitMerge className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                Get Started
-              </h3>
-              <p className="text-sm text-gray-600">
-                Select a base version and at least one version to merge in
-              </p>
-            </div>
-            {renderVersionSelector()}
-          </div>
+      </div>
+    );
+  }
+
+  // Show loading state while initializing
+  if (isInitializing) {
+    return (
+      <div className="h-full flex items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading Smart Merge...</p>
         </div>
       </div>
     );
@@ -642,6 +670,11 @@ export function SmartMerge() {
             <p className="text-sm text-gray-600 mt-1">
               Base: <span className="font-medium">V{baseVersion.number}</span> → 
               Merging: <span className="font-medium">{selectedVersions.length} versions</span>
+              {state.compareVersionId && state.currentVersionId && (
+                <span className="ml-2 text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded">
+                  From Compare Tab
+                </span>
+              )}
             </p>
           </div>
           <button
