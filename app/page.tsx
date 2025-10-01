@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { EditorProvider, useEditor } from '@/contexts/EditorContext';
 import { CompareProvider } from '@/contexts/CompareContext';
 import { VersionSelector } from '@/components/VersionSelector';
@@ -10,43 +10,86 @@ import { CompareView } from '@/components/CompareView';
 import { ClearDataButton } from '@/components/ClearDataButton';
 import { ProjectSetup } from '@/components/ProjectSetup';
 import { LegalCompare } from '@/components/LegalCompare';
+import { ProfessionalCompare } from '@/components/ProfessionalCompare';
 import { TabBar } from '@/components/TabBar';
 import { ParallelView } from '@/components/ParallelView';
-import { MessageSquare, FileText, GitBranch, Settings, Scale, Layers } from 'lucide-react';
+import { DebugPanel } from '@/components/DebugPanel';
+import { MessageSquare, FileText, GitBranch, Settings, Scale, Layers, Bug, ChevronDown } from 'lucide-react';
 
 function ViewModeTabs() {
-  const { state, setViewMode } = useEditor();
+  const { state, setViewMode, getCurrentVersion, setCurrentVersion } = useEditor();
   
   const tabs = [
     { id: 'context' as const, label: 'Context', icon: Settings, description: 'Project configuration' },
     { id: 'document' as const, label: 'Document', icon: FileText, description: 'Focus on writing' },
     { id: 'parallel' as const, label: 'Parallel', icon: Layers, description: 'Work on multiple versions simultaneously' },
     { id: 'compare' as const, label: 'Compare', icon: Scale, description: 'Legal document comparison' },
-    { id: 'iterate' as const, label: 'Iterate', icon: GitBranch, description: 'Compare and iterate on versions' },
+    { id: 'iterate' as const, label: 'Track', icon: GitBranch, description: 'Track changes and collaborate' },
   ];
 
+  const { toggleDebugMode } = useEditor();
+
   return (
-    <div className="bg-white border-b border-gray-200 px-6 py-2 flex items-center gap-1">
-      {tabs.map((tab) => {
-        const Icon = tab.icon;
-        const isActive = state.viewMode === tab.id;
-        
-        return (
-          <button
-            key={tab.id}
-            onClick={() => setViewMode(tab.id)}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-              isActive
-                ? 'bg-blue-600 text-white shadow-sm'
-                : 'text-gray-600 hover:bg-gray-100'
-            }`}
-            title={tab.description}
+    <div className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between gap-4">
+      {/* Left: View Tabs */}
+      <div className="flex items-center gap-2">
+        {tabs.map((tab) => {
+          const Icon = tab.icon;
+          const isActive = state.viewMode === tab.id;
+          
+          return (
+            <button
+              key={tab.id}
+              onClick={() => setViewMode(tab.id)}
+              className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-base font-semibold transition-all ${
+                isActive
+                  ? 'bg-blue-600 text-white shadow-sm'
+                  : 'text-gray-600 hover:bg-gray-100'
+              }`}
+              title={tab.description}
+            >
+              <Icon className="w-5 h-5" />
+              {tab.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Right: Utility Buttons */}
+      <div className="flex items-center gap-3">
+        {/* Version Selector */}
+        <div className="relative">
+          <select
+            value={getCurrentVersion()?.id || ''}
+            onChange={(e) => setCurrentVersion(e.target.value)}
+            className="appearance-none bg-white border border-gray-300 rounded-lg px-4 py-2.5 pr-10 text-base font-semibold text-gray-900 hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
           >
-            <Icon className="w-4 h-4" />
-            {tab.label}
-          </button>
-        );
-      })}
+            {state.versions.map((version) => (
+              <option key={version.id} value={version.id}>
+                v{version.number.toUpperCase()}
+              </option>
+            ))}
+          </select>
+          <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500 pointer-events-none" />
+        </div>
+
+        {/* Debug Mode */}
+        <button
+          onClick={toggleDebugMode}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-base font-semibold transition-colors ${
+            state.debugMode 
+              ? 'bg-red-100 text-red-700 hover:bg-red-200' 
+              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+          }`}
+          title="Toggle debug mode"
+        >
+          <Bug className="w-5 h-5" />
+          Debug
+        </button>
+
+        {/* Clear Data */}
+        <ClearDataButton />
+      </div>
     </div>
   );
 }
@@ -55,6 +98,13 @@ function MainContent() {
   const { state, setCurrentVersion } = useEditor();
   const [chatMinimized, setChatMinimized] = useState(false);
   const [chatWidth, setChatWidth] = useState(450); // pixels
+  
+  // Auto-minimize chat in context view
+  useEffect(() => {
+    if (state.viewMode === 'context') {
+      setChatMinimized(true);
+    }
+  }, [state.viewMode]);
   const [isResizing, setIsResizing] = useState(false);
 
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -99,7 +149,7 @@ function MainContent() {
           const versionIndex = parseInt(key);
           
           // Get root versions only for shortcuts
-          const rootVersions = state.versions.filter(v => !v.number.includes('.'));
+          const rootVersions = state.versions.filter(v => !v.number.includes('b'));
           
           if (versionIndex < rootVersions.length) {
             setCurrentVersion(rootVersions[versionIndex].id);
@@ -153,9 +203,9 @@ function MainContent() {
       return <ParallelView />;
     }
 
-    // Compare View: Legal-style document comparison
+    // Compare View: Professional collaborative comparison tool
     if (state.viewMode === 'compare') {
-      return <LegalCompare />;
+      return <ProfessionalCompare />;
     }
 
     // Iterate View: Compare and iterate on versions
@@ -184,52 +234,57 @@ function MainContent() {
       </div>
 
       {/* AI Agent Chat - Always Present (except in Parallel view) */}
-      {!chatMinimized && (
-        <div
-          onMouseDown={handleMouseDown}
-          className={`w-1 bg-gray-200 hover:bg-blue-500 cursor-col-resize transition-colors ${
-            isResizing ? 'bg-blue-500' : ''
-          }`}
-          title="Drag to resize"
-        />
-      )}
-      
-      <div 
-        className="bg-gray-50 flex flex-col transition-all duration-300"
-        style={{ width: chatMinimized ? '60px' : `${chatWidth}px` }}
-      >
-        {chatMinimized ? (
-          // Minimized State
-          <button
-            onClick={() => setChatMinimized(false)}
-            className="flex-1 flex flex-col items-center justify-center gap-3 hover:bg-gray-100 transition-colors"
+      {/* Right Sidebar - AI Chat */}
+      {(
+        <>
+          {!chatMinimized && (
+            <div
+              onMouseDown={handleMouseDown}
+              className={`w-1 bg-gray-200 hover:bg-blue-500 cursor-col-resize transition-colors ${
+                isResizing ? 'bg-blue-500' : ''
+              }`}
+              title="Drag to resize"
+            />
+          )}
+          
+          <div 
+            className="bg-gray-50 flex flex-col transition-all duration-300"
+            style={{ width: chatMinimized ? '60px' : `${chatWidth}px` }}
           >
-            <MessageSquare className="w-6 h-6 text-gray-600" />
-            <span className="text-xs text-gray-600 writing-mode-vertical transform rotate-180">
-              AI Agent
-            </span>
-          </button>
-        ) : (
-          // Expanded State
-          <>
-            <div className="px-4 py-3 border-b bg-white flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-gray-800 flex items-center gap-2">
-                <MessageSquare className="w-4 h-4" />
-                AI Agent
-              </h3>
+            {chatMinimized ? (
+              // Minimized State
               <button
-                onClick={() => setChatMinimized(true)}
-                className="text-gray-400 hover:text-gray-600 text-xs"
+                onClick={() => setChatMinimized(false)}
+                className="flex-1 flex flex-col items-center justify-center gap-3 hover:bg-gray-100 transition-colors"
               >
-                Minimize →
+                <MessageSquare className="w-6 h-6 text-gray-600" />
+                <span className="text-xs text-gray-600 writing-mode-vertical transform rotate-180">
+                  AI Agent
+                </span>
               </button>
-            </div>
-            <div className="flex-1 overflow-hidden">
-              <ChatInterface />
-            </div>
-          </>
-        )}
-      </div>
+            ) : (
+              // Expanded State
+              <>
+                <div className="px-4 py-3 border-b bg-white flex items-center justify-between">
+                  <h3 className="text-sm font-semibold text-gray-800 flex items-center gap-2">
+                    <MessageSquare className="w-4 h-4" />
+                    AI Agent
+                  </h3>
+                  <button
+                    onClick={() => setChatMinimized(true)}
+                    className="text-gray-400 hover:text-gray-600 text-xs"
+                  >
+                    Minimize →
+                  </button>
+                </div>
+                <div className="flex-1 overflow-hidden">
+                  <ChatInterface />
+                </div>
+              </>
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -239,10 +294,10 @@ export default function Home() {
     <EditorProvider>
       <CompareProvider>
         <div className="h-screen flex flex-col bg-gray-100">
-          {/* Top Bar with Version Selector */}
-          <VersionSelector />
+          {/* Debug Panel */}
+          <DebugPanel />
           
-          {/* View Mode Tabs */}
+          {/* View Mode Tabs (includes version selector and utility buttons) */}
           <ViewModeTabs />
           
           {/* Main Content Area */}

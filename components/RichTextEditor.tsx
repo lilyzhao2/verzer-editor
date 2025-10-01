@@ -6,7 +6,44 @@ import Placeholder from '@tiptap/extension-placeholder';
 import Color from '@tiptap/extension-color';
 import { TextStyle } from '@tiptap/extension-text-style';
 import FontFamily from '@tiptap/extension-font-family';
-import { Bold, Italic, List, ListOrdered, Heading2, Undo, Redo, Type, Palette, Type as FontIcon } from 'lucide-react';
+import TextAlign from '@tiptap/extension-text-align';
+import Underline from '@tiptap/extension-underline';
+import Strike from '@tiptap/extension-strike';
+import Superscript from '@tiptap/extension-superscript';
+import Subscript from '@tiptap/extension-subscript';
+import Highlight from '@tiptap/extension-highlight';
+import HorizontalRule from '@tiptap/extension-horizontal-rule';
+import FontSize from 'tiptap-extension-font-size';
+import { 
+  Bold, 
+  Italic, 
+  List, 
+  ListOrdered, 
+  Heading1, 
+  Heading2, 
+  Heading3, 
+  Undo, 
+  Redo, 
+  Type, 
+  Palette, 
+  Type as FontIcon,
+  AlignLeft,
+  AlignCenter,
+  AlignRight,
+  AlignJustify,
+  Underline as UnderlineIcon,
+  Strikethrough,
+  Highlighter,
+  Minus,
+  Plus,
+  Indent,
+  Outdent,
+  Link,
+  Unlink,
+  Table,
+  Columns,
+  Separator
+} from 'lucide-react';
 import { useState, useEffect } from 'react';
 
 interface RichTextEditorProps {
@@ -14,12 +51,15 @@ interface RichTextEditorProps {
   onChange: (content: string) => void;
   onSave?: () => void;
   placeholder?: string;
+  isPrintView?: boolean;
 }
 
-export function RichTextEditor({ content, onChange, onSave, placeholder }: RichTextEditorProps) {
+export function RichTextEditor({ content, onChange, onSave, placeholder, isPrintView = false }: RichTextEditorProps) {
   const [mounted, setMounted] = useState(false);
   const [showColorPicker, setShowColorPicker] = useState(false);
   const [showFontPicker, setShowFontPicker] = useState(false);
+  const [showFontSizePicker, setShowFontSizePicker] = useState(false);
+  const [showHighlightPicker, setShowHighlightPicker] = useState(false);
   const [isInitialRender, setIsInitialRender] = useState(true);
 
   useEffect(() => {
@@ -35,6 +75,18 @@ export function RichTextEditor({ content, onChange, onSave, placeholder }: RichT
       FontFamily.configure({
         types: ['textStyle'],
       }),
+      FontSize,
+      TextAlign.configure({
+        types: ['heading', 'paragraph'],
+      }),
+      Underline,
+      Strike,
+      Superscript,
+      Subscript,
+      Highlight.configure({
+        multicolor: true,
+      }),
+      HorizontalRule,
       Placeholder.configure({
         placeholder: placeholder || 'Start writing your document...',
       }),
@@ -48,7 +100,15 @@ export function RichTextEditor({ content, onChange, onSave, placeholder }: RichT
     },
     editorProps: {
       attributes: {
-        class: 'prose prose-sm max-w-none focus:outline-none min-h-[400px] p-4 text-black',
+        class: 'prose prose-sm max-w-none focus:outline-none min-h-[400px] p-4 text-black prose-headings:text-black prose-p:text-black prose-strong:text-black prose-em:text-black prose-li:text-black prose-ul:text-black prose-ol:text-black',
+      },
+      handlePaste: (view, event, slice) => {
+        // Allow default paste behavior to preserve formatting
+        return false;
+      },
+      handleDrop: (view, event, slice, moved) => {
+        // Allow default drop behavior
+        return false;
       },
     },
   });
@@ -65,6 +125,7 @@ export function RichTextEditor({ content, onChange, onSave, placeholder }: RichT
       onSave?.();
     }
   };
+
 
   if (!mounted || !editor) {
     return (
@@ -118,13 +179,39 @@ export function RichTextEditor({ content, onChange, onSave, placeholder }: RichT
     { name: 'Monospace', value: 'JetBrains Mono' },
     { name: 'Arial', value: 'Arial' },
     { name: 'Times', value: 'Times New Roman' },
-    { name: 'Helvetica', value: 'Helvetica' }
+    { name: 'Helvetica', value: 'Helvetica' },
+    { name: 'Calibri', value: 'Calibri' },
+    { name: 'Verdana', value: 'Verdana' }
+  ];
+
+  const fontSizes = [
+    { name: '8pt', value: '8px' },
+    { name: '9pt', value: '9px' },
+    { name: '10pt', value: '10px' },
+    { name: '11pt', value: '11px' },
+    { name: '12pt', value: '12px' },
+    { name: '14pt', value: '14px' },
+    { name: '16pt', value: '16px' },
+    { name: '18pt', value: '18px' },
+    { name: '20pt', value: '20px' },
+    { name: '24pt', value: '24px' },
+    { name: '28pt', value: '28px' },
+    { name: '32pt', value: '32px' },
+    { name: '36pt', value: '36px' },
+    { name: '48pt', value: '48px' },
+    { name: '72pt', value: '72px' }
+  ];
+
+  const highlightColors = [
+    '#ffff00', '#00ff00', '#00ffff', '#ff00ff',
+    '#ffa500', '#ff69b4', '#98fb98', '#f0e68c',
+    '#dda0dd', '#ffb6c1', '#87ceeb', '#f5deb3'
   ];
 
   return (
     <div className="h-full flex flex-col" onKeyDown={handleKeyDown}>
       {/* Formatting Toolbar */}
-      <div className="border-b bg-white px-4 py-2 flex items-center gap-1">
+      <div className="border-b bg-white px-4 py-2 flex flex-wrap items-center gap-1">
         {/* Text Formatting */}
         <ToolbarButton
           onClick={() => editor.chain().focus().toggleBold().run()}
@@ -142,47 +229,25 @@ export function RichTextEditor({ content, onChange, onSave, placeholder }: RichT
           <Italic className="w-4 h-4" />
         </ToolbarButton>
 
+        <ToolbarButton
+          onClick={() => editor.chain().focus().toggleUnderline().run()}
+          isActive={editor.isActive('underline')}
+          title="Underline (Cmd+U)"
+        >
+          <UnderlineIcon className="w-4 h-4" />
+        </ToolbarButton>
+
+        <ToolbarButton
+          onClick={() => editor.chain().focus().toggleStrike().run()}
+          isActive={editor.isActive('strike')}
+          title="Strikethrough"
+        >
+          <Strikethrough className="w-4 h-4" />
+        </ToolbarButton>
+
         <div className="w-px h-6 bg-gray-300 mx-1" />
         
-        {/* Font Color */}
-        <div className="relative">
-          <ToolbarButton
-            onClick={() => setShowColorPicker(!showColorPicker)}
-            title="Text Color"
-          >
-            <Palette className="w-4 h-4" />
-          </ToolbarButton>
-          {showColorPicker && (
-            <div className="absolute top-10 left-0 z-50 bg-white border border-gray-200 rounded-lg p-3 shadow-lg">
-              <div className="text-xs text-gray-600 mb-2 font-medium">Text Color</div>
-              <div className="grid grid-cols-4 gap-2">
-                {colors.map((color) => (
-                  <button
-                    key={color}
-                    onClick={() => {
-                      editor.chain().focus().setColor(color).run();
-                      setShowColorPicker(false);
-                    }}
-                    className="w-8 h-8 rounded border border-gray-300 hover:border-gray-500 transition-colors"
-                    style={{ backgroundColor: color }}
-                    title={color === '#000000' ? 'Black (default)' : color}
-                  />
-                ))}
-              </div>
-              <button
-                onClick={() => {
-                  editor.chain().focus().unsetColor().run();
-                  setShowColorPicker(false);
-                }}
-                className="w-full mt-2 px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 rounded"
-              >
-                Default (Black)
-              </button>
-            </div>
-          )}
-        </div>
-
-        {/* Font Family */}
+        {/* Font Controls */}
         <div className="relative">
           <ToolbarButton
             onClick={() => setShowFontPicker(!showFontPicker)}
@@ -209,15 +274,134 @@ export function RichTextEditor({ content, onChange, onSave, placeholder }: RichT
           )}
         </div>
 
+        <div className="relative">
+          <ToolbarButton
+            onClick={() => setShowFontSizePicker(!showFontSizePicker)}
+            title="Font Size"
+          >
+            <Type className="w-4 h-4" />
+          </ToolbarButton>
+          {showFontSizePicker && (
+            <div className="absolute top-10 left-0 z-50 bg-white border border-gray-200 rounded-lg p-2 shadow-lg min-w-20 max-h-48 overflow-y-auto">
+              {fontSizes.map((size) => (
+                <button
+                  key={size.value}
+                  onClick={() => {
+                    editor.chain().focus().setFontSize(size.value).run();
+                    setShowFontSizePicker(false);
+                  }}
+                  className="w-full text-left px-2 py-1 text-sm hover:bg-gray-100 rounded"
+                  style={{ fontSize: size.value }}
+                >
+                  {size.name}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="w-px h-6 bg-gray-300 mx-1" />
+        
+        {/* Text Color & Highlight */}
+        <div className="relative">
+          <ToolbarButton
+            onClick={() => setShowColorPicker(!showColorPicker)}
+            title="Text Color"
+          >
+            <Palette className="w-4 h-4" />
+          </ToolbarButton>
+          {showColorPicker && (
+            <div className="absolute top-10 left-0 z-50 bg-white border border-gray-200 rounded-lg p-3 shadow-lg">
+              <div className="text-xs text-black mb-2 font-medium">Text Color</div>
+              <div className="grid grid-cols-4 gap-2">
+                {colors.map((color) => (
+                  <button
+                    key={color}
+                    onClick={() => {
+                      editor.chain().focus().setColor(color).run();
+                      setShowColorPicker(false);
+                    }}
+                    className="w-8 h-8 rounded border border-gray-300 hover:border-gray-500 transition-colors"
+                    style={{ backgroundColor: color }}
+                    title={color === '#000000' ? 'Black (default)' : color}
+                  />
+                ))}
+              </div>
+              <button
+                onClick={() => {
+                  editor.chain().focus().unsetColor().run();
+                  setShowColorPicker(false);
+                }}
+                className="w-full mt-2 px-2 py-1 text-xs text-black hover:bg-gray-100 rounded"
+              >
+                Default (Black)
+              </button>
+            </div>
+          )}
+        </div>
+
+        <div className="relative">
+          <ToolbarButton
+            onClick={() => setShowHighlightPicker(!showHighlightPicker)}
+            title="Highlight Color"
+          >
+            <Highlighter className="w-4 h-4" />
+          </ToolbarButton>
+          {showHighlightPicker && (
+            <div className="absolute top-10 left-0 z-50 bg-white border border-gray-200 rounded-lg p-3 shadow-lg">
+              <div className="text-xs text-black mb-2 font-medium">Highlight Color</div>
+              <div className="grid grid-cols-4 gap-2">
+                {highlightColors.map((color) => (
+                  <button
+                    key={color}
+                    onClick={() => {
+                      editor.chain().focus().setHighlight({ color }).run();
+                      setShowHighlightPicker(false);
+                    }}
+                    className="w-8 h-8 rounded border border-gray-300 hover:border-gray-500 transition-colors"
+                    style={{ backgroundColor: color }}
+                    title={color}
+                  />
+                ))}
+              </div>
+              <button
+                onClick={() => {
+                  editor.chain().focus().unsetHighlight().run();
+                  setShowHighlightPicker(false);
+                }}
+                className="w-full mt-2 px-2 py-1 text-xs text-black hover:bg-gray-100 rounded"
+              >
+                Remove Highlight
+              </button>
+            </div>
+          )}
+        </div>
+
         <div className="w-px h-6 bg-gray-300 mx-1" />
         
         {/* Headings */}
         <ToolbarButton
+          onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
+          isActive={editor.isActive('heading', { level: 1 })}
+          title="Heading 1"
+        >
+          <Heading1 className="w-4 h-4" />
+        </ToolbarButton>
+
+        <ToolbarButton
           onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
           isActive={editor.isActive('heading', { level: 2 })}
-          title="Heading"
+          title="Heading 2"
         >
           <Heading2 className="w-4 h-4" />
+        </ToolbarButton>
+
+        <ToolbarButton
+          onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
+          isActive={editor.isActive('heading', { level: 3 })}
+          title="Heading 3"
+        >
+          <Heading3 className="w-4 h-4" />
         </ToolbarButton>
         
         <ToolbarButton
@@ -226,6 +410,41 @@ export function RichTextEditor({ content, onChange, onSave, placeholder }: RichT
           title="Paragraph"
         >
           <Type className="w-4 h-4" />
+        </ToolbarButton>
+
+        <div className="w-px h-6 bg-gray-300 mx-1" />
+        
+        {/* Text Alignment */}
+        <ToolbarButton
+          onClick={() => editor.chain().focus().setTextAlign('left').run()}
+          isActive={editor.isActive({ textAlign: 'left' })}
+          title="Align Left"
+        >
+          <AlignLeft className="w-4 h-4" />
+        </ToolbarButton>
+
+        <ToolbarButton
+          onClick={() => editor.chain().focus().setTextAlign('center').run()}
+          isActive={editor.isActive({ textAlign: 'center' })}
+          title="Align Center"
+        >
+          <AlignCenter className="w-4 h-4" />
+        </ToolbarButton>
+
+        <ToolbarButton
+          onClick={() => editor.chain().focus().setTextAlign('right').run()}
+          isActive={editor.isActive({ textAlign: 'right' })}
+          title="Align Right"
+        >
+          <AlignRight className="w-4 h-4" />
+        </ToolbarButton>
+
+        <ToolbarButton
+          onClick={() => editor.chain().focus().setTextAlign('justify').run()}
+          isActive={editor.isActive({ textAlign: 'justify' })}
+          title="Justify"
+        >
+          <AlignJustify className="w-4 h-4" />
         </ToolbarButton>
 
         <div className="w-px h-6 bg-gray-300 mx-1" />
@@ -247,6 +466,13 @@ export function RichTextEditor({ content, onChange, onSave, placeholder }: RichT
           <ListOrdered className="w-4 h-4" />
         </ToolbarButton>
 
+        <ToolbarButton
+          onClick={() => editor.chain().focus().setHorizontalRule().run()}
+          title="Insert Horizontal Line"
+        >
+          <Minus className="w-4 h-4" />
+        </ToolbarButton>
+
         <div className="w-px h-6 bg-gray-300 mx-1" />
         
         {/* Undo/Redo */}
@@ -264,13 +490,16 @@ export function RichTextEditor({ content, onChange, onSave, placeholder }: RichT
           <Redo className="w-4 h-4" />
         </ToolbarButton>
 
-        <div className="ml-auto text-xs text-gray-500">
+        <div className="w-px h-6 bg-gray-300 mx-1" />
+
+        <div className="ml-auto text-xs text-black">
           Press Cmd+S to save version
         </div>
       </div>
 
+
       {/* Editor Content */}
-      <div className="flex-1 overflow-y-auto bg-white">
+      <div className={`flex-1 overflow-y-auto bg-white ${isPrintView ? 'print-view' : ''}`}>
         <EditorContent editor={editor} />
       </div>
     </div>

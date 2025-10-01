@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useEditor } from '@/contexts/EditorContext';
-import { Send, AlertCircle, CheckCircle, ListTodo } from 'lucide-react';
+import { Send, AlertCircle, CheckCircle, ListTodo, Copy, Check } from 'lucide-react';
 import { TodoPanel } from './TodoPanel';
 
 interface Message {
@@ -14,12 +14,19 @@ interface Message {
 }
 
 export function ConversationalChat() {
-  const { state, applyAIEdit, getCurrentVersion, createTodoSession, createAIVariations, setViewMode } = useEditor();
+  const { state, applyAIEdit, getCurrentVersion, createTodoSession, createAIVariations, setViewMode, addChatMessage } = useEditor();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [showTodoPanel, setShowTodoPanel] = useState(false);
+  const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const handleCopyMessage = (content: string, messageId: string) => {
+    navigator.clipboard.writeText(content);
+    setCopiedMessageId(messageId);
+    setTimeout(() => setCopiedMessageId(null), 2000);
+  };
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -51,11 +58,11 @@ export function ConversationalChat() {
 
   // Convert chat history to messages for display
   useEffect(() => {
-    const lineage = getVersionLineage();
     const historyMessages: Message[] = [];
     
+    // Show ALL chat history, not just current version lineage
     state.chatHistory
-      .filter(msg => lineage.includes(msg.versionCreated))
+      .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime()) // Sort by timestamp
       .forEach(historyMsg => {
         // Add user prompt
         historyMessages.push({
@@ -77,20 +84,42 @@ export function ConversationalChat() {
         }
       });
     
-    if (historyMessages.length > 0 && messages.length === 0) {
-      setMessages(historyMessages);
-    }
+    // Always sync with history - this ensures chat history persists
+    setMessages(historyMessages);
   }, [state.chatHistory]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const detectIntent = (text: string): 'command' | 'question' => {
     const commandKeywords = [
       'make', 'change', 'edit', 'update', 'modify', 'add', 'remove', 'delete',
       'rewrite', 'improve', 'fix', 'correct', 'enhance', 'revise', 'convert',
-      'format', 'bold', 'italic', 'heading', 'paragraph'
+      'format', 'bold', 'italic', 'heading', 'paragraph', 'write', 'create',
+      'draft', 'compose', 'generate', 'build', 'construct', 'develop'
     ];
     
     const lowerText = text.toLowerCase();
-    return commandKeywords.some(keyword => lowerText.includes(keyword)) ? 'command' : 'question';
+    
+    // Check for command keywords
+    if (commandKeywords.some(keyword => lowerText.includes(keyword))) {
+      return 'command';
+    }
+    
+    // Check for document creation patterns
+    const documentPatterns = [
+      /write.*essay/i,
+      /create.*document/i,
+      /draft.*letter/i,
+      /compose.*email/i,
+      /generate.*content/i,
+      /build.*resume/i,
+      /construct.*proposal/i,
+      /develop.*plan/i
+    ];
+    
+    if (documentPatterns.some(pattern => pattern.test(text))) {
+      return 'command';
+    }
+    
+    return 'question';
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -222,7 +251,9 @@ export function ConversationalChat() {
     setInput('');
     setIsProcessing(true);
 
-    const intent = detectIntent(input.trim());
+    // In document view, always apply edits to the document
+    const isDocumentView = state.viewMode === 'document';
+    const intent = isDocumentView ? 'command' : detectIntent(input.trim());
     const currentVersion = getCurrentVersion();
 
     try {
@@ -262,8 +293,8 @@ export function ConversationalChat() {
         };
         setMessages(prev => [...prev, thinkingMessage]);
 
-        // Get active project config
-        const projectConfig = state.projectConfigs?.find(c => c.id === state.activeConfigId);
+        // Get the single project context (always use the first/only config)
+        const projectConfig = state.projectConfigs?.[0];
         
         // Call API in chat mode
         const response = await fetch('/api/anthropic', {
@@ -284,6 +315,9 @@ export function ConversationalChat() {
 
         const data = await response.json();
         
+        // Store the conversation in global chat history
+        addChatMessage(input.trim(), data.response);
+        
         setMessages(prev => {
           const withoutThinking = prev.filter(m => m.id !== thinkingMessage.id);
           return [...withoutThinking, {
@@ -296,10 +330,35 @@ export function ConversationalChat() {
       }
     } catch (error) {
       console.error('Error:', error);
+      
+      // Remove any thinking messages
+      setMessages(prev => prev.filter(m => !m.content.includes('💭')));
+      
+      // Show specific error message based on error type
+      let errorMessage = '❌ Sorry, I encountered an error.';
+      
+      if (error instanceof Error) {
+        if (error.message.includes('No document content provided')) {
+          errorMessage = '❌ Please write some content in the document first before asking me to edit it.';
+        } else if (error.message.includes('AI did not return edited content')) {
+          errorMessage = '❌ The AI didn\'t respond properly. Please try again with a different prompt.';
+        } else if (error.message.includes('AI returned empty content')) {
+          errorMessage = '❌ The AI returned empty content. Try being more specific about what you want.';
+        } else if (error.message.includes('Failed to get response from Anthropic')) {
+          errorMessage = '❌ Connection to AI failed. Please check your internet connection and try again.';
+        } else if (error.message.includes('529')) {
+          errorMessage = '❌ AI service is temporarily overloaded. I\'m retrying automatically - please wait a moment and try again.';
+        } else if (error.message.includes('API Error (529)')) {
+          errorMessage = '❌ AI service is temporarily busy. I\'ve retried automatically - please try again in a few seconds.';
+        } else {
+          errorMessage = `❌ Error: ${error.message}`;
+        }
+      }
+      
       setMessages(prev => [...prev, {
         id: `error-${Date.now()}`,
         role: 'system',
-        content: '❌ Sorry, I encountered an error. Please try again.',
+        content: errorMessage,
         timestamp: new Date(),
       }]);
     } finally {
@@ -333,8 +392,8 @@ export function ConversationalChat() {
         {messages.length === 0 && (
           <div className="flex items-center justify-center h-full">
             <div className="text-center">
-              <p className="text-base text-gray-700 mb-2">Start a conversation or give me instructions</p>
-              <p className="text-sm text-gray-600">Try: "Make it more formal" or "What is this document about?"</p>
+              <p className="text-base text-black mb-2">Start a conversation or give me instructions</p>
+              <p className="text-sm text-black">Try: "Make it more formal" or "What is this document about?"</p>
             </div>
           </div>
         )}
@@ -342,34 +401,62 @@ export function ConversationalChat() {
         {messages.map((message) => (
           <div
             key={message.id}
-            className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+            className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'} group`}
           >
-            <div
-              className={`max-w-[85%] rounded-lg px-4 py-3 ${
-                message.role === 'user'
-                  ? 'bg-blue-600 text-white'
-                  : message.role === 'system'
-                  ? 'bg-amber-50 text-gray-900 italic text-sm border border-amber-200'
-                  : 'bg-gray-50 text-gray-900 border border-gray-200'
-              }`}
-            >
-              {message.role === 'assistant' && message.versionCreated && (
-                <div className="flex items-center gap-2 mb-2 pb-2 border-b border-gray-300">
-                  <CheckCircle className="w-4 h-4 text-green-600" />
-                  <span className="text-xs font-semibold text-green-700">
-                    Created v{message.versionCreated}
-                  </span>
-                </div>
+            <div className="flex items-start gap-2 max-w-[85%]">
+              {message.role !== 'user' && (
+                <button
+                  onClick={() => handleCopyMessage(message.content.replace(/<[^>]*>/g, ''), message.id)}
+                  className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 hover:bg-gray-200 rounded mt-1"
+                  title="Copy message"
+                >
+                  {copiedMessageId === message.id ? (
+                    <Check className="w-4 h-4 text-green-600" />
+                  ) : (
+                    <Copy className="w-4 h-4 text-gray-600" />
+                  )}
+                </button>
               )}
-              <div 
-                className="text-sm whitespace-pre-wrap leading-relaxed"
-                dangerouslySetInnerHTML={{ 
-                  __html: message.content.replace(/<[^>]*>/g, '') // Strip HTML tags
-                }}
-              />
-              <p className="text-xs opacity-60 mt-2">
-                {message.timestamp.toLocaleTimeString()}
-              </p>
+              <div
+                className={`rounded-lg px-4 py-3 ${
+                  message.role === 'user'
+                    ? 'bg-blue-600 text-white'
+                    : message.role === 'system'
+                    ? 'bg-amber-50 text-gray-900 italic text-sm border border-amber-200'
+                    : 'bg-gray-50 text-gray-900 border border-gray-200'
+                }`}
+              >
+                {message.role === 'assistant' && message.versionCreated && (
+                  <div className="flex items-center gap-2 mb-2 pb-2 border-b border-gray-300">
+                    <CheckCircle className="w-4 h-4 text-green-600" />
+                    <span className="text-xs font-semibold text-green-700">
+                      Created v{message.versionCreated}
+                    </span>
+                  </div>
+                )}
+                <div 
+                  className="text-sm whitespace-pre-wrap leading-relaxed"
+                  dangerouslySetInnerHTML={{ 
+                    __html: message.content.replace(/<[^>]*>/g, '') // Strip HTML tags
+                  }}
+                />
+                <p className="text-xs opacity-60 mt-2">
+                  {message.timestamp.toLocaleTimeString()}
+                </p>
+              </div>
+              {message.role === 'user' && (
+                <button
+                  onClick={() => handleCopyMessage(message.content.replace(/<[^>]*>/g, ''), message.id)}
+                  className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 hover:bg-gray-200 rounded mt-1"
+                  title="Copy message"
+                >
+                  {copiedMessageId === message.id ? (
+                    <Check className="w-4 h-4 text-green-600" />
+                  ) : (
+                    <Copy className="w-4 h-4 text-gray-600" />
+                  )}
+                </button>
+              )}
             </div>
           </div>
         ))}
@@ -399,7 +486,7 @@ export function ConversationalChat() {
             onChange={(e) => setInput(e.target.value)}
             placeholder={isProcessing ? "Processing..." : "Ask a question or give instructions..."}
             disabled={isProcessing}
-            className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 text-gray-900 placeholder-gray-500"
+            className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 text-black placeholder-gray-500"
           />
           <button
             type="submit"
@@ -410,7 +497,7 @@ export function ConversationalChat() {
           </button>
         </div>
         {isProcessing && (
-          <div className="flex items-center gap-2 mt-2 text-sm text-gray-600">
+          <div className="flex items-center gap-2 mt-2 text-sm text-black">
             <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-gray-600"></div>
             Processing your request...
           </div>

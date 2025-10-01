@@ -46,10 +46,10 @@ export function ClearDataButton() {
   return (
     <button
       onClick={() => setShowConfirm(true)}
-      className="flex items-center gap-2 px-3 py-1.5 text-red-600 border border-red-300 rounded-lg hover:bg-red-50 transition-colors text-sm"
+      className="flex items-center gap-2 px-4 py-2.5 text-red-600 bg-red-50 border border-red-300 rounded-lg hover:bg-red-100 transition-colors text-base font-semibold"
       title="Clear all data and reset"
     >
-      <Trash2 className="w-4 h-4" />
+      <Trash2 className="w-5 h-5" />
       Clear Data
     </button>
   );

@@ -4,6 +4,46 @@ import { NextRequest, NextResponse } from 'next/server';
 export const runtime = 'nodejs';
 export const maxDuration = 30; // 30 seconds timeout
 
+// Convert plain text to HTML with proper formatting
+function convertTextToHTML(text: string): string {
+  // Split into lines and process each line
+  const lines = text.split('\n');
+  const htmlLines: string[] = [];
+  
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    
+    if (line === '') {
+      // Empty line - add paragraph break
+      htmlLines.push('<p><br></p>');
+    } else if (line.match(/^#{1,6}\s/)) {
+      // Markdown-style headers
+      const level = line.match(/^#+/)?.[0].length || 1;
+      const content = line.replace(/^#+\s*/, '');
+      htmlLines.push(`<h${Math.min(level, 6)}>${content}</h${Math.min(level, 6)}>`);
+    } else if (line.match(/^[-*+]\s/)) {
+      // Bullet points
+      const content = line.replace(/^[-*+]\s*/, '');
+      htmlLines.push(`<ul><li>${content}</li></ul>`);
+    } else if (line.match(/^\d+\.\s/)) {
+      // Numbered lists
+      const content = line.replace(/^\d+\.\s*/, '');
+      htmlLines.push(`<ol><li>${content}</li></ol>`);
+    } else if (line.match(/^[A-Z][A-Z\s]+$/)) {
+      // All caps line - likely a header
+      htmlLines.push(`<h2>${line}</h2>`);
+    } else if (line.match(/^[A-Z][^.!?]*[.!?]$/)) {
+      // Sentence starting with capital and ending with punctuation
+      htmlLines.push(`<p>${line}</p>`);
+    } else {
+      // Regular paragraph
+      htmlLines.push(`<p>${line}</p>`);
+    }
+  }
+  
+  return htmlLines.join('\n');
+}
+
 export async function POST(request: NextRequest) {
   try {
     console.log('Upload API called');
@@ -33,8 +73,9 @@ export async function POST(request: NextRequest) {
         
         console.log('Buffer size:', buffer.length);
         const data = await pdf(buffer);
-        extractedText = data.text;
-        console.log('Extracted text length:', extractedText.length);
+        const plainText = data.text;
+        extractedText = convertTextToHTML(plainText);
+        console.log('Extracted text length:', plainText.length);
         
       } else if (fileName.endsWith('.docx')) {
         console.log('Processing DOCX file');
@@ -43,7 +84,8 @@ export async function POST(request: NextRequest) {
         const arrayBuffer = await file.arrayBuffer();
         const buffer = Buffer.from(arrayBuffer);
         const result = await mammoth.extractRawText({ buffer });
-        extractedText = result.value;
+        const plainText = result.value;
+        extractedText = convertTextToHTML(plainText);
         
       } else if (fileName.endsWith('.doc')) {
         // Old .doc format is more complex, mammoth only supports .docx
@@ -54,20 +96,21 @@ export async function POST(request: NextRequest) {
         
       } else if (fileName.endsWith('.txt') || fileName.endsWith('.text')) {
         console.log('Processing text file');
-        // Process text file
-        extractedText = await file.text();
+        // Process text file and convert to HTML
+        const plainText = await file.text();
+        extractedText = convertTextToHTML(plainText);
         
       } else if (fileName.endsWith('.html') || fileName.endsWith('.htm')) {
         console.log('Processing HTML file');
-        // Process HTML
+        // Process HTML - preserve formatting
         const html = await file.text();
-        // Simple HTML stripping
-        extractedText = html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+        extractedText = html; // Keep HTML as-is for formatting preservation
         
       } else if (fileName.endsWith('.md') || fileName.endsWith('.markdown')) {
         console.log('Processing Markdown file');
-        // Process Markdown
-        extractedText = await file.text();
+        // Process Markdown and convert to HTML
+        const markdown = await file.text();
+        extractedText = convertTextToHTML(markdown);
         
       } else {
         console.log('Processing as plain text');

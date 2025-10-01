@@ -9,7 +9,7 @@ import { GripVertical } from 'lucide-react';
 
 export function ChatInterface() {
   const { state, setSelectedModel } = useEditor();
-  const [splitPosition, setSplitPosition] = useState(40); // percentage - 40% for tree, 60% for chat
+  const [splitPosition, setSplitPosition] = useState(60); // percentage - 60% for chat, 40% for tree
   const [isResizing, setIsResizing] = useState(false);
 
   const handleModelChange = (model: AIModel) => {
@@ -85,7 +85,7 @@ export function ChatInterface() {
         <GripVertical className="w-4 h-3 text-gray-400" />
       </div>
 
-      {/* Bottom Section - Chat */}
+      {/* Bottom Section - AI Chat */}
       <div 
         className="flex-1 overflow-hidden"
         style={{ height: `${100 - splitPosition}%` }}

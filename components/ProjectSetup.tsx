@@ -2,99 +2,310 @@
 
 import React, { useState, useEffect } from 'react';
 import { useEditor } from '@/contexts/EditorContext';
-import { ProjectConfig } from '@/lib/types';
+import { ProjectConfig, ExampleDocument } from '@/lib/types';
 import { 
-  Upload, Plus, Trash2, Check, ChevronRight, FileText,
-  Sparkles, BookOpen, Target, Zap, Copy, FileUp, X
+  Upload, Trash2, Check, FileText, Sparkles, Loader2,
+  BookOpen, ChevronDown, ChevronUp, Settings
 } from 'lucide-react';
-import { DocumentUpload } from './DocumentUpload';
-
-const DEFAULT_PROMPT_TEMPLATE = `You are helping with a writing project.
-
-Style Analysis from Examples:
-{{styleAnalysis}}
-
-Project Context:
-- Type: {{projectType}}
-- Audience: {{audience}}
-- Purpose: {{purpose}}
-
-Please maintain the same writing style, tone, and structure as shown in the examples when {{task}}.`;
-
-interface StyleExample {
-  id: string;
-  fileName: string;
-  content: string;
-  analysis?: string;
-}
 
 export function ProjectSetup() {
-  const { state, updateProjectConfig, saveProjectConfig, setActiveConfig, deleteProjectConfig } = useEditor();
-  const activeConfig = state.projectConfigs?.find(c => c.id === state.activeConfigId) || state.projectConfigs?.[0];
+  const { state, updateProjectConfig } = useEditor();
   
-  const [config, setConfig] = useState<Omit<ProjectConfig, 'id' | 'createdAt'>>({
-    name: activeConfig?.name || 'New Configuration',
-    projectName: activeConfig?.projectName || 'My Project',
-    description: activeConfig?.description || '',
-    styleGuide: activeConfig?.styleGuide || '',
-    tone: activeConfig?.tone || '',
-    audience: activeConfig?.audience || '',
-    references: activeConfig?.references || [],
-    constraints: activeConfig?.constraints || '',
-    additionalContext: activeConfig?.additionalContext || '',
-    promptTemplate: activeConfig?.promptTemplate || DEFAULT_PROMPT_TEMPLATE,
-    templateVariables: activeConfig?.templateVariables || {},
+  // Always use/create a single config
+  const activeConfig = state.projectConfigs?.[0] || {
+    id: 'context-config',
+    name: 'Project Context',
+    projectName: '',
+    description: '',
+    examples: [],
+    learnedPatterns: '',
+    styleGuide: '',
+    tone: '',
+    audience: '',
+    constraints: '',
+    additionalContext: '',
+    createdAt: new Date(),
     isActive: true
+  };
+  
+  const [config, setConfig] = useState({
+    projectName: activeConfig.projectName || '',
+    description: activeConfig.description || '',
+    examples: activeConfig.examples || [],
+    learnedPatterns: activeConfig.learnedPatterns || '',
+    styleGuide: activeConfig.styleGuide || '',
+    tone: activeConfig.tone || '',
+    audience: activeConfig.audience || '',
+    syntax: activeConfig.syntax || '',
+    outcome: activeConfig.outcome || '',
+    constraints: activeConfig.constraints || '',
+    additionalContext: activeConfig.additionalContext || '',
+    projectNotes: activeConfig.projectNotes || '',
   });
   
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
-  const [showUpload, setShowUpload] = useState(false);
-  const [examples, setExamples] = useState<StyleExample[]>([]);
-  const [analyzingExample, setAnalyzingExample] = useState<string | null>(null);
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
   useEffect(() => {
     if (activeConfig) {
       setConfig({
-        name: activeConfig.name,
-        projectName: activeConfig.projectName,
+        projectName: activeConfig.projectName || '',
         description: activeConfig.description || '',
+        examples: activeConfig.examples || [],
+        learnedPatterns: activeConfig.learnedPatterns || '',
         styleGuide: activeConfig.styleGuide || '',
         tone: activeConfig.tone || '',
         audience: activeConfig.audience || '',
-        references: activeConfig.references || [],
         constraints: activeConfig.constraints || '',
         additionalContext: activeConfig.additionalContext || '',
-        promptTemplate: activeConfig.promptTemplate || DEFAULT_PROMPT_TEMPLATE,
-        templateVariables: activeConfig.templateVariables || {},
-        isActive: true
       });
     }
   }, [activeConfig]);
 
-  const handleSave = async () => {
-    setIsSaving(true);
-    
-    // Combine all example analyses into the style guide
-    const combinedStyleAnalysis = examples
-      .filter(ex => ex.analysis)
-      .map(ex => ex.analysis)
-      .join('\n\n');
-    
-    const updatedConfig = {
-      ...config,
-      styleGuide: combinedStyleAnalysis || config.styleGuide,
-      additionalContext: `Examples analyzed: ${examples.map(ex => ex.fileName).join(', ')}`
+    const handleFileUpload = async (files: FileList | null) => {
+      if (!files || files.length === 0) return;
+
+      // Limit to 2 files maximum for performance
+      if (files.length > 2) {
+        alert('Please upload maximum 2 example documents for optimal AI performance.');
+        return;
+      }
+
+      const newExamples: ExampleDocument[] = [];
+      
+      for (let i = 0; i < Math.min(files.length, 2); i++) {
+        const file = files[i];
+        
+        // Check file size (limit to 500KB per file)
+        if (file.size > 512000) {
+          alert(`File "${file.name}" is too large. Please keep files under 500KB for optimal performance.`);
+          continue;
+        }
+        
+        const content = await readFileContent(file);
+        
+        // Limit content length (max 5,000 characters per file)
+        if (content.length > 5000) {
+          alert(`File "${file.name}" is too long. Please keep documents under 5,000 characters for optimal AI performance.`);
+          continue;
+        }
+        
+        newExamples.push({
+          id: `example-${Date.now()}-${i}`,
+          fileName: file.name,
+          content,
+          uploadedAt: new Date(),
+        });
+      }
+
+      const updatedConfig = {
+        ...config,
+        examples: [...(config.examples || []), ...newExamples]
+      };
+      
+      setConfig(updatedConfig);
+      
+      // Auto-analyze after upload
+      if (newExamples.length > 0) {
+        // Trigger analysis automatically
+        setTimeout(() => {
+          handleAnalyzeExamples();
+        }, 500);
+      }
     };
-    
-    if (activeConfig) {
+
+  const readFileContent = async (file: File): Promise<string> => {
+    // For PDFs and Word docs, use server-side processing
+    if (file.type === 'application/pdf' || file.name.endsWith('.docx')) {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const response = await fetch('/api/upload', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) throw new Error('Failed to process file');
+      
+      const data = await response.json();
+      return data.text;
+    }
+
+    // For text files, read directly
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => resolve(e.target?.result as string);
+      reader.onerror = reject;
+      reader.readAsText(file);
+    });
+  };
+
+  // Retry function for API calls
+  const retryApiCall = async (apiCall: () => Promise<Response>, maxRetries = 3, baseDelay = 1000) => {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const response = await apiCall();
+        
+        // If successful, return immediately
+        if (response.ok) {
+          return response;
+        }
+        
+        // If it's a 529 error and we have retries left, wait and retry
+        if (response.status === 529 && attempt < maxRetries) {
+          const delay = baseDelay * Math.pow(2, attempt - 1); // Exponential backoff
+          console.log(`API returned 529, retrying in ${delay}ms (attempt ${attempt}/${maxRetries})`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+          continue;
+        }
+        
+        // If it's not a 529 error or we're out of retries, return the response
+        return response;
+        
+      } catch (error) {
+        if (attempt === maxRetries) {
+          throw error;
+        }
+        
+        // For network errors, also retry
+        if (error instanceof TypeError) {
+          const delay = baseDelay * Math.pow(2, attempt - 1);
+          console.log(`Network error, retrying in ${delay}ms (attempt ${attempt}/${maxRetries})`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+          continue;
+        }
+        
+        throw error;
+      }
+    }
+    throw new Error('Max retries exceeded');
+  };
+
+  const handleAnalyzeExamples = async () => {
+    if (!config.examples || config.examples.length === 0) return;
+
+    setIsAnalyzing(true);
+    try {
+      // Combine all example contents
+      const combinedContent = config.examples
+        .map(ex => `\n\n=== ${ex.fileName} ===\n${ex.content}`)
+        .join('\n\n');
+
+      const response = await retryApiCall(async () => {
+        return fetch('/api/anthropic', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            mode: 'analyze',
+            prompt: 'Analyze documents',
+            content: combinedContent,
+            model: 'claude-3-5-haiku-20241022',
+            analysisPrompt: `Analyze these example documents and extract writing patterns. Return a JSON object with these exact fields:
+{
+  "tone": "one of: Professional, Friendly, Formal, Casual, Persuasive, Informative",
+  "audience": "one of: General public, Business professionals, Students, Clients, Colleagues, Executives",
+  "syntax": "one of: Explanatory, Concise",
+  "outcome": "one of: Conversion, Analysis, Email, Fundraising",
+  "patterns": "detailed description of the writing patterns and style"
+}
+
+Be specific about the tone, audience, syntax style, and intended outcome based on the documents.`
+          }),
+        });
+      });
+
+      if (!response || !response.ok) {
+        let errorMessage = 'Failed to analyze examples';
+        if (response) {
+          try {
+            const errorData = await response.json();
+            errorMessage = errorData.error || errorMessage;
+          } catch (e) {
+            const errorText = await response.text();
+            errorMessage = `API Error (${response.status}): ${errorText}`;
+          }
+        }
+        console.error('Analyze API error:', errorMessage);
+        throw new Error(errorMessage);
+      }
+
+      const data = await response.json();
+      
+      // Try to parse the analysis as JSON to get structured data
+      let extractedData = null;
+      try {
+        const analysisText = data.analysis || data.extracted || '';
+        // Try to find JSON in the response
+        const jsonMatch = analysisText.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          extractedData = JSON.parse(jsonMatch[0]);
+        }
+      } catch (e) {
+        console.log('Could not parse JSON from analysis, will use text only');
+      }
+      
+      // Build the updated config with extracted data
+      const extractedTone = extractedData?.tone || config.tone;
+      const extractedAudience = extractedData?.audience || config.audience;
+      const extractedSyntax = extractedData?.syntax || config.syntax;
+      const extractedOutcome = extractedData?.outcome || config.outcome;
+      
+      const updatedConfig = {
+        ...config,
+        // Auto-populate the fields from extracted data
+        tone: extractedTone,
+        audience: extractedAudience,
+        syntax: extractedSyntax,
+        outcome: extractedOutcome,
+        // Also update the text fields for display
+        projectName: config.projectName || 'My Document',
+        description: config.description || 'AI-analyzed document',
+        learnedPatterns: extractedData?.patterns || data.analysis || data.extracted || '',
+        styleGuide: data.analysis || data.extracted || '',
+        // Keep examples intact
+        examples: config.examples || []
+      };
+      
+      setConfig(updatedConfig);
+
+      // Auto-save the configuration after analysis
       updateProjectConfig({
         ...activeConfig,
         ...updatedConfig,
-        id: activeConfig.id,
-        createdAt: activeConfig.createdAt
-      });
+        id: activeConfig.id || 'context-config',
+        name: 'Project Context',
+        createdAt: activeConfig.createdAt || new Date()
+      } as ProjectConfig);
+
+      setShowSuccess(true);
+      setTimeout(() => setShowSuccess(false), 3000);
+    } catch (error) {
+      console.error('Analysis failed:', error);
+      alert('Failed to analyze examples. Please try again.');
+    } finally {
+      setIsAnalyzing(false);
     }
+  };
+
+  const handleRemoveExample = (id: string) => {
+    setConfig(prev => ({
+      ...prev,
+      examples: prev.examples?.filter(ex => ex.id !== id) || []
+    }));
+  };
+
+  const handleSave = async () => {
+    setIsSaving(true);
+    
+    updateProjectConfig({
+      ...activeConfig,
+      ...config,
+      id: activeConfig.id || 'context-config',
+      name: 'Project Context',
+      createdAt: activeConfig.createdAt || new Date()
+    } as ProjectConfig);
     
     setShowSuccess(true);
     setTimeout(() => {
@@ -103,373 +314,130 @@ export function ProjectSetup() {
     }, 2000);
   };
 
-  const handleSaveAsNew = () => {
-    const newConfigId = saveProjectConfig(config);
-    setActiveConfig(newConfigId);
-    setShowSuccess(true);
-    setTimeout(() => {
-      setShowSuccess(false);
-    }, 2000);
-  };
-
-  const handleDuplicate = () => {
-    const duplicatedConfig = {
-      ...config,
-      name: `${config.name} (Copy)`
-    };
-    const newConfigId = saveProjectConfig(duplicatedConfig);
-    setActiveConfig(newConfigId);
-  };
-
-  const handleDelete = (configId: string) => {
-    if (state.projectConfigs?.length === 1) {
-      alert('Cannot delete the last configuration');
-      return;
-    }
-    if (confirm('Are you sure you want to delete this configuration?')) {
-      deleteProjectConfig(configId);
-    }
-  };
-
-  const handleExampleUploaded = async (fileName: string, content: string) => {
-    const newExample: StyleExample = {
-      id: `example-${Date.now()}`,
-      fileName,
-      content: content.substring(0, 2000) // Keep first 2000 chars for display
-    };
-    
-    setExamples(prev => [...prev, newExample]);
-    setAnalyzingExample(newExample.id);
-    
-    // Analyze the example with AI
-    try {
-      const response = await fetch('/api/anthropic', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          mode: 'analyze',
-          prompt: `Analyze this writing example and extract:
-1. Writing style (formal/casual/technical/creative)
-2. Tone (professional/friendly/authoritative/conversational)
-3. Structure patterns (how paragraphs are organized)
-4. Vocabulary level and word choice patterns
-5. Sentence structure (simple/complex/varied)
-6. Any unique stylistic elements
-
-Be specific and provide actionable style guidelines.`,
-          content: content
-        }),
-      });
-      
-      const result = await response.json();
-      
-      setExamples(prev => prev.map(ex => 
-        ex.id === newExample.id 
-          ? { ...ex, analysis: result.response }
-          : ex
-      ));
-      
-      // Auto-update config based on analysis
-      if (result.response) {
-        setConfig(prev => ({
-          ...prev,
-          styleGuide: prev.styleGuide ? `${prev.styleGuide}\n\n${result.response}` : result.response
-        }));
-      }
-    } catch (error) {
-      console.error('Failed to analyze example:', error);
-    } finally {
-      setAnalyzingExample(null);
-    }
-    
-    setShowUpload(false);
-  };
-
-  const removeExample = (id: string) => {
-    setExamples(prev => prev.filter(ex => ex.id !== id));
-  };
-
   return (
-    <div className="h-full flex bg-gray-50">
-      {/* Left Sidebar - Configuration List */}
-      <div className="w-72 bg-white border-r border-gray-200 flex flex-col">
-        <div className="px-4 py-3 border-b border-gray-200 bg-gradient-to-br from-purple-50 to-blue-50">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-gray-800">Style Configurations</h3>
-            <button
-              onClick={handleSaveAsNew}
-              className="p-1.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
-              title="Create new configuration"
-            >
-              <Plus className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-        
-        <div className="flex-1 overflow-y-auto">
-          {state.projectConfigs?.map(cfg => (
-            <div
-              key={cfg.id}
-              onClick={() => setActiveConfig(cfg.id)}
-              className={`px-4 py-3 border-b border-gray-100 cursor-pointer transition-all ${
-                cfg.id === state.activeConfigId 
-                  ? 'bg-gradient-to-r from-purple-50 to-blue-50 border-l-4 border-l-purple-600' 
-                  : 'hover:bg-gray-50'
-              }`}
-            >
-              <div className="flex items-start justify-between">
-                <div className="flex-1">
-                  <h4 className="text-sm font-medium text-gray-900">{cfg.name}</h4>
-                  {cfg.audience && (
-                    <p className="text-xs text-gray-600 mt-1">For: {cfg.audience}</p>
-                  )}
-                  <p className="text-xs text-gray-400 mt-1">
-                    {new Date(cfg.createdAt).toLocaleDateString()}
-                  </p>
-                </div>
-                {cfg.id === state.activeConfigId && (
-                  <ChevronRight className="w-4 h-4 text-purple-600 mt-1" />
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-        
-        <div className="p-3 border-t border-gray-200 space-y-2">
-          <button
-            onClick={handleDuplicate}
-            className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
-          >
-            <Copy className="w-4 h-4" />
-            Duplicate
-          </button>
-          {state.projectConfigs && state.projectConfigs.length > 1 && (
-            <button
-              onClick={() => handleDelete(state.activeConfigId || '')}
-              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-600 bg-red-50 rounded-lg hover:bg-red-100"
-            >
-              <Trash2 className="w-4 h-4" />
-              Delete
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Main Content */}
-      <div className="flex-1 flex flex-col">
+    <div className="h-full overflow-y-auto bg-gray-50">
+      <div className="max-w-4xl mx-auto p-8">
         {/* Header */}
-        <div className="px-6 py-4 border-b bg-white">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-xl font-semibold text-gray-800">Style Learning</h2>
-              <p className="text-sm text-gray-600 mt-1">Upload examples of good writing to teach AI your style</p>
-            </div>
-            
-            <button
-              onClick={handleSave}
-              disabled={isSaving}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                showSuccess 
-                  ? 'bg-green-600 text-white' 
-                  : 'bg-purple-600 text-white hover:bg-purple-700'
-              }`}
-            >
-              {showSuccess ? (
-                <>
-                  <Check className="w-4 h-4" />
-                  Saved!
-                </>
-              ) : (
-                <>
-                  <Sparkles className="w-4 h-4" />
-                  Save Style
-                </>
-              )}
-            </button>
-          </div>
-        </div>
+    <div className="mb-8">
+      <h1 className="text-3xl font-bold text-black mb-2">Project Context (Optional)</h1>
+    </div>
 
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6">
-          <div className="max-w-4xl mx-auto space-y-6">
-            
-            {/* Quick Setup */}
-            <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
-              <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
-                <Zap className="w-5 h-5 text-purple-600" />
-                Quick Setup
-              </h3>
-              
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-sm font-medium text-gray-700 mb-2 block">
-                    Configuration Name
-                  </label>
-                  <input
-                    type="text"
-                    value={config.name}
-                    onChange={(e) => setConfig(prev => ({ ...prev, name: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
-                    placeholder="E.g., Blog Style, Legal Docs..."
-                  />
-                </div>
-                
-                <div>
-                  <label className="text-sm font-medium text-gray-700 mb-2 block">
-                    Target Audience
-                  </label>
-                  <input
-                    type="text"
-                    value={config.audience}
-                    onChange={(e) => setConfig(prev => ({ ...prev, audience: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
-                    placeholder="E.g., Developers, General Public..."
-                  />
-                </div>
-              </div>
-              
-              <div className="mt-4">
-                <label className="text-sm font-medium text-gray-700 mb-2 block">
-                  What's the purpose?
-                </label>
+        {/* Success Message */}
+        {showSuccess && (
+          <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg flex items-center gap-2">
+            <Check className="w-5 h-5 text-green-600" />
+            <span className="text-sm text-black">Context saved successfully!</span>
+          </div>
+        )}
+
+
+        {/* Upload Documents */}
+        <div className="bg-white rounded-lg border border-gray-200 p-6 mb-6">
+          <h2 className="text-lg font-semibold text-black mb-4">
+            Reference Documents
+          </h2>
+
+          {/* Upload Area */}
+          <div className="mb-4">
+            <label className="block">
+              <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-blue-500 transition-colors cursor-pointer">
+                <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+                <p className="text-sm text-black mb-1">
+                  Click to upload or drag and drop
+                </p>
+                <p className="text-xs text-gray-500">
+                  PDF, DOCX, TXT files (up to 10MB each)
+                </p>
                 <input
-                  type="text"
-                  value={config.description}
-                  onChange={(e) => setConfig(prev => ({ ...prev, description: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
-                  placeholder="E.g., Technical documentation, Marketing content, Legal briefs..."
+                  type="file"
+                  multiple
+                  accept=".pdf,.docx,.txt"
+                  onChange={(e) => handleFileUpload(e.target.files)}
+                  className="hidden"
                 />
               </div>
-            </div>
+            </label>
+          </div>
 
-            {/* Style Examples */}
-            <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
-                  <BookOpen className="w-5 h-5 text-purple-600" />
-                  Style Examples
-                </h3>
-                <button
-                  onClick={() => setShowUpload(true)}
-                  className="flex items-center gap-2 px-3 py-2 bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200 transition-colors"
+          {/* Example List */}
+          {config.examples && config.examples.length > 0 && (
+            <div className="space-y-2 mb-4">
+              {config.examples.map(example => (
+                <div
+                  key={example.id}
+                  className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
                 >
-                  <FileUp className="w-4 h-4" />
-                  Upload Example
-                </button>
-              </div>
-              
-              {examples.length === 0 ? (
-                <div className="text-center py-12 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
-                  <Upload className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-                  <p className="text-gray-600 font-medium">No examples uploaded yet</p>
-                  <p className="text-sm text-gray-500 mt-1">Upload documents that represent your desired writing style</p>
+                  <div className="flex items-center gap-2">
+                    <FileText className="w-4 h-4 text-gray-500" />
+                    <span className="text-sm text-black">{example.fileName}</span>
+                  </div>
                   <button
-                    onClick={() => setShowUpload(true)}
-                    className="mt-4 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
+                    onClick={() => handleRemoveExample(example.id)}
+                    className="p-1 hover:bg-gray-200 rounded"
                   >
-                    Upload First Example
+                    <Trash2 className="w-4 h-4 text-gray-500" />
                   </button>
                 </div>
-              ) : (
-                <div className="space-y-3">
-                  {examples.map(example => (
-                    <div key={example.id} className="border border-gray-200 rounded-lg p-4 bg-gray-50">
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2">
-                            <FileText className="w-4 h-4 text-purple-600" />
-                            <span className="font-medium text-gray-800">{example.fileName}</span>
-                            {analyzingExample === example.id && (
-                              <span className="text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded-full">
-                                Analyzing...
-                              </span>
-                            )}
-                          </div>
-                          
-                          {example.analysis && (
-                            <div className="mt-2 p-3 bg-white rounded border border-purple-200">
-                              <p className="text-xs font-semibold text-purple-700 mb-1">Style Analysis:</p>
-                              <p className="text-xs text-gray-600 line-clamp-3">{example.analysis}</p>
-                            </div>
-                          )}
-                          
-                          <div className="mt-2">
-                            <p className="text-xs text-gray-500 line-clamp-2">{example.content}</p>
-                          </div>
-                        </div>
-                        
-                        <button
-                          onClick={() => removeExample(example.id)}
-                          className="ml-2 p-1 text-red-500 hover:bg-red-50 rounded"
-                        >
-                          <X className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
+              ))}
             </div>
+          )}
 
-            {/* Extracted Style Guide */}
-            {config.styleGuide && (
-              <div className="bg-gradient-to-br from-purple-50 to-blue-50 rounded-xl p-6 border border-purple-200">
-                <h3 className="text-lg font-semibold text-gray-800 mb-3 flex items-center gap-2">
-                  <Sparkles className="w-5 h-5 text-purple-600" />
-                  Learned Style Guide
-                </h3>
-                <div className="bg-white rounded-lg p-4 border border-purple-200">
-                  <pre className="text-sm text-gray-700 whitespace-pre-wrap font-sans">
-                    {config.styleGuide}
-                  </pre>
-                </div>
-              </div>
-            )}
+        </div>
 
-            {/* Additional Constraints */}
-            <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
-              <h3 className="text-lg font-semibold text-gray-800 mb-3 flex items-center gap-2">
-                <Target className="w-5 h-5 text-purple-600" />
-                Additional Requirements
-              </h3>
+        {/* Project Notes */}
+        <div className="bg-white rounded-lg border border-gray-200 p-6 mb-6">
+          <h2 className="text-lg font-semibold text-black mb-4">
+            Project Notes
+          </h2>
+
+          <div className="space-y-4">
+            <div>
               <textarea
-                value={config.constraints}
-                onChange={(e) => setConfig(prev => ({ ...prev, constraints: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 resize-none"
-                rows={3}
-                placeholder="E.g., 'Keep paragraphs under 5 sentences', 'Use active voice', 'Include examples'..."
+                value={config.additionalContext || ''}
+                onChange={(e) => {
+                  setConfig({ 
+                    ...config, 
+                    additionalContext: e.target.value
+                  });
+                }}
+                placeholder="Add any notes or instructions for the AI..."
+                rows={8}
+                className="w-full px-3 py-2 border rounded-lg text-black text-sm"
               />
             </div>
 
+            {/* Processing Indicator */}
+            {isAnalyzing && (
+              <div className="flex items-center justify-center gap-2 p-4 bg-purple-50 border border-purple-200 rounded-lg">
+                <Loader2 className="w-5 h-5 animate-spin text-purple-600" />
+                <span className="text-sm font-medium text-purple-900">Analyzing your documents...</span>
+              </div>
+            )}
+
           </div>
+        </div>
+
+        {/* Save Button */}
+        <div className="flex justify-end">
+          <button
+            onClick={handleSave}
+            disabled={isSaving}
+            className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+          >
+            {isSaving ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Saving...
+              </>
+            ) : (
+              <>
+                <Check className="w-4 h-4" />
+                Save Context
+              </>
+            )}
+          </button>
         </div>
       </div>
-
-      {/* Upload Modal */}
-      {showUpload && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl p-6 max-w-xl w-full mx-4 shadow-2xl">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold">Upload Style Example</h3>
-              <button
-                onClick={() => setShowUpload(false)}
-                className="text-gray-500 hover:text-gray-700"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <p className="text-sm text-gray-600 mb-4">
-              Upload a document that represents the writing style you want the AI to learn and replicate.
-            </p>
-            <DocumentUpload
-              mode="document"
-              onContentExtracted={(content: string, fileName?: string) => {
-                handleExampleUploaded(fileName || 'example.txt', content);
-              }}
-            />
-          </div>
-        </div>
-      )}
     </div>
   );
 }

@@ -51,3 +51,302 @@ body {
 .ProseMirror-focused {
   outline: none;
 }
+
+/* Force all text in editors to be black */
+.tiptap,
+.ProseMirror,
+.prose {
+  color: #000000 !important;
+}
+
+.tiptap p,
+.ProseMirror p,
+.prose p {
+  color: #000000 !important;
+}
+
+.tiptap h1,
+.tiptap h2,
+.tiptap h3,
+.tiptap h4,
+.tiptap h5,
+.tiptap h6,
+.ProseMirror h1,
+.ProseMirror h2,
+.ProseMirror h3,
+.ProseMirror h4,
+.ProseMirror h5,
+.ProseMirror h6,
+.prose h1,
+.prose h2,
+.prose h3,
+.prose h4,
+.prose h5,
+.prose h6 {
+  color: #000000 !important;
+}
+
+.tiptap strong,
+.tiptap b,
+.ProseMirror strong,
+.ProseMirror b,
+.prose strong,
+.prose b {
+  color: #000000 !important;
+}
+
+.tiptap em,
+.tiptap i,
+.ProseMirror em,
+.ProseMirror i,
+.prose em,
+.prose i {
+  color: #000000 !important;
+}
+
+.tiptap li,
+.ProseMirror li,
+.prose li {
+  color: #000000 !important;
+}
+
+/* Ensure proper spacing and formatting for AI-generated content */
+.tiptap h1,
+.ProseMirror h1,
+.prose h1 {
+  font-size: 2rem !important;
+  font-weight: bold !important;
+  margin: 1rem 0 !important;
+  color: #000000 !important;
+}
+
+.tiptap h2,
+.ProseMirror h2,
+.prose h2 {
+  font-size: 1.5rem !important;
+  font-weight: bold !important;
+  margin: 0.75rem 0 !important;
+  color: #000000 !important;
+}
+
+.tiptap h3,
+.ProseMirror h3,
+.prose h3 {
+  font-size: 1.25rem !important;
+  font-weight: bold !important;
+  margin: 0.5rem 0 !important;
+  color: #000000 !important;
+}
+
+.tiptap p,
+.ProseMirror p,
+.prose p {
+  margin: 0.5rem 0 !important;
+  line-height: 1.5 !important;
+  color: #000000 !important;
+}
+
+.tiptap ul,
+.ProseMirror ul,
+.prose ul {
+  margin: 0.5rem 0 !important;
+  padding-left: 1.5rem !important;
+  color: #000000 !important;
+}
+
+.tiptap ol,
+.ProseMirror ol,
+.prose ol {
+  margin: 0.5rem 0 !important;
+  padding-left: 1.5rem !important;
+  color: #000000 !important;
+}
+
+.tiptap li,
+.ProseMirror li,
+.prose li {
+  margin: 0.25rem 0 !important;
+  color: #000000 !important;
+}
+
+.tiptap strong,
+.ProseMirror strong,
+.prose strong {
+  font-weight: bold !important;
+  color: #000000 !important;
+}
+
+.tiptap em,
+.ProseMirror em,
+.prose em {
+  font-style: italic !important;
+  color: #000000 !important;
+}
+
+/* Horizontal rules for lines */
+.tiptap hr,
+.ProseMirror hr,
+.prose hr {
+  border: none !important;
+  border-top: 2px solid #000000 !important;
+  margin: 1rem 0 !important;
+  height: 0 !important;
+}
+
+/* Better list styling */
+.tiptap ul,
+.ProseMirror ul,
+.prose ul {
+  list-style-type: disc !important;
+}
+
+.tiptap ol,
+.ProseMirror ol,
+.prose ol {
+  list-style-type: decimal !important;
+}
+
+/* Ensure proper spacing for pasted content */
+.tiptap p + p,
+.ProseMirror p + p,
+.prose p + p {
+  margin-top: 0.5rem !important;
+}
+
+.tiptap h1 + p,
+.tiptap h2 + p,
+.tiptap h3 + p,
+.ProseMirror h1 + p,
+.ProseMirror h2 + p,
+.ProseMirror h3 + p,
+.prose h1 + p,
+.prose h2 + p,
+.prose h3 + p {
+  margin-top: 0.5rem !important;
+}
+
+/* Print View Styling */
+.print-view {
+  background: white !important;
+  padding: 0 !important;
+  margin: 0 !important;
+}
+
+.print-view .tiptap,
+.print-view .ProseMirror {
+  background: white !important;
+  padding: 0.75in !important;
+  margin: 0 !important;
+  box-shadow: 0 0 0 1px #ccc !important;
+  min-height: 11in !important;
+  max-width: 8.5in !important;
+  margin: 0 auto !important;
+  position: relative !important;
+}
+
+/* Page breaks and page numbers for print view */
+.print-view .tiptap::before,
+.print-view .ProseMirror::before {
+  content: "Page 1";
+  position: absolute;
+  top: 0.5in;
+  right: 0.75in;
+  font-size: 10pt;
+  color: #666;
+  font-family: Arial, sans-serif;
+}
+
+/* Subtle page breaks integrated into normal editing */
+.print-view .tiptap,
+.print-view .ProseMirror {
+  /* Simulate page height with 2cm spacing between pages */
+  min-height: calc(11in + 2cm);
+  background: white;
+  margin: 20px auto;
+  position: relative;
+  width: 8.5in;
+  padding: 1in;
+}
+
+/* Add page break simulation every ~10 inches of content */
+.print-view .tiptap::before,
+.print-view .ProseMirror::before {
+  content: "";
+  display: block;
+  height: 0;
+  page-break-before: always;
+  break-before: page;
+}
+
+/* Print-specific styles */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  
+  .print-view .tiptap,
+  .print-view .ProseMirror,
+  .print-view .tiptap *,
+  .print-view .ProseMirror * {
+    visibility: visible;
+  }
+  
+  .print-view .tiptap,
+  .print-view .ProseMirror {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    margin: 0;
+    padding: 0.75in;
+    box-shadow: none;
+    page-break-after: always;
+  }
+  
+  /* Hide print view controls when actually printing */
+  .print-view-controls {
+    display: none !important;
+  }
+}
+
+/* Subtle page breaks with 2cm spacing between pages */
+.print-view .tiptap,
+.print-view .ProseMirror {
+  /* Create page breaks with 2cm spacing */
+  background: 
+    linear-gradient(to bottom, 
+      transparent 0%, 
+      transparent calc(100% - 0.75cm), 
+      #d0d0d0 calc(100% - 0.75cm), 
+      #d0d0d0 calc(100% - 0.7cm),
+      transparent calc(100% - 0.7cm),
+      transparent 100%
+    ),
+    white;
+  background-size: 100% calc(11in + 2cm);
+  background-repeat: repeat-y;
+  background-position: 0 0;
+}
+
+/* Page break lines with 2cm spacing */
+.print-view .tiptap::after,
+.print-view .ProseMirror::after {
+  content: "";
+  position: absolute;
+  top: calc(11in + 1cm);
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: #d0d0d0;
+}
+
+
+/* Page number styling */
+.print-view .page-number {
+  position: absolute;
+  bottom: 0.5in;
+  right: 0.75in;
+  font-size: 10pt;
+  color: #666;
+  font-family: Arial, sans-serif;
+}

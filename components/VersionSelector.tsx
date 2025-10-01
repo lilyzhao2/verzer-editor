@@ -2,16 +2,29 @@
 
 import React from 'react';
 import { useEditor } from '@/contexts/EditorContext';
-import { ChevronDown } from 'lucide-react';
+import { ChevronDown, Bug } from 'lucide-react';
 import { ClearDataButton } from './ClearDataButton';
 
 export function VersionSelector() {
-  const { state, setCurrentVersion, getCurrentVersion } = useEditor();
+  const { state, setCurrentVersion, getCurrentVersion, toggleDebugMode } = useEditor();
   const currentVersion = getCurrentVersion();
 
   return (
     <div className="flex items-center justify-between p-3 border-b bg-white border-gray-200">
-      <ClearDataButton />
+      <div className="flex items-center gap-3">
+        <ClearDataButton />
+        <button
+          onClick={toggleDebugMode}
+          className={`p-2 rounded-lg transition-colors ${
+            state.debugMode 
+              ? 'bg-red-100 text-red-600 hover:bg-red-200' 
+              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+          }`}
+          title="Toggle debug mode to see system prompts"
+        >
+          <Bug className="w-4 h-4" />
+        </button>
+      </div>
       <div className="relative">
         <select
           value={currentVersion?.id || ''}

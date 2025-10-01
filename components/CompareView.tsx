@@ -3,16 +3,17 @@
 import React, { useState, useMemo } from 'react';
 import { useEditor } from '@/contexts/EditorContext';
 import { useCompare } from '@/contexts/CompareContext';
-import { CheckCircle, Sparkles, FileEdit, GitCompare, Star, Edit3 } from 'lucide-react';
+import { CheckCircle, Sparkles, FileEdit, GitCompare, Star, Edit3, MessageSquare, User, Users } from 'lucide-react';
 import { TrackChangesCompare } from './TrackChangesCompare';
 import * as Diff from 'diff';
 
 export function CompareView() {
-  const { state, createVersion, setCurrentVersion, toggleVersionStar } = useEditor();
+  const { state, createVersion, setCurrentVersion, toggleVersionStar, addComment } = useEditor();
   const { selectedVersionsForCompare } = useCompare();
-  const [compareMode, setCompareMode] = useState<'side-by-side' | 'track'>('side-by-side');
-  const [diffView, setDiffView] = useState<'normal' | 'diff'>('normal'); // For side-by-side mode
+  // Only track changes mode now
   const [paragraphChoices, setParagraphChoices] = useState<Map<number, string>>(new Map());
+  const [showComments, setShowComments] = useState(false);
+  const [newComment, setNewComment] = useState('');
 
   const selectedVersionObjects = selectedVersionsForCompare
     .map(id => state.versions.find(v => v.id === id))
@@ -111,7 +112,7 @@ export function CompareView() {
               onChange={(e) => setDiffView(e.target.checked ? 'diff' : 'normal')}
               className="rounded border-gray-300"
             />
-            <span className="text-gray-700">Show inline diff</span>
+            <span className="text-black">Show inline diff</span>
           </label>
         </div>
 
@@ -143,7 +144,7 @@ export function CompareView() {
                     </button>
                   </div>
                   {version.prompt && (
-                    <p className="text-xs text-gray-700 mt-1 line-clamp-2">
+                    <p className="text-xs text-black mt-1 line-clamp-2">
                       {version.prompt}
                     </p>
                   )}
@@ -288,79 +289,153 @@ export function CompareView() {
   };
 
   return (
-    <div className="h-full flex flex-col bg-gray-50">
-      {/* Header */}
-      <div className="px-6 py-4 bg-white border-b border-gray-200">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-xl font-bold text-gray-800">Iterate on Versions</h2>
-            <p className="text-sm text-gray-700 mt-1">
+    <div className="h-full flex bg-gray-50">
+      {/* Main Content */}
+      <div className="flex-1 flex flex-col">
+        {/* Header */}
+        <div className="px-6 py-4 bg-white border-b border-gray-200">
+          <div className="flex items-center justify-between">
+            <div>
+            <h2 className="text-xl font-bold text-gray-800">Track Changes</h2>
+            <p className="text-sm text-black mt-1">
               {selectedVersionsForCompare.length === 0 
-                ? 'Click + buttons in the History panel to select versions for comparison →'
-                : compareMode === 'side-by-side' 
-                ? `Comparing ${selectedVersionsForCompare.length} versions`
-                : compareMode === 'paragraph'
-                ? 'Click paragraphs to choose the best version of each one'
-                : 'Accept or reject changes at word, sentence, or paragraph level'}
+                ? 'Select 2 versions from the Version Tree to compare them →'
+                : 'Review and collaborate on changes'}
             </p>
-          </div>
-          
-          {/* Mode Toggle */}
-          {selectedVersionsForCompare.length >= 1 && (
-            <div className="flex items-center gap-2 bg-gray-100 rounded-lg p-1">
-              <button
-                onClick={() => setCompareMode('side-by-side')}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
-                  compareMode === 'side-by-side'
-                    ? 'bg-white text-gray-900 shadow-sm'
-                    : 'text-gray-600 hover:text-gray-900'
-                }`}
-              >
-                <GitCompare className="w-4 h-4" />
-                Side by Side
-              </button>
-              <button
-                onClick={() => setCompareMode('track')}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
-                  compareMode === 'track'
-                    ? 'bg-white text-gray-900 shadow-sm'
-                    : 'text-gray-600 hover:text-gray-900'
-                }`}
-              >
-                <FileEdit className="w-4 h-4" />
-                Track Changes
-              </button>
             </div>
-          )}
+            <button
+              onClick={() => setShowComments(!showComments)}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                showComments 
+                  ? 'bg-blue-600 text-white' 
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              <MessageSquare className="w-4 h-4" />
+              Comments & Users
+            </button>
+          </div>
         </div>
+
+        {/* Track Changes View */}
+        {selectedVersionsForCompare.length === 0 ? (
+          <div className="flex-1 flex items-center justify-center">
+            <div className="text-center">
+              <FileEdit className="w-12 h-12 text-gray-400 mx-auto mb-3" />
+              <p className="text-black font-medium">No versions selected</p>
+              <p className="text-sm text-black mt-1">
+                Select 2 versions from the Version Tree to see changes
+              </p>
+            </div>
+          </div>
+        ) : selectedVersionsForCompare.length >= 2 ? (
+          <TrackChangesCompare 
+            originalVersionId={selectedVersionsForCompare[0]}
+            editedVersionId={selectedVersionsForCompare[1]}
+          />
+        ) : (
+          <div className="flex-1 flex items-center justify-center">
+            <div className="text-center">
+              <FileEdit className="w-12 h-12 text-gray-400 mx-auto mb-3" />
+              <p className="text-black font-medium">Select one more version</p>
+              <p className="text-sm text-black mt-1">
+                Select a second version to compare
+              </p>
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* Comparison View */}
-      {selectedVersionsForCompare.length === 0 ? (
-        <div className="flex-1 flex items-center justify-center">
-          <div className="text-center">
-            <GitCompare className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-            <p className="text-gray-600 font-medium">No versions selected</p>
-            <p className="text-sm text-gray-500 mt-1">
-              Select versions from the History panel to compare them
-            </p>
+      {/* Right Panel - Comments & Users */}
+      {showComments && (
+        <div className="w-80 border-l border-gray-200 bg-white flex flex-col">
+          {/* Panel Header */}
+          <div className="px-4 py-3 border-b border-gray-200 bg-gray-50">
+            <h3 className="font-semibold text-black">Comments & Users</h3>
           </div>
-        </div>
-      ) : compareMode === 'side-by-side' ? (
-        renderSideBySide()
-      ) : compareMode === 'track' && selectedVersionsForCompare.length >= 2 ? (
-        <TrackChangesCompare 
-          originalVersionId={selectedVersionsForCompare[0]}
-          editedVersionId={selectedVersionsForCompare[1]}
-        />
-      ) : (
-        <div className="flex-1 flex items-center justify-center">
-          <div className="text-center">
-            <FileEdit className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-            <p className="text-gray-600 font-medium">Select exactly 2 versions for track changes</p>
-            <p className="text-sm text-gray-500 mt-1">
-              Track changes mode requires two versions to compare
-            </p>
+          
+          {/* Users Section */}
+          <div className="p-4 border-b border-gray-200">
+            <h4 className="text-sm font-semibold text-black mb-3 flex items-center gap-2">
+              <Users className="w-4 h-4" />
+              Collaborators
+            </h4>
+            <div className="space-y-2">
+              {state.users?.map(user => (
+                <div key={user.id} className="flex items-center gap-2 p-2 bg-gray-50 rounded">
+                  <div 
+                    className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold"
+                    style={{ backgroundColor: user.color }}
+                  >
+                    {user.name.charAt(0).toUpperCase()}
+                  </div>
+                  <span className="text-sm text-black">{user.name}</span>
+                  {user.id === state.currentUserId && (
+                    <span className="text-xs text-gray-500">(You)</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+          
+          {/* Comments Section */}
+          <div className="flex-1 flex flex-col">
+            <div className="p-4 border-b border-gray-200">
+              <h4 className="text-sm font-semibold text-black mb-3 flex items-center gap-2">
+                <MessageSquare className="w-4 h-4" />
+                Comments ({state.comments?.length || 0})
+              </h4>
+              <div className="space-y-3">
+                {state.comments && state.comments.length > 0 ? (
+                  state.comments.map(comment => {
+                    const user = state.users?.find(u => u.id === comment.userId);
+                    return (
+                      <div key={comment.id} className="p-3 bg-gray-50 rounded-lg">
+                        <div className="flex items-start gap-2 mb-2">
+                          <div 
+                            className="w-6 h-6 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0"
+                            style={{ backgroundColor: user?.color || '#6B7280' }}
+                          >
+                            {user?.name.charAt(0).toUpperCase() || 'U'}
+                          </div>
+                          <div className="flex-1">
+                            <div className="text-xs text-gray-600 mb-1">
+                              {user?.name || 'Unknown'} • {new Date(comment.timestamp).toLocaleString()}
+                            </div>
+                            <p className="text-sm text-black">{comment.content}</p>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <p className="text-sm text-gray-500 italic">No comments yet</p>
+                )}
+              </div>
+            </div>
+            
+            {/* Add Comment */}
+            <div className="p-4 border-t border-gray-200 mt-auto">
+              <textarea
+                value={newComment}
+                onChange={(e) => setNewComment(e.target.value)}
+                placeholder="Add a comment..."
+                rows={3}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-black mb-2"
+              />
+              <button
+                onClick={() => {
+                  if (newComment.trim() && selectedVersionsForCompare[0]) {
+                    addComment(selectedVersionsForCompare[0], state.currentUserId, newComment.trim());
+                    setNewComment('');
+                  }
+                }}
+                disabled={!newComment.trim()}
+                className="w-full px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
+              >
+                Add Comment
+              </button>
+            </div>
           </div>
         </div>
       )}

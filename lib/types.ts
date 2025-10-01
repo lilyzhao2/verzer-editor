@@ -7,11 +7,25 @@ export interface Checkpoint {
   type: 'auto-save' | 'manual';
 }
 
+export interface ExampleDocument {
+  id: string;
+  fileName: string;
+  content: string;
+  extractedPatterns?: string; // AI-extracted patterns from this example
+  uploadedAt: Date;
+}
+
 export interface ProjectConfig {
   id: string;
   name: string; // Name for this config version (e.g., "Legal Brief", "Blog Post", "Technical Doc")
   projectName: string;
   description: string;
+  
+  // Example-based learning
+  examples?: ExampleDocument[]; // Multiple example documents to learn from
+  learnedPatterns?: string; // AI-extracted patterns from all examples combined
+  
+  // Manual configuration (optional, can be auto-filled from examples)
   styleGuide?: string; // Writing style preferences
   tone?: string; // Tone preferences (formal, casual, technical, etc.)
   audience?: string; // Target audience
@@ -20,8 +34,26 @@ export interface ProjectConfig {
   additionalContext?: string; // Any other context for AI
   promptTemplate?: string; // Custom prompt template with variables
   templateVariables?: Record<string, string>; // Variables that can be used in the template
+  
   createdAt: Date;
   isActive?: boolean; // Currently active configuration
+}
+
+export interface User {
+  id: string;
+  name: string;
+  color: string; // For highlighting their changes
+  avatar?: string;
+}
+
+export interface Comment {
+  id: string;
+  userId: string;
+  versionId: string;
+  content: string;
+  timestamp: Date;
+  resolved: boolean;
+  position?: { start: number; end: number }; // Text selection position
 }
 
 export interface Version {
@@ -33,8 +65,11 @@ export interface Version {
   timestamp: Date;
   isOriginal: boolean;
   parentId: string | null;
+  userId?: string; // Who created this version
+  userName?: string; // Name of the user who created this version
   checkpoints: Checkpoint[]; // Track auto-save checkpoints
   isStarred?: boolean; // Mark important versions
+  isArchived?: boolean; // Archive/cross out versions
   projectConfig?: ProjectConfig; // Only for v0 - project configuration
 }
 
@@ -55,14 +90,6 @@ export type AIModel = 'claude-3-5-haiku-20241022' | 'claude-3-5-sonnet-20241022'
 
 export type ViewMode = 'context' | 'document' | 'iterate' | 'compare' | 'parallel';
 
-export interface Comment {
-  id: string;
-  versionId: string;
-  text: string;
-  timestamp: Date;
-  position?: { paragraph?: number; line?: number };
-  resolved: boolean;
-}
 
 export interface ProjectNote {
   id: string;
@@ -111,6 +138,8 @@ export interface EditorState {
   versions: Version[];
   currentVersionId: string;
   compareVersionId: string | null;
+  users: User[]; // All users in the project
+  currentUserId: string; // Currently logged in user
   comments: Comment[];
   projectNotes: ProjectNote[];
   chatHistory: ChatMessage[];
@@ -123,4 +152,6 @@ export interface EditorState {
   activeTabId: string | null; // Currently active tab
   activeTodoSession: TodoSession | null; // Current todo session
   todoHistory: TodoSession[]; // Past todo sessions
+  debugMode: boolean; // Show system prompts and debug info
+  lastSystemPrompt: string | null; // Last system prompt sent to AI
 }

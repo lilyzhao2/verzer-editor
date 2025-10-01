@@ -4,9 +4,9 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useEditor } from '@/contexts/EditorContext';
 import { Version } from '@/lib/types';
 import { 
-  Plus, X, Send, Loader2, ChevronRight, ChevronDown,
-  GitBranch, Star, Bot, User, Maximize2, Minimize2,
-  MessageSquare, Edit3, Copy, MoreVertical
+  Send, Loader2, ChevronRight, ChevronDown,
+  Star, Bot, User, Edit3, Plus, Minus, GitBranch, Archive,
+  Filter, Eye, EyeOff
 } from 'lucide-react';
 import { RichTextEditor } from './RichTextEditor';
 
@@ -16,78 +16,212 @@ interface VersionBranch {
   children: Version[];
   isExpanded: boolean;
   isFocused: boolean;
-  chatInput: string;
-  isProcessing: boolean;
+  chatInputs: { [versionId: string]: string }; // Separate input for each version
+  processingVersions: { [versionId: string]: boolean }; // Track processing state per version
+  editingVersions: { [versionId: string]: boolean }; // Track editing state per version
+  editContent: { [versionId: string]: string }; // Store edit content per version
+  zoomLevels: { [versionId: string]: number }; // Track zoom level per version
 }
 
 export function ParallelView() {
-  const { state, setCurrentVersion, applyAIEdit, createVersion, toggleVersionStar } = useEditor();
+  const { state, setCurrentVersion, applyAIEdit, createVersion, toggleVersionStar, toggleVersionArchive, setViewMode } = useEditor();
   const [branches, setBranches] = useState<VersionBranch[]>([]);
   const [focusedBranchId, setFocusedBranchId] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<'tree' | 'columns'>('columns');
   const containerRef = useRef<HTMLDivElement>(null);
+  
+  // Filter states
+  const [showOnlyStarred, setShowOnlyStarred] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
+  const [filterType, setFilterType] = useState<'all' | 'ai' | 'manual'>('all');
+  const [filterUser, setFilterUser] = useState<string>('all'); // Filter by user
+  const [collapseAll, setCollapseAll] = useState(false);
+  const [maxZoom, setMaxZoom] = useState(100);
 
-  // Initialize branches from versions
+  // Helper function to determine if a version was created by AI or manually
+  const isManualEdit = (version: Version) => {
+    // Check for manual edit indicators
+    return version.prompt?.includes('Manual edits') || 
+           version.prompt?.includes('✏️') || 
+           version.prompt?.includes('📝') ||
+           version.prompt?.includes('Major revision');
+  };
+
+  const isAIEdit = (version: Version) => {
+    // AI edits typically don't have manual indicators and have a prompt
+    return !isManualEdit(version) && version.prompt !== null && version.prompt !== '';
+  };
+
+  // Initialize branches from versions (excluding v0) with filters
   useEffect(() => {
-    if (branches.length === 0 && state.versions.length > 0) {
-      // Get all root versions (no dots in version number)
-      const rootVersions = state.versions.filter(v => 
-        typeof v.number === 'string' && !v.number.includes('.')
-      );
+    // Get all root versions except v0 (no 'b' in version number and not '0')
+    let rootVersions = state.versions.filter(v => 
+      typeof v.number === 'string' && 
+      !v.number.includes('b') && 
+      v.number !== '0'
+    );
+    
+    // Apply filters
+    rootVersions = rootVersions.filter(v => {
+      // Starred filter
+      if (showOnlyStarred && !v.isStarred) return false;
       
-      // Create branches for each root
-      const initialBranches = rootVersions.map(root => ({
-        id: `branch-${root.id}`,
-        rootVersion: root,
-        children: getChildVersions(root.id),
-        isExpanded: true,
-        isFocused: root.id === state.currentVersionId,
-        chatInput: '',
-        isProcessing: false
-      }));
+      // Archived filter
+      if (!showArchived && v.isArchived) return false;
       
-      setBranches(initialBranches);
-    }
-  }, [state.versions]);
+      // Type filter (AI vs Manual)
+      if (filterType === 'ai' && !isAIEdit(v)) return false;
+      if (filterType === 'manual' && !isManualEdit(v)) return false;
+      
+      // User filter
+      if (filterUser !== 'all' && v.userId !== filterUser) return false;
+      
+      return true;
+    });
+    
+    // Create branches for each root
+    const initialBranches = rootVersions.map(root => ({
+      id: `branch-${root.id}`,
+      rootVersion: root,
+      children: getChildVersions(root.id).filter(child => {
+        // Apply same filters to children
+        if (showOnlyStarred && !child.isStarred) return false;
+        if (!showArchived && child.isArchived) return false;
+        if (filterType === 'ai' && !isAIEdit(child)) return false;
+        if (filterType === 'manual' && !isManualEdit(child)) return false;
+        if (filterUser !== 'all' && child.userId !== filterUser) return false;
+        return true;
+      }),
+      isExpanded: !collapseAll,
+      isFocused: root.id === state.currentVersionId,
+      chatInputs: {},
+      processingVersions: {},
+      editingVersions: {},
+      editContent: {},
+      zoomLevels: {}
+    }));
+    
+    console.log('Parallel View - Root versions found:', rootVersions.length, rootVersions.map(v => v.number));
+    console.log('Parallel View - All versions:', state.versions.length, state.versions.map(v => v.number));
+    setBranches(initialBranches);
+  }, [state.versions, showOnlyStarred, showArchived, filterType, filterUser, collapseAll]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Get all child versions of a parent
   const getChildVersions = (parentId: string): Version[] => {
     return state.versions.filter(v => v.parentId === parentId);
   };
 
-  // Handle AI chat for a specific version
-  const handleAIChat = async (branchId: string, versionId: string) => {
+  // Check if a branch should be hidden based on filters
+  const shouldHideBranch = (branch: VersionBranch): boolean => {
+    const version = branch.rootVersion;
+    if (showOnlyStarred && !version.isStarred) return true;
+    if (!showArchived && version.isArchived) return true;
+    if (filterType === 'ai' && (version.prompt?.startsWith('✏️') || version.prompt?.startsWith('📝'))) return true;
+    if (filterType === 'manual' && !version.prompt?.startsWith('✏️') && !version.prompt?.startsWith('📝')) return true;
+    return false;
+  };
+
+  // Handle creating a new root version - now uses AI chat
+  const handleCreateNewRootVersion = async () => {
+    // This will be handled by the AI chat input in the first branch
+    // Just focus on the first visible branch's chat input
+    const firstBranch = branches.find(b => !shouldHideBranch(b));
+    if (firstBranch) {
+      // Focus the chat input for the root version
+      setTimeout(() => {
+        const input = document.querySelector(`input[data-version-id="${firstBranch.rootVersion.id}"]`) as HTMLInputElement;
+        if (input) {
+          input.focus();
+        }
+      }, 100);
+    }
+  };
+
+  // Handle AI chat for creating new version
+  const handleCreateNewVersion = async (branchId: string, versionId: string) => {
     const branch = branches.find(b => b.id === branchId);
-    if (!branch || !branch.chatInput.trim()) return;
+    const chatInput = branch?.chatInputs[versionId] || '';
+    if (!branch || !chatInput.trim()) return;
 
     setBranches(prev => prev.map(b => 
-      b.id === branchId ? { ...b, isProcessing: true } : b
+      b.id === branchId ? { 
+        ...b, 
+        processingVersions: { ...b.processingVersions, [versionId]: true }
+      } : b
     ));
 
     // Set this version as current for context
     setCurrentVersion(versionId);
     
     try {
-      await applyAIEdit(branch.chatInput, { autoOpenInParallel: true });
+      // Create a new root version using AI
+      await applyAIEdit(chatInput);
       
-      // Clear input and stop processing
+      // Clear input and stop processing for this version
       setBranches(prev => prev.map(b => 
-        b.id === branchId ? { ...b, chatInput: '', isProcessing: false } : b
+        b.id === branchId ? { 
+          ...b, 
+          chatInputs: { ...b.chatInputs, [versionId]: '' },
+          processingVersions: { ...b.processingVersions, [versionId]: false }
+        } : b
       ));
+
+      // Refresh branches to show new version
+      setTimeout(() => {
+        window.location.reload(); // Simple refresh for now
+      }, 500);
     } catch (error) {
-      console.error('AI edit failed:', error);
+      console.error('Version creation failed:', error);
       setBranches(prev => prev.map(b => 
-        b.id === branchId ? { ...b, isProcessing: false } : b
+        b.id === branchId ? { 
+          ...b, 
+          processingVersions: { ...b.processingVersions, [versionId]: false }
+        } : b
       ));
     }
   };
 
-  // Create manual branch
-  const createManualBranch = (parentId: string) => {
-    const content = window.prompt('Enter initial content for the new branch:');
-    if (!content) return;
+  // Handle creating a new branch
+  const handleCreateNewBranch = async (branchId: string, versionId: string) => {
+    const branch = branches.find(b => b.id === branchId);
+    const chatInput = branch?.chatInputs[versionId] || '';
+    if (!branch || !chatInput.trim()) return;
+
+    setBranches(prev => prev.map(b => 
+      b.id === branchId ? { 
+        ...b, 
+        processingVersions: { ...b.processingVersions, [versionId]: true }
+      } : b
+    ));
+
+    // Set this version as current for context
+    setCurrentVersion(versionId);
     
-    createVersion(content, '✏️ Manual branch', parentId);
+    try {
+      // Use AI to create a new branch version
+      await applyAIEdit(chatInput, { parentId: versionId });
+      
+      // Clear input and stop processing for this version
+      setBranches(prev => prev.map(b => 
+        b.id === branchId ? { 
+          ...b, 
+          chatInputs: { ...b.chatInputs, [versionId]: '' },
+          processingVersions: { ...b.processingVersions, [versionId]: false }
+        } : b
+      ));
+
+      // Refresh branches to show new branch
+      setTimeout(() => {
+        window.location.reload(); // Simple refresh for now
+      }, 500);
+    } catch (error) {
+      console.error('Branch creation failed:', error);
+      setBranches(prev => prev.map(b => 
+        b.id === branchId ? { 
+          ...b, 
+          processingVersions: { ...b.processingVersions, [versionId]: false }
+        } : b
+      ));
+    }
   };
 
   // Toggle branch expansion
@@ -97,13 +231,81 @@ export function ParallelView() {
     ));
   };
 
-  // Focus on a single branch
-  const focusBranch = (branchId: string) => {
-    if (focusedBranchId === branchId) {
-      setFocusedBranchId(null);
-    } else {
-      setFocusedBranchId(branchId);
+  // Go to document view for editing
+  const goToDocumentView = (versionId: string) => {
+    setCurrentVersion(versionId);
+    setViewMode('document');
+  };
+
+  // Toggle inline editing for a version
+  const toggleInlineEdit = (branchId: string, versionId: string, version: Version) => {
+    setBranches(prev => prev.map(b => 
+      b.id === branchId ? {
+        ...b,
+        editingVersions: { 
+          ...b.editingVersions, 
+          [versionId]: !b.editingVersions[versionId] 
+        },
+        editContent: {
+          ...b.editContent,
+          [versionId]: b.editingVersions[versionId] ? '' : version.content.replace(/<[^>]*>/g, '')
+        }
+      } : b
+    ));
+  };
+
+  // Save manual edit as a new branch
+  const saveManualEdit = async (branchId: string, versionId: string) => {
+    const branch = branches.find(b => b.id === branchId);
+    const editContent = branch?.editContent[versionId];
+    if (!branch || !editContent) return;
+
+    // Create a new branch with manual edit
+    const prompt = '✏️ Manual edits';
+    createVersion(editContent, prompt, versionId);
+
+    // Clear editing state
+    setBranches(prev => prev.map(b => 
+      b.id === branchId ? {
+        ...b,
+        editingVersions: { ...b.editingVersions, [versionId]: false },
+        editContent: { ...b.editContent, [versionId]: '' }
+      } : b
+    ));
+
+    // Refresh to show new version
+    setTimeout(() => {
+      window.location.reload();
+    }, 500);
+  };
+
+  // Render connection lines between versions
+  const renderConnectionLine = (fromDepth: number, toDepth: number, isVertical: boolean = false) => {
+    if (isVertical) {
+      return (
+        <div 
+          className="absolute bg-gray-400" 
+          style={{
+            left: `${fromDepth * 32 + 16}px`,
+            top: '-20px',
+            width: '2px',
+            height: '20px'
+          }}
+        />
+      );
     }
+    return (
+      <div 
+        className="absolute bg-gray-400" 
+        style={{
+          left: `${fromDepth * 32}px`,
+          top: '50%',
+          width: '32px',
+          height: '2px',
+          transform: 'translateY(-50%)'
+        }}
+      />
+    );
   };
 
   // Render a version card
@@ -113,24 +315,29 @@ export function ParallelView() {
     const children = getChildVersions(version.id);
     
     return (
-      <div key={version.id} className="relative">
+      <div key={version.id} className="relative mb-4">
         {/* Connection line from parent */}
         {depth > 0 && (
-          <div className="absolute -left-4 top-8 w-4 h-0.5 bg-gray-300" />
+          <>
+            {renderConnectionLine(depth - 1, depth)}
+            {renderConnectionLine(depth, depth, true)}
+          </>
         )}
         
         {/* Version Card */}
         <div 
-          className={`bg-white rounded-lg border-2 transition-all ${
+          className={`bg-white rounded-lg border-2 transition-all h-full ${
+            version.isArchived ? 'opacity-50 border-gray-300' : 
             isCurrent ? 'border-blue-500 shadow-lg' : 'border-gray-200 hover:border-gray-300'
           } ${depth > 0 ? 'ml-8' : ''}`}
+          style={{ marginLeft: `${depth * 32}px` }}
         >
           {/* Version Header */}
           <div className="px-4 py-2 border-b bg-gray-50 rounded-t-lg">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <span className={`text-sm font-bold ${isCurrent ? 'text-blue-600' : 'text-gray-700'}`}>
-                  v{version.number}
+                  {version.number.includes('b') ? `V${version.number.replace('b', 'B')}` : `V${version.number}`}
                 </span>
                 {isAI ? (
                   <Bot className="w-4 h-4 text-purple-600" />
@@ -151,18 +358,22 @@ export function ParallelView() {
                   <Star className={`w-3 h-3 ${version.isStarred ? 'text-yellow-500 fill-yellow-500' : 'text-gray-400'}`} />
                 </button>
                 <button
-                  onClick={() => createManualBranch(version.id)}
+                  onClick={() => toggleVersionArchive(version.id)}
                   className="p-1 hover:bg-gray-200 rounded"
-                  title="Create branch"
+                  title={version.isArchived ? "Restore version" : "Archive version"}
                 >
-                  <GitBranch className="w-3 h-3 text-gray-600" />
+                  <Archive className={`w-3 h-3 ${version.isArchived ? 'text-red-500' : 'text-gray-400'}`} />
                 </button>
                 <button
-                  onClick={() => setCurrentVersion(version.id)}
-                  className="p-1 hover:bg-gray-200 rounded"
-                  title="Switch to this version"
+                  onClick={() => toggleInlineEdit(branch.id, version.id, version)}
+                  className={`p-1 hover:bg-gray-200 rounded ${
+                    branch.editingVersions[version.id] ? 'bg-blue-100' : ''
+                  }`}
+                  title={branch.editingVersions[version.id] ? "Cancel edit" : "Edit inline"}
                 >
-                  <Edit3 className="w-3 h-3 text-gray-600" />
+                  <Edit3 className={`w-3 h-3 ${
+                    branch.editingVersions[version.id] ? 'text-blue-600' : 'text-gray-600'
+                  }`} />
                 </button>
               </div>
             </div>
@@ -173,128 +384,169 @@ export function ParallelView() {
             )}
           </div>
           
-          {/* Document Content - Expandable */}
+          {/* Prompt/Change Label */}
+          {version.prompt && (
+            <div className={`px-4 py-2 border-b ${
+              isAI 
+                ? 'bg-purple-50 border-purple-100' 
+                : 'bg-blue-50 border-blue-100'
+            }`}>
+              <div className="flex items-start gap-2">
+                <span className={`text-xs font-medium ${
+                  isAI ? 'text-purple-700' : 'text-blue-700'
+                }`}>
+                  {isAI ? '🤖 AI:' : '✏️ Manual:'}
+                </span>
+                <span className={`text-xs flex-1 ${
+                  isAI ? 'text-purple-900' : 'text-blue-900'
+                }`}>
+                  {version.prompt.replace(/^[✏️📝🤖💭]+\s*/, '')}
+                </span>
+              </div>
+            </div>
+          )}
+          
+          {/* Document Content - Expandable and Editable */}
           <div className="p-4">
-            {branch.isExpanded ? (
-              <div className="prose prose-sm max-w-none h-64 overflow-y-auto">
+            
+            {branch.editingVersions[version.id] ? (
+              // Inline editor
+              <div className="space-y-2">
+                <textarea
+                  value={branch.editContent[version.id] || ''}
+                  onChange={(e) => setBranches(prev => prev.map(b => 
+                    b.id === branch.id ? {
+                      ...b,
+                      editContent: { ...b.editContent, [version.id]: e.target.value }
+                    } : b
+                  ))}
+                  className={`w-full p-2 border rounded-lg text-sm text-black font-mono resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                    collapseAll ? 'h-96' : 'h-48'
+                  }`}
+                  placeholder="Edit the document content (plain text)..."
+                />
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => saveManualEdit(branch.id, version.id)}
+                    className="px-3 py-1.5 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 flex items-center gap-2"
+                  >
+                    <GitBranch className="w-4 h-4" />
+                    Save as Variation
+                  </button>
+                  <button
+                    onClick={() => {
+                      // Save as new version (root level)
+                      const editContent = branch.editContent[version.id];
+                      if (editContent) {
+                        createVersion(editContent, '📝 Manual version', 'v0');
+                        setBranches(prev => prev.map(b =>
+                          b.id === branch.id ? {
+                            ...b,
+                            editingVersions: { ...b.editingVersions, [version.id]: false },
+                            editContent: { ...b.editContent, [version.id]: '' }
+                          } : b
+                        ));
+                        setTimeout(() => { window.location.reload(); }, 500);
+                      }
+                    }}
+                    className="px-3 py-1.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 flex items-center gap-2"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Save as Version
+                  </button>
+                  <button
+                    onClick={() => toggleInlineEdit(branch.id, version.id, version)}
+                    className="px-3 py-1.5 bg-gray-500 text-white text-sm rounded-lg hover:bg-gray-600"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : branch.isExpanded ? (
+              <div
+                className={`prose prose-sm max-w-none overflow-y-auto text-black prose-headings:text-black prose-p:text-black prose-strong:text-black prose-em:text-black prose-li:text-black prose-ul:text-black prose-ol:text-black border border-gray-100 rounded p-3 cursor-pointer hover:border-gray-300 transition-colors ${
+                  collapseAll ? 'h-96' : 'h-64'
+                }`}
+                onClick={() => toggleInlineEdit(branch.id, version.id, version)}
+                onDoubleClick={() => {
+                  setCurrentVersion(version.id);
+                  setViewMode('document');
+                }}
+                title="Click to edit, double-click to open in document view"
+              >
                 <div dangerouslySetInnerHTML={{ __html: version.content }} />
               </div>
             ) : (
-              <div className="text-sm text-gray-600 italic">
-                {version.content.replace(/<[^>]*>/g, '').substring(0, 100)}...
+              <div 
+                className="text-sm text-gray-700 line-clamp-3 cursor-pointer hover:bg-gray-50 p-2 rounded"
+                onClick={() => setBranches(prev => prev.map(b => 
+                  b.id === branch.id ? { ...b, isExpanded: true } : b
+                ))}
+                title="Click to expand"
+              >
+                {version.content.replace(/<[^>]*>/g, '').substring(0, 150)}...
               </div>
             )}
           </div>
           
-          {/* Chat Input */}
-          <div className="px-4 pb-4">
+          {/* Chat Input with Action Buttons */}
+          <div className="px-4 pb-4 space-y-2">
             <div className="flex gap-2">
               <input
                 type="text"
-                value={branch.chatInput}
+                value={branch.chatInputs[version.id] || ''}
                 onChange={(e) => setBranches(prev => prev.map(b => 
-                  b.id === branch.id ? { ...b, chatInput: e.target.value } : b
+                  b.id === branch.id ? { 
+                    ...b, 
+                    chatInputs: { ...b.chatInputs, [version.id]: e.target.value }
+                  } : b
                 ))}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
-                    handleAIChat(branch.id, version.id);
+                    handleCreateNewVersion(branch.id, version.id);
                   }
                 }}
-                placeholder="Ask AI to modify this version..."
-                className="flex-1 px-3 py-2 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                disabled={branch.isProcessing}
+                placeholder="Describe changes with AI..."
+                className="flex-1 px-3 py-2 border rounded-lg text-sm text-black focus:outline-none focus:ring-2 focus:ring-blue-500"
+                disabled={branch.processingVersions[version.id]}
+                data-version-id={version.id}
               />
+              {branch.processingVersions[version.id] && (
+                <Loader2 className="w-5 h-5 text-gray-400 animate-spin" />
+              )}
+            </div>
+            
+            {/* Action Buttons - Always visible */}
+            <div className={`flex gap-2 transition-opacity ${
+              (branch.chatInputs[version.id] || '').trim() ? 'opacity-100' : 'opacity-50'
+            }`}>
               <button
-                onClick={() => handleAIChat(branch.id, version.id)}
-                disabled={branch.isProcessing || !branch.chatInput.trim()}
-                className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                onClick={() => handleCreateNewBranch(branch.id, version.id)}
+                disabled={branch.processingVersions[version.id] || !(branch.chatInputs[version.id] || '').trim()}
+                className="flex-1 px-3 py-1.5 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                title="Create a variation of this version"
               >
-                {branch.isProcessing ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Send className="w-4 h-4" />
-                )}
+                <GitBranch className="w-4 h-4" />
+                Variation
+              </button>
+              <button
+                onClick={() => handleCreateNewVersion(branch.id, version.id)}
+                disabled={branch.processingVersions[version.id] || !(branch.chatInputs[version.id] || '').trim()}
+                className="flex-1 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                title="Create a new version"
+              >
+                <Plus className="w-4 h-4" />
+                Version
               </button>
             </div>
           </div>
         </div>
         
-        {/* Render children */}
-        {children.length > 0 && (
+        {/* Render children recursively */}
+        {children.length > 0 && branch.isExpanded && (
           <div className="mt-4 relative">
-            {/* Vertical line connecting to children */}
-            {children.length > 1 && (
-              <div className="absolute left-4 top-0 bottom-0 w-0.5 bg-gray-300" />
-            )}
-            <div className="space-y-4">
-              {children.map(child => renderVersionCard(child, branch, depth + 1))}
-            </div>
-          </div>
-        )}
-      </div>
-    );
-  };
-
-  // Render branch column
-  const renderBranchColumn = (branch: VersionBranch) => {
-    const shouldShow = !focusedBranchId || focusedBranchId === branch.id;
-    if (!shouldShow) return null;
-
-    return (
-      <div
-        key={branch.id}
-        className={`flex-shrink-0 bg-gray-50 rounded-lg border border-gray-200 overflow-hidden transition-all ${
-          focusedBranchId === branch.id ? 'w-full' : 'w-96'
-        }`}
-      >
-        {/* Branch Header */}
-        <div className="px-4 py-3 bg-white border-b flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => toggleBranch(branch.id)}
-              className="p-1 hover:bg-gray-100 rounded"
-            >
-              {branch.isExpanded ? (
-                <ChevronDown className="w-4 h-4" />
-              ) : (
-                <ChevronRight className="w-4 h-4" />
-              )}
-            </button>
-            <span className="font-semibold text-gray-800">
-              Branch v{branch.rootVersion.number}
-            </span>
-            {branch.rootVersion.isStarred && (
-              <Star className="w-4 h-4 text-yellow-500 fill-yellow-500" />
-            )}
-          </div>
-          
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => focusBranch(branch.id)}
-              className="p-1 hover:bg-gray-100 rounded"
-              title={focusedBranchId === branch.id ? "Unfocus" : "Focus on this branch"}
-            >
-              {focusedBranchId === branch.id ? (
-                <Minimize2 className="w-4 h-4 text-gray-600" />
-              ) : (
-                <Maximize2 className="w-4 h-4 text-gray-600" />
-              )}
-            </button>
-            <button
-              onClick={() => setBranches(prev => prev.filter(b => b.id !== branch.id))}
-              className="p-1 hover:bg-gray-100 rounded text-red-500"
-              title="Remove branch"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-        
-        {/* Branch Content */}
-        {branch.isExpanded && (
-          <div className="p-4 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 200px)' }}>
-            {renderVersionCard(branch.rootVersion, branch)}
+            {children.map(child => renderVersionCard(child, branch, depth + 1))}
           </div>
         )}
       </div>
@@ -302,64 +554,157 @@ export function ParallelView() {
   };
 
   return (
-    <div className="h-full flex flex-col bg-gray-100">
-      {/* Header */}
-      <div className="bg-white border-b px-6 py-3">
-        <div className="flex items-center justify-between">
+    <div className="h-full bg-gray-50 overflow-auto" ref={containerRef}>
+      <div className="max-w-7xl mx-auto p-6">
+        {/* Header */}
+        <div className="mb-6">
+        <div className="flex items-center justify-between mb-3">
           <div>
-            <h2 className="text-xl font-bold text-gray-800">Parallel Document Tree</h2>
-            <p className="text-sm text-gray-600 mt-1">
-              {branches.length} active branches • Work on multiple versions simultaneously
+            <h2 className="text-2xl font-bold text-black">Parallel Document Tree</h2>
+            <p className="text-gray-600 mt-1">
+              {branches.length} active {branches.length === 1 ? 'version' : 'versions'} • Work on multiple versions simultaneously
             </p>
           </div>
-          
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setViewMode(viewMode === 'tree' ? 'columns' : 'tree')}
-              className="px-3 py-1.5 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-sm"
-            >
-              {viewMode === 'tree' ? 'Column View' : 'Tree View'}
-            </button>
-            <button
-              onClick={() => {
-                const newBranch: VersionBranch = {
-                  id: `branch-${Date.now()}`,
-                  rootVersion: state.versions[0],
-                  children: [],
-                  isExpanded: true,
-                  isFocused: false,
-                  chatInput: '',
-                  isProcessing: false
-                };
-                setBranches([...branches, newBranch]);
-              }}
-              className="flex items-center gap-2 px-4 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-            >
-              <Plus className="w-4 h-4" />
-              Add Branch
-            </button>
-          </div>
         </div>
-      </div>
-      
-      {/* Main Content */}
-      <div 
-        ref={containerRef}
-        className="flex-1 overflow-x-auto overflow-y-auto p-6"
-      >
-        {branches.length === 0 ? (
-          <div className="flex items-center justify-center h-full">
-            <div className="text-center">
-              <GitBranch className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-              <p className="text-gray-600 font-medium">No branches yet</p>
-              <p className="text-sm text-gray-500 mt-1">
-                Create your first branch to start parallel editing
-              </p>
+          
+          {/* Filters */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <Filter className="w-4 h-4 text-gray-500" />
+            
+            <button
+              onClick={() => setCollapseAll(!collapseAll)}
+              className={`px-2 py-1 text-xs rounded transition-colors ${
+                collapseAll 
+                  ? 'bg-purple-100 text-purple-800 border border-purple-300' 
+                  : 'bg-white text-gray-600 border border-gray-300 hover:bg-gray-50'
+              }`}
+            >
+              {collapseAll ? <ChevronRight className="w-3 h-3 inline mr-1" /> : <ChevronDown className="w-3 h-3 inline mr-1" />}
+              {collapseAll ? 'Expand All' : 'Collapse All'}
+            </button>
+            
+            <button
+              onClick={() => setShowOnlyStarred(!showOnlyStarred)}
+              className={`px-2 py-1 text-xs rounded transition-colors ${
+                showOnlyStarred 
+                  ? 'bg-yellow-100 text-yellow-800 border border-yellow-300' 
+                  : 'bg-white text-gray-600 border border-gray-300 hover:bg-gray-50'
+              }`}
+            >
+              <Star className={`w-3 h-3 inline mr-1 ${showOnlyStarred ? 'fill-current' : ''}`} />
+              Starred
+            </button>
+            
+            <button
+              onClick={() => setShowArchived(!showArchived)}
+              className={`px-2 py-1 text-xs rounded transition-colors ${
+                showArchived 
+                  ? 'bg-red-100 text-red-800 border border-red-300' 
+                  : 'bg-white text-gray-600 border border-gray-300 hover:bg-gray-50'
+              }`}
+            >
+              <Archive className={`w-3 h-3 inline mr-1 ${showArchived ? 'fill-current' : ''}`} />
+              Archived
+            </button>
+            
+            {/* Type Filter */}
+            <div className="flex gap-1 ml-2">
+              <button
+                onClick={() => setFilterType('all')}
+                className={`px-2 py-1 text-xs rounded-l transition-colors ${
+                  filterType === 'all'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-white text-gray-600 border border-gray-300 hover:bg-gray-50'
+                }`}
+              >
+                All
+              </button>
+              <button
+                onClick={() => setFilterType('ai')}
+                className={`px-2 py-1 text-xs transition-colors ${
+                  filterType === 'ai'
+                    ? 'bg-purple-600 text-white'
+                    : 'bg-white text-gray-600 border-t border-b border-gray-300 hover:bg-gray-50'
+                }`}
+              >
+                <Bot className="w-3 h-3 inline mr-1" />
+                AI
+              </button>
+              <button
+                onClick={() => setFilterType('manual')}
+                className={`px-2 py-1 text-xs rounded-r transition-colors ${
+                  filterType === 'manual'
+                    ? 'bg-green-600 text-white'
+                    : 'bg-white text-gray-600 border border-gray-300 hover:bg-gray-50'
+                }`}
+              >
+                <Edit3 className="w-3 h-3 inline mr-1" />
+                Manual
+              </button>
+            </div>
+
+            {/* User/Collaborator Filter */}
+            <div className="flex items-center gap-1 ml-2">
+              <User className="w-3 h-3 text-gray-500" />
+              <select
+                value={filterUser}
+                onChange={(e) => setFilterUser(e.target.value)}
+                className="px-2 py-1 text-xs rounded border border-gray-300 bg-white text-gray-600 hover:bg-gray-50"
+              >
+                <option value="all">All Collaborators</option>
+                {state.users?.map(user => (
+                  <option key={user.id} value={user.id}>
+                    {user.name}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
+        </div>
+
+        {/* Branch Grid - Side-by-side layout */}
+        {branches.length === 0 ? (
+          <div className="text-center py-12">
+            <h3 className="text-lg font-semibold text-gray-600 mb-2">No versions found</h3>
+            <p className="text-gray-500 mb-4">Create a document or upload content to get started.</p>
+            <button
+              onClick={() => setViewMode('document')}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            >
+              Go to Document View
+            </button>
+          </div>
         ) : (
-          <div className="flex gap-6 min-h-full">
-            {branches.map(branch => renderBranchColumn(branch))}
+          <div className="flex gap-4 overflow-x-auto pb-4 px-4">
+            {branches.filter(b => !shouldHideBranch(b)).map(branch => (
+            <div key={branch.id} className="flex-shrink-0" style={{ width: '450px' }}>
+              {/* Version Header */}
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <h3 className="text-lg font-semibold text-black">
+                    {branch.rootVersion.number.includes('b') ? `V${branch.rootVersion.number.replace('b', 'B')}` : `V${branch.rootVersion.number}`}
+                  </h3>
+                </div>
+                <button
+                  onClick={() => toggleBranch(branch.id)}
+                  className="p-1 hover:bg-gray-200 rounded"
+                >
+                  {branch.isExpanded ? (
+                    <ChevronDown className="w-5 h-5 text-gray-600" />
+                  ) : (
+                    <ChevronRight className="w-5 h-5 text-gray-600" />
+                  )}
+                </button>
+              </div>
+
+              {/* Branch Content */}
+              {branch.isExpanded && (
+                <div className="relative">
+                  {renderVersionCard(branch.rootVersion, branch)}
+                </div>
+              )}
+            </div>
+          ))}
           </div>
         )}
       </div>

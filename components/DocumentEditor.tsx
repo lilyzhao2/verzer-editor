@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useEditor } from '@/contexts/EditorContext';
-import { CheckCircle, Save, Upload } from 'lucide-react';
+import { CheckCircle, Save, Upload, Printer, Plus, Minus, FileText, Users } from 'lucide-react';
 import { RichTextEditor } from './RichTextEditor';
 import { ProjectSetup } from './ProjectSetup';
 import { DocumentUpload } from './DocumentUpload';
@@ -13,18 +13,21 @@ export function DocumentEditor() {
     updateVersion, 
     updateVersionNote,
     getCurrentVersion, 
-    getCompareVersion, 
     createVersion, 
     createCheckpoint,
     updateTabDirtyState
   } = useEditor();
   const currentVersion = getCurrentVersion();
-  const compareVersion = getCompareVersion();
   const [localContent, setLocalContent] = useState(currentVersion?.content || '');
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [editingNote, setEditingNote] = useState(false);
   const [localNote, setLocalNote] = useState(currentVersion?.note || '');
   const [showUpload, setShowUpload] = useState(false);
+  const [zoomLevel, setZoomLevel] = useState(100);
+  const [isPrintView, setIsPrintView] = useState(true); // Auto-enable print view
+  const [documentName, setDocumentName] = useState('Untitled');
+  const [showUserBranchModal, setShowUserBranchModal] = useState(false);
+  const [newUserName, setNewUserName] = useState('');
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const isUpdatingRef = useRef(false);
 
@@ -82,38 +85,48 @@ export function DocumentEditor() {
     }
   };
 
-  const getNextBranchNumber = () => {
+  const getNextVariationNumber = () => {
     if (!currentVersion) return '';
     
-    // Get the root version number (e.g., "1" from "1.2")
-    const rootNumber = currentVersion.number.split('.')[0];
+    // Get the root version number (e.g., "1" from "1b2")
+    const rootNumber = currentVersion.number.split('b')[0].split('.')[0];
     
-    // Find all branches of this root version
-    const branches = state.versions.filter(v => 
-      v.number.startsWith(rootNumber + '.') && 
-      v.number.split('.').length === 2
+    // Find all variations of this root version
+    const variations = state.versions.filter(v => 
+      v.number.startsWith(rootNumber + 'b') || 
+      v.number.startsWith(rootNumber + '.')
     );
     
-    const nextBranch = branches.length + 1;
-    return `${rootNumber}.${nextBranch}`;
+    const nextVariation = variations.length + 1;
+    return `${rootNumber}b${nextVariation}`;
   };
 
   const getNextRootVersion = () => {
-    const rootVersions = state.versions.filter(v => !v.number.includes('.'));
+    const rootVersions = state.versions.filter(v => !v.number.includes('b'));
     return rootVersions.length.toString();
   };
 
   const handleDocumentUploaded = (content: string, fileName?: string) => {
+    // Create v1 when uploading a document
+    const prompt = `📄 Document upload: ${fileName || 'uploaded file'}`;
+    createVersion(content, prompt, 'v0', `Uploaded: ${fileName || 'document'}`);
+    
+    // Set document name from uploaded file
+    if (fileName) {
+      const nameWithoutExt = fileName.replace(/\.[^/.]+$/, ""); // Remove file extension
+      setDocumentName(nameWithoutExt);
+    }
+    
     setLocalContent(content);
-    setHasUnsavedChanges(true);
+    setHasUnsavedChanges(false); // No unsaved changes since we created a version
     setShowUpload(false);
   };
 
-  const handleSaveAsBranch = () => {
+  const handleSaveAsVariation = () => {
     if (hasUnsavedChanges && currentVersion) {
-      // Human manual save creates a branch (v1.1, v2.1, etc)
+      // Human manual save creates a variation (v1b1, v2b1, etc)
       const prompt = `✏️ Manual edits to v${currentVersion.number}`;
-      createVersion(localContent, prompt, currentVersion.id, null); // Branch from current
+      createVersion(localContent, prompt, currentVersion.id, null); // Variation from current
       setHasUnsavedChanges(false);
       
       if (saveTimeoutRef.current) {
@@ -135,153 +148,171 @@ export function DocumentEditor() {
     }
   };
 
-  const renderDiffView = () => {
-    if (!currentVersion || !compareVersion) return null;
-
-    return (
-      <div className="h-full flex flex-col bg-white">
-        {/* Header */}
-        <div className="px-6 py-3 border-b bg-gray-50 flex items-center justify-between">
-          <div>
-            <h3 className="text-lg font-semibold text-gray-800">
-              Comparing v{currentVersion.number} → v{compareVersion.number}
-            </h3>
-            <p className="text-sm text-gray-600 mt-1">
-              Side-by-side comparison
-            </p>
-          </div>
-          <button
-            onClick={() => {
-              if (compareVersion) {
-                createVersion(compareVersion.content, `Accepted all changes from v${compareVersion.number}`);
-              }
-            }}
-            className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
-          >
-            <CheckCircle className="w-4 h-4" />
-            Accept All Changes
-          </button>
-        </div>
-
-        {/* Side-by-side view */}
-        <div className="flex-1 flex overflow-hidden">
-          {/* Left: Current Version */}
-          <div className="flex-1 flex flex-col border-r border-gray-200">
-            <div className="px-4 py-2 bg-blue-50 border-b border-blue-200 font-semibold text-sm text-blue-800">
-              v{currentVersion.number} (Current)
-            </div>
-            <div className="flex-1 overflow-auto p-6 bg-blue-50/30">
-              <div 
-                className="prose prose-sm max-w-none"
-                dangerouslySetInnerHTML={{ __html: currentVersion.content }}
-              />
-            </div>
-          </div>
-
-          {/* Right: Compare Version */}
-          <div className="flex-1 flex flex-col">
-            <div className="px-4 py-2 bg-purple-50 border-b border-purple-200 font-semibold text-sm text-purple-800">
-              v{compareVersion.number} (Comparing)
-            </div>
-            <div className="flex-1 overflow-auto p-6 bg-purple-50/30">
-              <div 
-                className="prose prose-sm max-w-none"
-                dangerouslySetInnerHTML={{ __html: compareVersion.content }}
-              />
-            </div>
-          </div>
-        </div>
-      </div>
-    );
+  const handleCreateUserBranch = () => {
+    if (!newUserName.trim()) return;
+    
+    if (currentVersion) {
+      const prompt = `👤 ${newUserName}'s version based on v${currentVersion.number}`;
+      // Create custom version ID with user name: v1b1_tony
+      const userName = newUserName.toLowerCase().replace(/\s+/g, '');
+      const customId = `v${Date.now()}_${userName}`;
+      createVersion(localContent, prompt, currentVersion.id, `${newUserName}'s edits`, customId);
+      setShowUserBranchModal(false);
+      setNewUserName('');
+    }
   };
 
 
-  if (compareVersion) {
-    return renderDiffView();
-  }
-
   return (
     <div className="h-full flex flex-col overflow-hidden">
-      <div className="px-6 py-2 border-b bg-gray-50 flex-shrink-0">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <h2 className="text-sm font-medium text-gray-800 flex items-center gap-2">
-              v{currentVersion?.number}
+      {/* Main Header - All on one line */}
+      <div className="px-4 py-3 border-b bg-gray-50 flex-shrink-0">
+        <div className="flex items-center justify-between gap-4">
+          {/* Left: Version Info */}
+          <div className="flex items-center gap-3">
+            <h2 className="text-lg font-semibold text-black">
+              V{currentVersion?.number.toUpperCase()}
               {hasUnsavedChanges && (
-                <span className="text-xs text-amber-600">(edited)</span>
+                <span className="ml-2 w-3 h-3 bg-amber-500 rounded-full inline-block" title="Unsaved changes"></span>
               )}
             </h2>
             
-            {/* Compact Note */}
+            {/* Note */}
             {currentVersion?.note && (
-              <span className="text-xs text-gray-500 italic">
+              <span className="text-sm text-gray-600 italic truncate max-w-xs">
                 {currentVersion.note}
               </span>
             )}
           </div>
           
-          {/* Save Actions */}
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setShowUpload(true)}
-              className="flex items-center gap-2 px-3 py-1.5 bg-purple-600 text-white text-sm rounded-lg hover:bg-purple-700 transition-colors"
-              title="Upload document"
-            >
-              <Upload className="w-4 h-4" />
-              Upload
-            </button>
+          {/* Right: All Controls */}
+          <div className="flex items-center gap-3">
+            {/* Document Name Input - Only show for v0 */}
+            {currentVersion?.number === '0' && (
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={documentName}
+                  onChange={(e) => setDocumentName(e.target.value)}
+                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm font-medium text-black bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="Document name"
+                />
+                <button
+                  onClick={() => setShowUpload(true)}
+                  className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white text-sm font-medium rounded-lg hover:bg-purple-700 transition-colors"
+                  title="Upload document"
+                >
+                  <Upload className="w-4 h-4" />
+                  Upload
+                </button>
+              </div>
+            )}
+
+            {/* Save Actions - Only show when there are unsaved changes */}
             {hasUnsavedChanges && (
               <div className="flex items-center gap-2">
                 <button
                   onClick={handleOverwriteVersion}
-                  className="flex items-center gap-2 px-3 py-1.5 bg-gray-600 text-white text-sm rounded-lg hover:bg-gray-700 transition-colors"
+                  className="flex items-center gap-2 px-3 py-2 bg-gray-600 text-white text-sm font-medium rounded-lg hover:bg-gray-700 transition-colors"
                   title="Overwrite current version"
                 >
                   <Save className="w-4 h-4" />
-                  Overwrite v{currentVersion?.number}
+                  Save
                 </button>
                 <button
-                  onClick={handleSaveAsBranch}
-                  className="flex items-center gap-2 px-3 py-1.5 bg-amber-600 text-white text-sm rounded-lg hover:bg-amber-700 transition-colors"
-                  title={`Save as version ${getNextBranchNumber()}`}
+                  onClick={handleSaveAsVariation}
+                  className="px-3 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 transition-colors"
+                  title={`Save as variation ${getNextVariationNumber()}`}
                 >
-                  <Save className="w-4 h-4" />
-                  Save as v{getNextBranchNumber()}
+                  V{getNextVariationNumber().toUpperCase()}
                 </button>
                 <button
                   onClick={handleSaveAsNewVersion}
-                  className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors"
-                  title={`Save as version ${getNextRootVersion()}`}
+                  className="px-3 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
+                  title={`Save as new version ${getNextRootVersion()}`}
                 >
-                  <Save className="w-4 h-4" />
-                  Save as v{getNextRootVersion()}
+                  V{getNextRootVersion()}
                 </button>
               </div>
             )}
             
-            {/* Checkpoint indicator */}
-            {currentVersion && currentVersion.checkpoints.length > 0 && (
+            {/* Collaboration */}
+            <button
+              onClick={() => setShowUserBranchModal(true)}
+              className="flex items-center gap-2 px-3 py-2 bg-purple-600 text-white text-sm font-medium rounded-lg hover:bg-purple-700 transition-colors"
+              title="Create a branch for another user to collaborate"
+            >
+              <Users className="w-4 h-4" />
+              New User Branch
+            </button>
+
+            {/* Export Options */}
+            <div className="flex items-center gap-2 border-l pl-3">
               <button
-                className="text-xs text-amber-600 hover:text-amber-700 font-medium"
-                title="View auto-save checkpoints"
+                onClick={() => {
+                  const blob = new Blob([localContent], { type: 'text/html' });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  // Create filename with version number: untitled_v1b2.doc
+                  const versionStr = currentVersion?.number || '0';
+                  const cleanVersion = versionStr.replace(/\./g, '').toLowerCase(); // v1b2 -> v1b2
+                  a.download = `${documentName}_${cleanVersion}.doc`;
+                  a.click();
+                }}
+                className="flex items-center gap-2 px-3 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200 transition-colors"
+                title="Download document"
               >
-                {currentVersion.checkpoints.length} checkpoint{currentVersion.checkpoints.length !== 1 ? 's' : ''}
+                <FileText className="w-4 h-4" />
+                Download
               </button>
-            )}
-            <span className="text-sm text-gray-500">
-              {currentVersion?.timestamp && new Date(currentVersion.timestamp).toLocaleString()}
-            </span>
+              <button
+                onClick={() => window.print()}
+                className="flex items-center gap-2 px-3 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
+                title="Print/Save as PDF"
+              >
+                <Printer className="w-4 h-4" />
+                Print
+              </button>
+            </div>
+
+            {/* Zoom Control */}
+            <select
+              value={zoomLevel}
+              onChange={(e) => setZoomLevel(Number(e.target.value))}
+              className="px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm font-medium text-black"
+            >
+              <option value={50}>50%</option>
+              <option value={75}>75%</option>
+              <option value={90}>90%</option>
+              <option value={100}>100%</option>
+              <option value={125}>125%</option>
+              <option value={150}>150%</option>
+              <option value={200}>200%</option>
+            </select>
           </div>
         </div>
       </div>
-      
-      <div className="flex-1 overflow-hidden">
-        <RichTextEditor
-          content={localContent}
-          onChange={handleContentChange}
-          onSave={handleOverwriteVersion}
-          placeholder="Start writing your document here..."
-        />
+
+      {/* Editor */}
+      <div 
+        className="flex-1 overflow-hidden"
+        style={{ 
+          transform: `scale(${zoomLevel / 100})`,
+          transformOrigin: 'top left',
+          width: `${100 / (zoomLevel / 100)}%`,
+          height: `${100 / (zoomLevel / 100)}%`
+        }}
+      >
+        <div className={`h-full ${isPrintView ? 'print-view' : ''}`}>
+          <RichTextEditor
+            content={localContent}
+            onChange={handleContentChange}
+            onSave={handleOverwriteVersion}
+            placeholder="Start writing your document here..."
+            isPrintView={isPrintView}
+          />
+        </div>
       </div>
 
       {/* Upload Modal */}
@@ -301,6 +332,56 @@ export function DocumentEditor() {
               mode="document"
               onContentExtracted={handleDocumentUploaded}
             />
+          </div>
+        </div>
+      )}
+
+      {/* User Branch Modal */}
+      {showUserBranchModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-black">Create User Branch</h3>
+              <button
+                onClick={() => {
+                  setShowUserBranchModal(false);
+                  setNewUserName('');
+                }}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                ✕
+              </button>
+            </div>
+            <p className="text-sm text-gray-600 mb-4">
+              Create a branch for another user to collaborate on this document
+            </p>
+            <input
+              type="text"
+              value={newUserName}
+              onChange={(e) => setNewUserName(e.target.value)}
+              onKeyPress={(e) => e.key === 'Enter' && handleCreateUserBranch()}
+              placeholder="Enter collaborator's name"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-black mb-4"
+              autoFocus
+            />
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => {
+                  setShowUserBranchModal(false);
+                  setNewUserName('');
+                }}
+                className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleCreateUserBranch}
+                disabled={!newUserName.trim()}
+                className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Create Branch
+              </button>
+            </div>
           </div>
         </div>
       )}

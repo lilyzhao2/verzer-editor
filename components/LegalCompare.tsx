@@ -282,7 +282,7 @@ export function LegalCompare() {
                   </option>
                 ))}
               </select>
-              <span className="text-gray-400">→</span>
+              <span className="text-black">→</span>
               <select 
                 value={rightVersionId}
                 onChange={(e) => setRightVersionId(e.target.value)}
@@ -354,7 +354,7 @@ export function LegalCompare() {
               <div className="sticky top-0 bg-gray-50 border-b px-4 py-2 z-10">
                 <span className="text-sm font-medium">
                   Version {leftVersion?.number} 
-                  <span className="ml-2 text-xs text-gray-500">
+                  <span className="ml-2 text-xs text-black">
                     {leftVersion?.prompt?.startsWith('✏️') ? '(Manual Edit)' : '(AI Generated)'}
                   </span>
                 </span>
@@ -367,7 +367,7 @@ export function LegalCompare() {
               <div className="sticky top-0 bg-gray-50 border-b px-4 py-2 z-10">
                 <span className="text-sm font-medium">
                   Version {rightVersion?.number}
-                  <span className="ml-2 text-xs text-gray-500">
+                  <span className="ml-2 text-xs text-black">
                     {rightVersion?.prompt?.startsWith('✏️') ? '(Manual Edit)' : '(AI Generated)'}
                   </span>
                 </span>
@@ -385,7 +385,7 @@ export function LegalCompare() {
             {/* Panel Header */}
             <div className="px-4 py-3 border-b">
               <h3 className="font-semibold text-gray-800">Change Log</h3>
-              <div className="mt-2 text-xs text-gray-600">
+              <div className="mt-2 text-xs text-black">
                 {changes.length} total changes
               </div>
             </div>
@@ -426,7 +426,7 @@ export function LegalCompare() {
                   }`}
                 >
                   <div className="flex items-start gap-3">
-                    <span className="text-sm text-gray-500 font-mono">
+                    <span className="text-sm text-black font-mono">
                       {idx + 1}.
                     </span>
                     <div className="flex-1">
@@ -444,7 +444,7 @@ export function LegalCompare() {
                       </div>
                       
                       {/* Content Preview */}
-                      <div className="text-sm text-gray-700">
+                      <div className="text-sm text-black">
                         {change.type === 'removed' && (
                           <span className="line-through text-red-600">
                             {change.leftContent?.substring(0, 50)}
@@ -471,25 +471,25 @@ export function LegalCompare() {
                   <div className="text-lg font-bold text-green-600">
                     +{changes.filter(c => c.type === 'added').length}
                   </div>
-                  <div className="text-xs text-gray-500">Added</div>
+                  <div className="text-xs text-black">Added</div>
                 </div>
                 <div>
                   <div className="text-lg font-bold text-red-600">
                     -{changes.filter(c => c.type === 'removed').length}
                   </div>
-                  <div className="text-xs text-gray-500">Removed</div>
+                  <div className="text-xs text-black">Removed</div>
                 </div>
                 <div>
                   <div className="text-lg font-bold text-amber-600">
                     ~{changes.filter(c => c.type === 'modified').length}
                   </div>
-                  <div className="text-xs text-gray-500">Modified</div>
+                  <div className="text-xs text-black">Modified</div>
                 </div>
               </div>
               
               {/* Author breakdown */}
               <div className="mt-3 pt-3 border-t">
-                <div className="text-xs text-gray-600 space-y-1">
+                <div className="text-xs text-black space-y-1">
                   <div className="flex justify-between">
                     <span>AI Changes:</span>
                     <span className="font-medium">{changes.filter(c => c.author === 'AI').length}</span>

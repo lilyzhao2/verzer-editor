@@ -9,6 +9,7 @@ interface EditorContextType {
   updateVersion: (versionId: string, content: string) => void;
   updateVersionNote: (versionId: string, note: string) => void;
   toggleVersionStar: (versionId: string) => void;
+  toggleVersionArchive: (versionId: string) => void;
   updateProjectConfig: (config: ProjectConfig) => void;
   saveProjectConfig: (config: Omit<ProjectConfig, 'id' | 'createdAt'>) => void;
   setActiveConfig: (configId: string) => void;
@@ -27,7 +28,7 @@ interface EditorContextType {
   setCompareVersion: (versionId: string | null) => void;
   getCurrentVersion: () => Version | undefined;
   getCompareVersion: () => Version | undefined;
-  applyAIEdit: (prompt: string, options?: { autoOpenInParallel?: boolean }) => Promise<void>;
+  applyAIEdit: (prompt: string, options?: { autoOpenInParallel?: boolean; parentId?: string }) => Promise<void>;
   createAIVariations: (prompts: string[]) => Promise<any>;
   saveManualEdit: (content: string) => Promise<void>;
   setSelectedModel: (model: AIModel) => void;
@@ -36,13 +37,16 @@ interface EditorContextType {
   acceptAIEdit: () => void;
   rejectAIEdit: () => void;
   acceptPartialAIEdit: (content: string) => void;
-  addComment: (versionId: string, text: string, position?: { paragraph?: number; line?: number }) => void;
+  addComment: (versionId: string, userId: string, content: string, position?: { start: number; end: number }) => void;
   updateComment: (commentId: string, text: string) => void;
   deleteComment: (commentId: string) => void;
   resolveComment: (commentId: string) => void;
   addProjectNote: (title: string, content: string, relatedVersions?: string[], tags?: string[]) => void;
   updateProjectNote: (noteId: string, updates: Partial<ProjectNote>) => void;
   deleteProjectNote: (noteId: string) => void;
+  toggleDebugMode: () => void;
+  setLastSystemPrompt: (prompt: string) => void;
+  addChatMessage: (prompt: string, response: string) => void;
 }
 
 const EditorContext = createContext<EditorContextType | undefined>(undefined);
@@ -67,6 +71,8 @@ export function EditorProvider({ children }: { children: React.ReactNode }) {
       name: 'Default Configuration',
       projectName: 'My Document',
       description: '',
+      examples: [],
+      learnedPatterns: '',
       styleGuide: '',
       tone: '',
       audience: '',
@@ -84,10 +90,19 @@ export function EditorProvider({ children }: { children: React.ReactNode }) {
       isDirty: false
     };
 
+    // Initialize default user
+    const defaultUser = {
+      id: 'user-default',
+      name: 'You',
+      color: '#3B82F6' // blue
+    };
+
     return {
       versions: [initialVersion],
       currentVersionId: 'v0',
       compareVersionId: null,
+      users: [defaultUser],
+      currentUserId: 'user-default',
       chatHistory: [],
       comments: [],
       projectNotes: [],
@@ -99,7 +114,9 @@ export function EditorProvider({ children }: { children: React.ReactNode }) {
       tabs: [initialTab],
       activeTabId: 'tab-v0',
       activeTodoSession: null,
-      todoHistory: []
+      todoHistory: [],
+      debugMode: false,
+      lastSystemPrompt: null
     };
   });
 
@@ -110,10 +127,50 @@ export function EditorProvider({ children }: { children: React.ReactNode }) {
       if (saved) {
         try {
           const parsed = JSON.parse(saved);
+          // Migrate project configs to ensure they have the new fields
+          const migratedConfigs = (parsed.projectConfigs || []).map((config: any) => ({
+            ...config,
+            examples: config.examples || [],
+            learnedPatterns: config.learnedPatterns || '',
+            promptTemplate: config.promptTemplate || '',
+            templateVariables: config.templateVariables || {}
+          }));
+          
+          // If no configs exist, create a default one
+          if (migratedConfigs.length === 0) {
+            migratedConfigs.push({
+              id: 'config-default',
+              name: 'Default Configuration',
+              projectName: 'My Document',
+              description: '',
+              examples: [],
+              learnedPatterns: '',
+              styleGuide: '',
+              tone: '',
+              audience: '',
+              references: [],
+              constraints: '',
+              additionalContext: '',
+              createdAt: new Date(),
+              isActive: true
+            });
+          }
+          
+          // Initialize users if not present
+          const defaultUser = {
+            id: 'user-default',
+            name: 'You',
+            color: '#3B82F6'
+          };
+          
           setState({
             ...parsed,
+            users: parsed.users || [defaultUser],
+            currentUserId: parsed.currentUserId || 'user-default',
             comments: parsed.comments || [],
             projectNotes: parsed.projectNotes || [],
+            projectConfigs: migratedConfigs,
+            activeConfigId: parsed.activeConfigId || 'config-default',
             versions: parsed.versions.map((v: any) => ({
               ...v,
               timestamp: new Date(v.timestamp),
@@ -164,18 +221,33 @@ export function EditorProvider({ children }: { children: React.ReactNode }) {
       
       if (isRootLevelVersion || !parent || parent.isOriginal) {
         // Creating root-level version: v1, v2, v3...
-        const rootVersions = prev.versions.filter(v => typeof v.number === 'string' && !v.number.includes('.'));
+        const rootVersions = prev.versions.filter(v => 
+          typeof v.number === 'string' && !v.number.includes('b')
+        );
         newVersionNumber = rootVersions.length.toString();
       } else {
-        // Creating branch: ONLY single-level branches (v1.1, v1.2, not v1.1.1)
-        // Always branch from the root version of the current version
-        const rootNumber = typeof parent.number === 'string' ? parent.number.split('.')[0] : String(parent.number).split('.')[0]; // Get "1" from "1.2"
+        // Creating branch: v1b1, v1b2, v2b1, etc.
+        // Get the root version number (remove any existing branch suffix and user suffix)
+        const rootNumber = typeof parent.number === 'string' 
+          ? parent.number.split('b')[0].split('_')[0]
+          : String(parent.number).split('b')[0].split('_')[0]; // Get "1" from "1b2" or "1b1_tony"
+        
+        // Find all branches of this root version (excluding user-specific branches)
         const branches = prev.versions.filter(v => 
-          typeof v.number === 'string' && v.number.startsWith(rootNumber + '.') && 
-          v.number.split('.').length === 2 // Only single-level branches
+          typeof v.number === 'string' && 
+          v.number.startsWith(rootNumber + 'b') &&
+          !v.number.includes('_') // Exclude user branches from count
         );
         const nextBranch = branches.length + 1;
-        newVersionNumber = `${rootNumber}.${nextBranch}`;
+        
+        // Check if this is a user branch (customId will contain username)
+        if (customId && customId.includes('_')) {
+          // Extract username from customId (format: vTIMESTAMP_username)
+          const userName = customId.split('_')[1];
+          newVersionNumber = `${rootNumber}b${nextBranch}_${userName}`;
+        } else {
+          newVersionNumber = `${rootNumber}b${nextBranch}`;
+        }
       }
       
       newVersionId = customId || `v${newVersionNumber}`;
@@ -231,6 +303,15 @@ export function EditorProvider({ children }: { children: React.ReactNode }) {
       ...prev,
       versions: prev.versions.map(v =>
         v.id === versionId ? { ...v, isStarred: !v.isStarred } : v
+      ),
+    }));
+  }, []);
+
+  const toggleVersionArchive = useCallback((versionId: string) => {
+    setState(prev => ({
+      ...prev,
+      versions: prev.versions.map(v =>
+        v.id === versionId ? { ...v, isArchived: !v.isArchived } : v
       ),
     }));
   }, []);
@@ -544,10 +625,23 @@ Break this into 3-7 clear tasks. Be specific and actionable. Return ONLY the JSO
   }, []);
 
   const setCurrentVersion = useCallback((versionId: string) => {
-    setState(prev => ({
-      ...prev,
-      currentVersionId: versionId,
-    }));
+    setState(prev => {
+      // Find the version to get its number for the tab name
+      const version = prev.versions.find(v => v.id === versionId);
+      
+      // Update the active tab's name if it exists
+      const updatedTabs = prev.tabs.map(tab => 
+        tab.id === prev.activeTabId && version
+          ? { ...tab, name: `V${version.number.toUpperCase()}` }
+          : tab
+      );
+      
+      return {
+        ...prev,
+        currentVersionId: versionId,
+        tabs: updatedTabs
+      };
+    });
   }, []);
 
   const setCompareVersion = useCallback((versionId: string | null) => {
@@ -573,50 +667,194 @@ Break this into 3-7 clear tasks. Be specific and actionable. Return ONLY the JSO
     }));
   }, []);
 
-  const applyAIEdit = useCallback(async (prompt: string, options?: { autoOpenInParallel?: boolean }) => {
+  const toggleDebugMode = useCallback(() => {
+    setState(prev => ({
+      ...prev,
+      debugMode: !prev.debugMode,
+    }));
+  }, []);
+
+  const setLastSystemPrompt = useCallback((prompt: string) => {
+    setState(prev => ({
+      ...prev,
+      lastSystemPrompt: prompt,
+    }));
+  }, []);
+
+  const addChatMessage = useCallback((prompt: string, response: string) => {
+    const newChatMessage: ChatMessage = {
+      id: `chat-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      prompt,
+      response,
+      versionCreated: '', // Chat messages don't create versions
+      timestamp: new Date(),
+    };
+    
+    setState(prev => ({
+      ...prev,
+      chatHistory: [...prev.chatHistory, newChatMessage],
+    }));
+  }, []);
+
+  // Retry function for API calls
+  const retryApiCall = async (apiCall: () => Promise<Response>, maxRetries = 3, baseDelay = 1000) => {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const response = await apiCall();
+        
+        // If successful, return immediately
+        if (response.ok) {
+          return response;
+        }
+        
+        // If it's a 529 error and we have retries left, wait and retry
+        if (response.status === 529 && attempt < maxRetries) {
+          const delay = baseDelay * Math.pow(2, attempt - 1); // Exponential backoff
+          console.log(`API returned 529, retrying in ${delay}ms (attempt ${attempt}/${maxRetries})`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+          continue;
+        }
+        
+        // If it's not a 529 error or we're out of retries, throw the error
+        const errorText = await response.text();
+        throw new Error(`API Error (${response.status}): ${errorText}`);
+        
+      } catch (error) {
+        if (attempt === maxRetries) {
+          throw error;
+        }
+        
+        // For network errors, also retry
+        if (error instanceof TypeError && error.message.includes('fetch')) {
+          const delay = baseDelay * Math.pow(2, attempt - 1);
+          console.log(`Network error, retrying in ${delay}ms (attempt ${attempt}/${maxRetries})`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+          continue;
+        }
+        
+        throw error;
+      }
+    }
+  };
+
+  const applyAIEdit = useCallback(async (prompt: string, options?: { autoOpenInParallel?: boolean; parentId?: string }) => {
     const currentVersion = getCurrentVersion();
     if (!currentVersion) return;
 
     try {
-      // Get active project config safely
-      const projectConfig = state.projectConfigs?.find(c => c.id === state.activeConfigId);
+      // Get the single project context (always use the first/only config)
+      const projectConfig = state.projectConfigs?.[0];
       
-      const response = await fetch('/api/anthropic', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          prompt,
-          content: currentVersion.content,
-          model: state.selectedModel,
-          projectConfig,
-        }),
+      // Debug logging
+      console.log('=== APPLY AI EDIT DEBUG ===');
+      console.log('Active Config ID:', state.activeConfigId);
+      console.log('Project Configs:', state.projectConfigs?.length || 0);
+      console.log('Found Project Config:', !!projectConfig);
+      if (projectConfig) {
+        console.log('Examples Count:', projectConfig.examples?.length || 0);
+        console.log('Has Learned Patterns:', !!projectConfig.learnedPatterns);
+        console.log('Learned Patterns Length:', projectConfig.learnedPatterns?.length || 0);
+        console.log('Learned Patterns Preview:', projectConfig.learnedPatterns?.substring(0, 100) || 'None');
+      }
+      console.log('==========================');
+      
+      // Store a readable system prompt for debugging
+      const readablePrompt = projectConfig ? 
+        `🎯 PROJECT: ${projectConfig.projectName || 'Untitled'}
+📝 DESCRIPTION: ${projectConfig.description || 'No description'}
+📚 EXAMPLES: ${projectConfig.examples?.length || 0} documents uploaded
+🎨 LEARNED PATTERNS: ${projectConfig.learnedPatterns ? 'Yes (' + projectConfig.learnedPatterns.length + ' chars)' : 'No'}
+✍️ STYLE GUIDE: ${projectConfig.styleGuide || 'None'}
+🎭 TONE: ${projectConfig.tone || 'Not specified'}
+👥 AUDIENCE: ${projectConfig.audience || 'Not specified'}
+⚠️ CONSTRAINTS: ${projectConfig.constraints || 'None'}
+
+💬 USER REQUEST: ${prompt}
+
+📄 DOCUMENT PREVIEW: ${currentVersion.content.substring(0, 200)}...` :
+        `💬 USER REQUEST: ${prompt}
+
+📄 DOCUMENT PREVIEW: ${currentVersion.content.substring(0, 200)}...`;
+      
+      setLastSystemPrompt(readablePrompt);
+
+      const response = await retryApiCall(async () => {
+        return fetch('/api/anthropic', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            prompt,
+            content: currentVersion.content,
+            model: state.selectedModel,
+            projectConfig,
+          }),
+        });
       });
 
-      if (!response.ok) {
+      if (!response || !response.ok) {
         let errorMessage = 'Failed to get AI response';
-        try {
-          const error = await response.json();
-          errorMessage = error.error || errorMessage;
-        } catch (e) {
-          const errorText = await response.text();
-          errorMessage = `API Error (${response.status}): ${errorText}`;
+        if (response) {
+          try {
+            const error = await response.json();
+            errorMessage = error.error || errorMessage;
+          } catch (e) {
+            const errorText = await response.text();
+            errorMessage = `API Error (${response.status}): ${errorText}`;
+          }
         }
         console.error('AI API Error:', errorMessage);
         throw new Error(errorMessage);
       }
 
-      const { editedContent, explanation } = await response.json();
+      const responseData = await response.json();
+      
+      // Check if we got a valid response
+      if (!responseData.editedContent) {
+        console.error('AI response missing editedContent:', responseData);
+        throw new Error('AI did not return edited content. Please try again.');
+      }
+      
+      const { editedContent, explanation } = responseData;
+      
+      // Validate that we have content
+      if (!editedContent || editedContent.trim() === '') {
+        console.error('AI returned empty content');
+        throw new Error('AI returned empty content. Please try a different prompt.');
+      }
+      
+      // Check if content was significantly reduced (potential deletion issue)
+      const originalLength = currentVersion.content.replace(/<[^>]*>/g, '').length;
+      const newLength = editedContent.replace(/<[^>]*>/g, '').length;
+      const reductionRatio = newLength / originalLength;
+      
+      if (reductionRatio < 0.3) {
+        console.warn('AI may have deleted too much content:', {
+          originalLength,
+          newLength,
+          reductionRatio
+        });
+        // Don't throw error, but log warning
+      }
+      
+      console.log('AI Edit successful:', {
+        originalLength,
+        newLength,
+        reductionRatio,
+        hasExplanation: !!explanation
+      });
       
       // Calculate what the new version number will be
       // Since AI creates root versions, it's the count of root versions
-      const rootVersions = state.versions?.filter(v => typeof v.number === 'string' && !v.number.includes('.')) || [];
+      const rootVersions = state.versions?.filter(v => typeof v.number === 'string' && !v.number.includes('b')) || [];
       const newVersionNumber = rootVersions.length.toString();
       
       // Create the new version directly
+      // Use provided parentId or default to 'v0' for root versions
+      const parentId = options?.parentId || 'v0';
       const newVersionId = `v${Date.now()}`;
-      createVersion(editedContent, prompt, undefined, undefined, newVersionId);
+      createVersion(editedContent, prompt, parentId, undefined, newVersionId);
       
       // If in parallel mode and autoOpen is true, open the new version in a tab
       if (options?.autoOpenInParallel && state.viewMode === 'parallel') {
@@ -755,11 +993,12 @@ Break this into 3-7 clear tasks. Be specific and actionable. Return ONLY the JSO
   }, [state.activeTodoSession, state.versions, updateTodoTask, applyAIEdit]);
 
   // Comment functions
-  const addComment = useCallback((versionId: string, text: string, position?: { paragraph?: number; line?: number }) => {
+  const addComment = useCallback((versionId: string, userId: string, content: string, position?: { start: number; end: number }) => {
     const newComment: Comment = {
       id: `comment-${Date.now()}`,
+      userId,
       versionId,
-      text,
+      content,
       timestamp: new Date(),
       position,
       resolved: false,
@@ -835,6 +1074,7 @@ Break this into 3-7 clear tasks. Be specific and actionable. Return ONLY the JSO
         updateVersion,
         updateVersionNote,
         toggleVersionStar,
+        toggleVersionArchive,
         updateProjectConfig,
         saveProjectConfig,
         setActiveConfig,
@@ -869,6 +1109,9 @@ Break this into 3-7 clear tasks. Be specific and actionable. Return ONLY the JSO
         addProjectNote,
         updateProjectNote,
         deleteProjectNote,
+        toggleDebugMode,
+        setLastSystemPrompt,
+        addChatMessage,
       }}
     >
       {children}
