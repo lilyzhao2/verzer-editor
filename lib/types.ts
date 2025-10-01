@@ -18,6 +18,8 @@ export interface ProjectConfig {
   references?: string[]; // Style reference examples
   constraints?: string; // Any constraints or rules
   additionalContext?: string; // Any other context for AI
+  promptTemplate?: string; // Custom prompt template with variables
+  templateVariables?: Record<string, string>; // Variables that can be used in the template
   createdAt: Date;
   isActive?: boolean; // Currently active configuration
 }
@@ -51,7 +53,7 @@ export interface ChatMessage {
 
 export type AIModel = 'claude-3-5-haiku-20241022' | 'claude-3-5-sonnet-20241022';
 
-export type ViewMode = 'context' | 'document' | 'iterate' | 'compare';
+export type ViewMode = 'context' | 'document' | 'iterate' | 'compare' | 'parallel';
 
 export interface Comment {
   id: string;
@@ -85,6 +87,26 @@ export interface EditorTab {
   isDirty: boolean; // Has unsaved changes
 }
 
+export interface TodoTask {
+  id: string;
+  title: string;
+  description: string;
+  status: 'pending' | 'in-progress' | 'completed' | 'skipped';
+  versionId?: string; // Version created for this task
+  parentTaskId?: string; // For subtasks
+  estimatedComplexity: 'simple' | 'medium' | 'complex';
+  order: number;
+}
+
+export interface TodoSession {
+  id: string;
+  originalPrompt: string;
+  tasks: TodoTask[];
+  createdAt: Date;
+  status: 'planning' | 'executing' | 'completed' | 'paused';
+  executionMode: 'sequential' | 'parallel' | 'interactive';
+}
+
 export interface EditorState {
   versions: Version[];
   currentVersionId: string;
@@ -99,4 +121,6 @@ export interface EditorState {
   activeConfigId: string | null; // Currently active configuration
   tabs: EditorTab[]; // Open tabs
   activeTabId: string | null; // Currently active tab
+  activeTodoSession: TodoSession | null; // Current todo session
+  todoHistory: TodoSession[]; // Past todo sessions
 }

@@ -4,7 +4,7 @@ import React, { useState, useRef } from 'react';
 import { Upload, FileText, X, Loader2, Sparkles } from 'lucide-react';
 
 interface DocumentUploadProps {
-  onContentExtracted: (content: string) => void;
+  onContentExtracted: (content: string, fileName?: string) => void;
   onContextExtracted?: (context: any) => void;
   mode: 'document' | 'context';
 }
@@ -81,8 +81,8 @@ export function DocumentUpload({ onContentExtracted, onContextExtracted, mode }:
       }
       
       if (mode === 'document') {
-        // For document mode, just insert the content
-        onContentExtracted(content);
+        // For document mode, just insert the content with filename
+        onContentExtracted(content, file.name);
       } else {
         // For context mode, use AI to extract configuration
         const response = await fetch('/api/anthropic', {

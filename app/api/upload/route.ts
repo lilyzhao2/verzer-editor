@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
       if (fileName.endsWith('.pdf')) {
         console.log('Processing PDF file');
         // Process PDF
-        const pdf = require('pdf-parse');
+        const pdf = require('pdf-parse-fork');
         const arrayBuffer = await file.arrayBuffer();
         const buffer = Buffer.from(arrayBuffer);
         

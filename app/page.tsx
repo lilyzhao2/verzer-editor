@@ -11,7 +11,8 @@ import { ClearDataButton } from '@/components/ClearDataButton';
 import { ProjectSetup } from '@/components/ProjectSetup';
 import { LegalCompare } from '@/components/LegalCompare';
 import { TabBar } from '@/components/TabBar';
-import { MessageSquare, FileText, GitBranch, Settings, Scale } from 'lucide-react';
+import { ParallelView } from '@/components/ParallelView';
+import { MessageSquare, FileText, GitBranch, Settings, Scale, Layers } from 'lucide-react';
 
 function ViewModeTabs() {
   const { state, setViewMode } = useEditor();
@@ -19,6 +20,7 @@ function ViewModeTabs() {
   const tabs = [
     { id: 'context' as const, label: 'Context', icon: Settings, description: 'Project configuration' },
     { id: 'document' as const, label: 'Document', icon: FileText, description: 'Focus on writing' },
+    { id: 'parallel' as const, label: 'Parallel', icon: Layers, description: 'Work on multiple versions simultaneously' },
     { id: 'compare' as const, label: 'Compare', icon: Scale, description: 'Legal document comparison' },
     { id: 'iterate' as const, label: 'Iterate', icon: GitBranch, description: 'Compare and iterate on versions' },
   ];
@@ -146,6 +148,11 @@ function MainContent() {
       );
     }
 
+    // Parallel View: Work on multiple versions simultaneously
+    if (state.viewMode === 'parallel') {
+      return <ParallelView />;
+    }
+
     // Compare View: Legal-style document comparison
     if (state.viewMode === 'compare') {
       return <LegalCompare />;
@@ -159,6 +166,16 @@ function MainContent() {
     return <DocumentEditor />;
   };
 
+  // Hide sidebars in Parallel view for maximum space
+  if (state.viewMode === 'parallel') {
+    return (
+      <div className="flex-1 bg-white overflow-hidden">
+        {renderMainView()}
+      </div>
+    );
+  }
+
+  // Normal view with sidebars
   return (
     <div className="flex-1 flex overflow-hidden">
       {/* Main Content Area */}
@@ -166,7 +183,7 @@ function MainContent() {
         {renderMainView()}
       </div>
 
-      {/* AI Agent Chat - Always Present */}
+      {/* AI Agent Chat - Always Present (except in Parallel view) */}
       {!chatMinimized && (
         <div
           onMouseDown={handleMouseDown}

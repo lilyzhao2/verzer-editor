@@ -1,11 +1,11 @@
 'use client';
 
-import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
-import { Version, ChatMessage, EditorState, AIModel, ViewMode, Checkpoint, PendingAIEdit, Comment, ProjectNote, ProjectConfig, EditorTab } from '@/lib/types';
+import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
+import { Version, ChatMessage, EditorState, AIModel, ViewMode, Checkpoint, PendingAIEdit, Comment, ProjectNote, ProjectConfig, EditorTab, TodoSession, TodoTask } from '@/lib/types';
 
 interface EditorContextType {
   state: EditorState;
-  createVersion: (content: string, prompt: string | null, parentId?: string, note?: string | null) => void;
+  createVersion: (content: string, prompt: string | null, parentId?: string, note?: string | null, customId?: string) => void;
   updateVersion: (versionId: string, content: string) => void;
   updateVersionNote: (versionId: string, note: string) => void;
   toggleVersionStar: (versionId: string) => void;
@@ -17,13 +17,18 @@ interface EditorContextType {
   closeTab: (tabId: string) => void;
   switchTab: (tabId: string) => void;
   updateTabDirtyState: (tabId: string, isDirty: boolean) => void;
+  createTodoSession: (prompt: string) => Promise<void>;
+  updateTodoTask: (taskId: string, updates: Partial<TodoTask>) => void;
+  executeTodoTask: (taskId: string) => Promise<void>;
+  cancelTodoSession: () => void;
   createCheckpoint: (versionId: string, content: string, type: 'auto-save' | 'manual') => void;
   revertToCheckpoint: (versionId: string, checkpointId: string) => void;
   setCurrentVersion: (versionId: string) => void;
   setCompareVersion: (versionId: string | null) => void;
   getCurrentVersion: () => Version | undefined;
   getCompareVersion: () => Version | undefined;
-  applyAIEdit: (prompt: string) => Promise<void>;
+  applyAIEdit: (prompt: string, options?: { autoOpenInParallel?: boolean }) => Promise<void>;
+  createAIVariations: (prompts: string[]) => Promise<any>;
   saveManualEdit: (content: string) => Promise<void>;
   setSelectedModel: (model: AIModel) => void;
   setViewMode: (mode: ViewMode) => void;
@@ -92,7 +97,9 @@ export function EditorProvider({ children }: { children: React.ReactNode }) {
       projectConfigs: [defaultConfig],
       activeConfigId: 'config-default',
       tabs: [initialTab],
-      activeTabId: 'tab-v0'
+      activeTabId: 'tab-v0',
+      activeTodoSession: null,
+      todoHistory: []
     };
   });
 
@@ -135,7 +142,7 @@ export function EditorProvider({ children }: { children: React.ReactNode }) {
     }
   }, [state]);
 
-  const createVersion = useCallback((content: string, prompt: string | null, parentId?: string, note?: string | null) => {
+  const createVersion = useCallback((content: string, prompt: string | null, parentId?: string, note?: string | null, customId?: string) => {
     setState(prev => {
       // Determine parent: explicit parentId, or current version
       let parent: Version | undefined;
@@ -157,21 +164,21 @@ export function EditorProvider({ children }: { children: React.ReactNode }) {
       
       if (isRootLevelVersion || !parent || parent.isOriginal) {
         // Creating root-level version: v1, v2, v3...
-        const rootVersions = prev.versions.filter(v => !v.number.includes('.'));
+        const rootVersions = prev.versions.filter(v => typeof v.number === 'string' && !v.number.includes('.'));
         newVersionNumber = rootVersions.length.toString();
       } else {
         // Creating branch: ONLY single-level branches (v1.1, v1.2, not v1.1.1)
         // Always branch from the root version of the current version
-        const rootNumber = parent.number.split('.')[0]; // Get "1" from "1.2"
+        const rootNumber = typeof parent.number === 'string' ? parent.number.split('.')[0] : String(parent.number).split('.')[0]; // Get "1" from "1.2"
         const branches = prev.versions.filter(v => 
-          v.number.startsWith(rootNumber + '.') && 
+          typeof v.number === 'string' && v.number.startsWith(rootNumber + '.') && 
           v.number.split('.').length === 2 // Only single-level branches
         );
         const nextBranch = branches.length + 1;
         newVersionNumber = `${rootNumber}.${nextBranch}`;
       }
       
-      newVersionId = `v${newVersionNumber}`;
+      newVersionId = customId || `v${newVersionNumber}`;
       
       const newVersion: Version = {
         id: newVersionId,
@@ -368,6 +375,137 @@ export function EditorProvider({ children }: { children: React.ReactNode }) {
     }));
   }, []);
 
+  const createTodoSession = useCallback(async (prompt: string) => {
+    try {
+      // Ask AI to decompose the task
+      const response = await fetch('/api/anthropic', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt: `Analyze this request and break it down into specific, actionable tasks. 
+You MUST return ONLY valid JSON with this exact structure:
+{
+  "tasks": [
+    {
+      "title": "Brief task title",
+      "description": "What needs to be done",
+      "estimatedComplexity": "simple"
+    }
+  ]
+}
+
+Request: "${prompt}"
+
+Break this into 3-7 clear tasks. Be specific and actionable. Return ONLY the JSON object, no other text.`,
+          content: '',
+          model: state.selectedModel,
+          mode: 'analyze'
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error('Failed to decompose tasks:', errorData);
+        throw new Error(errorData.error || 'Failed to decompose tasks');
+      }
+      
+      const result = await response.json();
+      let tasks: TodoTask[] = [];
+      
+      // Parse the response - handle both string and object responses
+      let parsedResponse = result.response;
+      
+      // If response is a string, try to parse it as JSON
+      if (typeof parsedResponse === 'string') {
+        try {
+          // Try to extract JSON from the string
+          const jsonMatch = parsedResponse.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            parsedResponse = JSON.parse(jsonMatch[0]);
+          }
+        } catch (e) {
+          console.error('Failed to parse JSON from response:', e);
+        }
+      }
+      
+      // Extract tasks from the parsed response
+      if (parsedResponse && typeof parsedResponse === 'object' && parsedResponse.tasks && Array.isArray(parsedResponse.tasks)) {
+        tasks = parsedResponse.tasks.map((task: any, index: number) => ({
+          id: `task-${Date.now()}-${index}`,
+          title: task.title || `Task ${index + 1}`,
+          description: task.description || '',
+          status: 'pending' as const,
+          estimatedComplexity: task.estimatedComplexity || 'medium',
+          order: index
+        }));
+      }
+      
+      // Fallback if we couldn't parse tasks
+      if (tasks.length === 0) {
+        console.log('Falling back to single task due to parsing issues');
+        tasks = [{
+          id: `task-${Date.now()}`,
+          title: 'Execute request',
+          description: prompt,
+          status: 'pending' as const,
+          estimatedComplexity: 'complex',
+          order: 0
+        }];
+      }
+
+      const newSession: TodoSession = {
+        id: `session-${Date.now()}`,
+        originalPrompt: prompt,
+        tasks,
+        createdAt: new Date(),
+        status: 'planning',
+        executionMode: 'sequential'
+      };
+
+      setState(prev => ({
+        ...prev,
+        activeTodoSession: newSession
+      }));
+    } catch (error) {
+      console.error('Error creating todo session:', error);
+    }
+  }, [state.selectedModel]);
+
+  const updateTodoTask = useCallback((taskId: string, updates: Partial<TodoTask>) => {
+    setState(prev => {
+      if (!prev.activeTodoSession) return prev;
+      
+      return {
+        ...prev,
+        activeTodoSession: {
+          ...prev.activeTodoSession,
+          tasks: prev.activeTodoSession.tasks.map(task =>
+            task.id === taskId ? { ...task, ...updates } : task
+          )
+        }
+      };
+    });
+  }, []);
+
+
+  const cancelTodoSession = useCallback(() => {
+    setState(prev => {
+      if (!prev.activeTodoSession) return prev;
+      
+      // Move session to history
+      const pausedSession = {
+        ...prev.activeTodoSession,
+        status: 'paused' as const
+      };
+      
+      return {
+        ...prev,
+        activeTodoSession: null,
+        todoHistory: [...prev.todoHistory, pausedSession]
+      };
+    });
+  }, []);
+
   const createCheckpoint = useCallback((versionId: string, content: string, type: 'auto-save' | 'manual') => {
     setState(prev => ({
       ...prev,
@@ -435,13 +573,13 @@ export function EditorProvider({ children }: { children: React.ReactNode }) {
     }));
   }, []);
 
-  const applyAIEdit = useCallback(async (prompt: string) => {
+  const applyAIEdit = useCallback(async (prompt: string, options?: { autoOpenInParallel?: boolean }) => {
     const currentVersion = getCurrentVersion();
     if (!currentVersion) return;
 
     try {
-      // Get active project config
-      const projectConfig = state.projectConfigs.find(c => c.id === state.activeConfigId);
+      // Get active project config safely
+      const projectConfig = state.projectConfigs?.find(c => c.id === state.activeConfigId);
       
       const response = await fetch('/api/anthropic', {
         method: 'POST',
@@ -457,21 +595,43 @@ export function EditorProvider({ children }: { children: React.ReactNode }) {
       });
 
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Failed to get AI response');
+        let errorMessage = 'Failed to get AI response';
+        try {
+          const error = await response.json();
+          errorMessage = error.error || errorMessage;
+        } catch (e) {
+          const errorText = await response.text();
+          errorMessage = `API Error (${response.status}): ${errorText}`;
+        }
+        console.error('AI API Error:', errorMessage);
+        throw new Error(errorMessage);
       }
 
       const { editedContent, explanation } = await response.json();
       
+      // Calculate what the new version number will be
+      // Since AI creates root versions, it's the count of root versions
+      const rootVersions = state.versions?.filter(v => typeof v.number === 'string' && !v.number.includes('.')) || [];
+      const newVersionNumber = rootVersions.length.toString();
+      
       // Create the new version directly
-      createVersion(editedContent, prompt);
+      const newVersionId = `v${Date.now()}`;
+      createVersion(editedContent, prompt, undefined, undefined, newVersionId);
+      
+      // If in parallel mode and autoOpen is true, open the new version in a tab
+      if (options?.autoOpenInParallel && state.viewMode === 'parallel') {
+        // Open the tab immediately with the known ID
+        setTimeout(() => {
+          openTab(newVersionId);
+        }, 100);
+      }
       
       // Add to chat history with the explanation
       const newChatMessage: ChatMessage = {
         id: `msg-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
         prompt,
         response: explanation || 'Changes applied successfully.',
-        versionCreated: state.versions.length.toString(), // This will be the new version
+        versionCreated: newVersionNumber, // Use the calculated version number
         timestamp: new Date(),
       };
       
@@ -483,7 +643,7 @@ export function EditorProvider({ children }: { children: React.ReactNode }) {
       console.error('Error applying AI edit:', error);
       throw error;
     }
-  }, [getCurrentVersion, createVersion, state.selectedModel, state.versions.length]);
+  }, [getCurrentVersion, createVersion, state, openTab]);
 
   const saveManualEdit = useCallback(async (content: string) => {
     const currentVersion = getCurrentVersion();
@@ -522,6 +682,31 @@ export function EditorProvider({ children }: { children: React.ReactNode }) {
   const setViewMode = useCallback((mode: ViewMode) => {
     setState(prev => ({ ...prev, viewMode: mode }));
   }, []);
+  
+  // New function to create multiple AI variations
+  const createAIVariations = useCallback(async (prompts: string[]) => {
+    const currentVersion = getCurrentVersion();
+    if (!currentVersion) return;
+    
+    // Switch to parallel view automatically
+    setViewMode('parallel');
+    
+    // Create each variation
+    const results = [];
+    for (const prompt of prompts) {
+      try {
+        await applyAIEdit(prompt, { autoOpenInParallel: true });
+        results.push({ prompt, success: true });
+        // Small delay between requests to avoid overwhelming
+        await new Promise(resolve => setTimeout(resolve, 500));
+      } catch (error) {
+        console.error(`Error creating variation for "${prompt}":`, error);
+        results.push({ prompt, success: false, error });
+      }
+    }
+    
+    return results;
+  }, [getCurrentVersion, setViewMode, applyAIEdit]);
 
   const setPendingAIEdit = useCallback((edit: PendingAIEdit | null) => {
     setState(prev => ({ ...prev, pendingAIEdit: edit }));
@@ -539,6 +724,35 @@ export function EditorProvider({ children }: { children: React.ReactNode }) {
   const acceptPartialAIEdit = useCallback((content: string) => {
     // No longer needed - AI edits create versions directly
   }, []);
+
+  // Define executeTodoTask after applyAIEdit
+  const executeTodoTask = useCallback(async (taskId: string) => {
+    const session = state.activeTodoSession;
+    if (!session) return;
+    
+    const task = session.tasks.find(t => t.id === taskId);
+    if (!task) return;
+    
+    // Mark task as in-progress
+    updateTodoTask(taskId, { status: 'in-progress' });
+    
+    try {
+      // Execute the task using AI
+      await applyAIEdit(task.title + (task.description ? ': ' + task.description : ''));
+      
+      // Get the latest version created
+      const latestVersion = state.versions[state.versions.length - 1];
+      
+      // Mark task as completed and associate with version
+      updateTodoTask(taskId, { 
+        status: 'completed',
+        versionId: latestVersion.number
+      });
+    } catch (error) {
+      console.error('Error executing task:', error);
+      updateTodoTask(taskId, { status: 'pending' });
+    }
+  }, [state.activeTodoSession, state.versions, updateTodoTask, applyAIEdit]);
 
   // Comment functions
   const addComment = useCallback((versionId: string, text: string, position?: { paragraph?: number; line?: number }) => {
@@ -629,11 +843,16 @@ export function EditorProvider({ children }: { children: React.ReactNode }) {
         closeTab,
         switchTab,
         updateTabDirtyState,
+        createTodoSession,
+        updateTodoTask,
+        executeTodoTask,
+        cancelTodoSession,
         setCurrentVersion,
         setCompareVersion,
         getCurrentVersion,
         getCompareVersion,
         applyAIEdit,
+        createAIVariations,
         saveManualEdit,
         setSelectedModel,
         setViewMode,

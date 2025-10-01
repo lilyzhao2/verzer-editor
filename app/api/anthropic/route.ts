@@ -5,8 +5,17 @@ export async function POST(request: NextRequest) {
   try {
     const { prompt, content, model, mode = 'edit', projectConfig } = await request.json();
     
+    console.log('Anthropic API called with:', { 
+      prompt: prompt?.substring(0, 100) + '...', 
+      contentLength: content?.length, 
+      model, 
+      mode,
+      hasProjectConfig: !!projectConfig
+    });
+    
     // Check if content is provided
     if (!content || content.trim() === '') {
+      console.log('No content provided');
       return NextResponse.json(
         { error: 'No document content provided. Please write some text in the document first.' },
         { status: 400 }
@@ -25,7 +34,23 @@ export async function POST(request: NextRequest) {
     // Build project context if provided
     let projectContext = '';
     if (projectConfig) {
-      projectContext = `PROJECT CONTEXT:
+      // If there's a custom prompt template, use it
+      if (projectConfig.promptTemplate) {
+        let template = projectConfig.promptTemplate;
+        
+        // Replace template variables with actual values
+        template = template.replace(/{{projectType}}/g, projectConfig.name || 'document');
+        template = template.replace(/{{projectName}}/g, projectConfig.projectName || 'Untitled');
+        template = template.replace(/{{audience}}/g, projectConfig.audience || 'general audience');
+        template = template.replace(/{{tone}}/g, projectConfig.tone || 'professional');
+        template = template.replace(/{{styleGuide}}/g, projectConfig.styleGuide || 'standard style');
+        template = template.replace(/{{constraints}}/g, projectConfig.constraints || 'No specific constraints');
+        template = template.replace(/{{action}}/g, mode === 'chat' ? 'answer the question' : 'edit the document as requested');
+        
+        projectContext = template + '\n\n---\n\n';
+      } else {
+        // Fallback to structured context
+        projectContext = `PROJECT CONTEXT:
 Project Name: ${projectConfig.projectName || 'Untitled'}
 Description: ${projectConfig.description || 'No description'}
 ${projectConfig.styleGuide ? `Writing Style: ${projectConfig.styleGuide}` : ''}
@@ -40,6 +65,7 @@ Please keep all edits and responses aligned with this project context.
 ---
 
 `;
+      }
     }
 
     // Different prompts based on mode
@@ -97,9 +123,13 @@ ${content}`;
 
     if (!response.ok) {
       const error = await response.text();
-      console.error('Anthropic API error:', error);
+      console.error('Anthropic API error:', {
+        status: response.status,
+        statusText: response.statusText,
+        error: error
+      });
       return NextResponse.json(
-        { error: 'Failed to get response from Anthropic' },
+        { error: `Failed to get response from Anthropic: ${response.status} ${response.statusText}` },
         { status: response.status }
       );
     }

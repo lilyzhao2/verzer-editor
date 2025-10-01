@@ -103,7 +103,7 @@ export function DocumentEditor() {
     return rootVersions.length.toString();
   };
 
-  const handleDocumentUploaded = (content: string) => {
+  const handleDocumentUploaded = (content: string, fileName?: string) => {
     setLocalContent(content);
     setHasUnsavedChanges(true);
     setShowUpload(false);

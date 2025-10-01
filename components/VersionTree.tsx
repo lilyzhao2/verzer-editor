@@ -130,6 +130,12 @@ export function VersionTree() {
           <div className="flex-1 flex gap-2">
             <div
               onClick={() => setCurrentVersion(node.version.id)}
+              onDoubleClick={() => {
+                // If in parallel view, open in new tab
+                if (state.viewMode === 'parallel') {
+                  openTab(node.version.id);
+                }
+              }}
               className={`flex-1 text-left p-3 rounded-lg border-2 transition-all cursor-pointer ${
                 isCurrent
                   ? 'border-blue-500 bg-blue-50 shadow-md'
