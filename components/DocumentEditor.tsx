@@ -2,11 +2,12 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useEditor } from '@/contexts/EditorContext';
-import { CheckCircle, Save, Upload, Printer, Plus, Minus, FileText, Users, GitBranch } from 'lucide-react';
+import { CheckCircle, Save, Upload, Printer, Plus, Minus, FileText, Users, GitBranch, MessageSquare } from 'lucide-react';
 import { RichTextEditor } from './RichTextEditor';
 import { ProjectSetup } from './ProjectSetup';
 import { DocumentUpload } from './DocumentUpload';
 import { ParagraphLineageView } from './ParagraphLineageView';
+import { CommentSidebar } from './CommentSidebar';
 import { formatVersionNumber } from '@/lib/formatVersion';
 
 export function DocumentEditor() {
@@ -17,7 +18,8 @@ export function DocumentEditor() {
     getCurrentVersion, 
     createVersion, 
     createCheckpoint,
-    updateTabDirtyState
+    updateTabDirtyState,
+    addComment
   } = useEditor();
   const currentVersion = getCurrentVersion();
   const [localContent, setLocalContent] = useState(currentVersion?.content || '');
@@ -31,8 +33,13 @@ export function DocumentEditor() {
   const [showUserBranchModal, setShowUserBranchModal] = useState(false);
   const [newUserName, setNewUserName] = useState('');
   const [showLineagePanel, setShowLineagePanel] = useState(false);
+  const [showCommentSidebar, setShowCommentSidebar] = useState(false);
+  const [showAddCommentModal, setShowAddCommentModal] = useState(false);
+  const [commentText, setCommentText] = useState('');
+  const [selectedTextForComment, setSelectedTextForComment] = useState<{ text: string; position: { start: number; end: number } } | null>(null);
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const isUpdatingRef = useRef(false);
+  const editorInstanceRef = useRef<any>(null);
 
   useEffect(() => {
     isUpdatingRef.current = true;
@@ -165,6 +172,42 @@ export function DocumentEditor() {
     }
   };
 
+  const handleAddComment = (selectedText: string, position: { start: number; end: number }) => {
+    setSelectedTextForComment({ text: selectedText, position });
+    setShowAddCommentModal(true);
+  };
+
+  const handleSubmitComment = () => {
+    if (!commentText.trim() || !selectedTextForComment || !currentVersion) return;
+    
+    addComment(
+      currentVersion.id,
+      state.currentUserId,
+      commentText,
+      selectedTextForComment.position,
+      selectedTextForComment.text
+    );
+    
+    setCommentText('');
+    setSelectedTextForComment(null);
+    setShowAddCommentModal(false);
+    setShowCommentSidebar(true); // Show sidebar after adding comment
+  };
+
+  const handleNavigateToComment = (position: { start: number; end: number }) => {
+    // Scroll to the commented text in the editor
+    if (editorInstanceRef.current) {
+      // Focus the editor and set selection
+      editorInstanceRef.current.commands.focus();
+      editorInstanceRef.current.commands.setTextSelection(position);
+      
+      // Scroll into view
+      const { node } = editorInstanceRef.current.view.domAtPos(position.start);
+      if (node && node.parentElement) {
+        node.parentElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }
+  };
 
   return (
     <div className="h-full flex flex-col overflow-hidden">
@@ -250,6 +293,24 @@ export function DocumentEditor() {
             </button>
 
             <button
+              onClick={() => setShowCommentSidebar(!showCommentSidebar)}
+              className={`flex items-center gap-2 px-4 py-2.5 text-base font-semibold rounded-lg transition-colors ${
+                showCommentSidebar 
+                  ? 'bg-amber-600 text-white' 
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+              title="Show comments"
+            >
+              <MessageSquare className="w-5 h-5" />
+              Comments
+              {state.comments.filter(c => c.versionId === currentVersion?.id && !c.resolved).length > 0 && (
+                <span className="ml-1 bg-red-500 text-white text-xs rounded-full px-2 py-0.5 font-bold">
+                  {state.comments.filter(c => c.versionId === currentVersion?.id && !c.resolved).length}
+                </span>
+              )}
+            </button>
+
+            <button
               onClick={() => setShowLineagePanel(!showLineagePanel)}
               className={`flex items-center gap-2 px-4 py-2.5 text-base font-semibold rounded-lg transition-colors ${
                 showLineagePanel 
@@ -270,11 +331,11 @@ export function DocumentEditor() {
       <div className="flex-1 flex overflow-hidden">
         {/* Editor */}
         <div 
-          className={`flex-1 overflow-hidden ${showLineagePanel ? 'w-2/3' : 'w-full'}`}
+          className={`flex-1 overflow-hidden ${showLineagePanel || showCommentSidebar ? 'w-2/3' : 'w-full'}`}
           style={{ 
             transform: `scale(${zoomLevel / 100})`,
             transformOrigin: 'top left',
-            width: showLineagePanel ? `${(100 / (zoomLevel / 100)) * 0.67}%` : `${100 / (zoomLevel / 100)}%`,
+            width: showLineagePanel || showCommentSidebar ? `${(100 / (zoomLevel / 100)) * 0.67}%` : `${100 / (zoomLevel / 100)}%`,
             height: `${100 / (zoomLevel / 100)}%`
           }}
         >
@@ -300,12 +361,14 @@ export function DocumentEditor() {
                 a.click();
               }}
               onPrint={() => window.print()}
+              onAddComment={handleAddComment}
+              ref={editorInstanceRef}
             />
           </div>
         </div>
 
         {/* Lineage Panel */}
-        {showLineagePanel && currentVersion && (
+        {showLineagePanel && currentVersion && !showCommentSidebar && (
           <div className="w-1/3 border-l border-gray-200 bg-white">
             <ParagraphLineageView 
               versionId={currentVersion.id}
@@ -315,6 +378,16 @@ export function DocumentEditor() {
               }}
             />
           </div>
+        )}
+
+        {/* Comment Sidebar */}
+        {showCommentSidebar && currentVersion && !showLineagePanel && (
+          <CommentSidebar
+            versionId={currentVersion.id}
+            onNavigateToComment={handleNavigateToComment}
+            isOpen={showCommentSidebar}
+            onToggle={() => setShowCommentSidebar(!showCommentSidebar)}
+          />
         )}
       </div>
 
@@ -383,6 +456,63 @@ export function DocumentEditor() {
                 className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Create Branch
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Comment Modal */}
+      {showAddCommentModal && selectedTextForComment && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-black">Add Comment</h3>
+              <button
+                onClick={() => {
+                  setShowAddCommentModal(false);
+                  setCommentText('');
+                  setSelectedTextForComment(null);
+                }}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                ✕
+              </button>
+            </div>
+            
+            {/* Selected Text */}
+            <div className="mb-4 p-3 bg-yellow-50 border-l-4 border-yellow-400 rounded">
+              <p className="text-xs text-gray-600 mb-1">Commenting on:</p>
+              <p className="text-sm text-gray-900 italic">"{selectedTextForComment.text}"</p>
+            </div>
+            
+            {/* Comment Input */}
+            <textarea
+              value={commentText}
+              onChange={(e) => setCommentText(e.target.value)}
+              placeholder="Type your comment... Use @ to mention someone"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-black mb-4"
+              rows={4}
+              autoFocus
+            />
+            
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => {
+                  setShowAddCommentModal(false);
+                  setCommentText('');
+                  setSelectedTextForComment(null);
+                }}
+                className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSubmitComment}
+                disabled={!commentText.trim()}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Add Comment
               </button>
             </div>
           </div>

@@ -6,16 +6,31 @@ import { useCompare } from '@/contexts/CompareContext';
 import { CheckCircle, Sparkles, FileEdit, GitCompare, Star, Edit3, MessageSquare, User, Users, GitBranch } from 'lucide-react';
 import { TrackChangesCompare } from './TrackChangesCompare';
 import { ParagraphLineageView } from './ParagraphLineageView';
+import { CommentThread } from './CommentThread';
+import { SuggestChangesMode } from './SuggestChangesMode';
 import * as Diff from 'diff';
 
 export function CompareView() {
-  const { state, createVersion, setCurrentVersion, toggleVersionStar, addComment } = useEditor();
+  const { 
+    state, 
+    createVersion, 
+    setCurrentVersion, 
+    toggleVersionStar, 
+    addComment,
+    addCommentReply,
+    resolveComment,
+    deleteComment,
+    deleteCommentReply
+  } = useEditor();
   const { selectedVersionsForCompare } = useCompare();
   // Only track changes mode now
   const [paragraphChoices, setParagraphChoices] = useState<Map<number, string>>(new Map());
   const [showComments, setShowComments] = useState(false);
   const [showLineagePanel, setShowLineagePanel] = useState(false);
+  const [showSuggestMode, setShowSuggestMode] = useState(false);
   const [newComment, setNewComment] = useState('');
+  const [activeTab, setActiveTab] = useState<'comments' | 'lineage' | 'suggest'>('comments');
+  const [diffView, setDiffView] = useState<'normal' | 'diff'>('normal');
 
   const selectedVersionObjects = selectedVersionsForCompare
     .map(id => state.versions.find(v => v.id === id))
@@ -159,7 +174,7 @@ export function CompareView() {
                 
                 {/* Content */}
                 <div className="flex-1 p-4 overflow-auto">
-                  {diffView === 'diff' && version2 ? (
+                  {diffView === 'diff' && version2 && version1 ? (
                     <div className="prose prose-sm max-w-none">
                       {version.id === version1.id ? (
                         // Show what was removed/unchanged
@@ -344,10 +359,7 @@ export function CompareView() {
             </div>
           </div>
         ) : selectedVersionsForCompare.length >= 2 ? (
-          <TrackChangesCompare 
-            originalVersionId={selectedVersionsForCompare[0]}
-            editedVersionId={selectedVersionsForCompare[1]}
-          />
+          <TrackChangesCompare />
         ) : (
           <div className="flex-1 flex items-center justify-center">
             <div className="text-center">
@@ -375,10 +387,44 @@ export function CompareView() {
 
       {/* Right Panel - Comments & Users */}
       {showComments && (
-        <div className="w-80 border-l border-gray-200 bg-white flex flex-col">
-          {/* Panel Header */}
+        <div className="w-96 border-l border-gray-200 bg-white flex flex-col">
+          {/* Panel Header with Tabs */}
           <div className="px-4 py-3 border-b border-gray-200 bg-gray-50">
-            <h3 className="font-semibold text-black">Comments & Users</h3>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setActiveTab('comments')}
+                className={`flex-1 px-3 py-2 text-sm font-medium rounded-lg transition-colors ${
+                  activeTab === 'comments' 
+                    ? 'bg-blue-600 text-white' 
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                <MessageSquare className="w-4 h-4 inline mr-1" />
+                Comments
+              </button>
+              <button
+                onClick={() => setActiveTab('lineage')}
+                className={`flex-1 px-3 py-2 text-sm font-medium rounded-lg transition-colors ${
+                  activeTab === 'lineage' 
+                    ? 'bg-blue-600 text-white' 
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                <GitBranch className="w-4 h-4 inline mr-1" />
+                Lineage
+              </button>
+              <button
+                onClick={() => setActiveTab('suggest')}
+                className={`flex-1 px-3 py-2 text-sm font-medium rounded-lg transition-colors ${
+                  activeTab === 'suggest' 
+                    ? 'bg-green-600 text-white' 
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                <Edit3 className="w-4 h-4 inline mr-1" />
+                Suggest
+              </button>
+            </div>
           </div>
           
           {/* Users Section */}
@@ -405,86 +451,87 @@ export function CompareView() {
             </div>
           </div>
           
-          {/* Comments Section */}
-          <div className="flex-1 flex flex-col">
-            <div className="p-4 border-b border-gray-200">
-              <h4 className="text-sm font-semibold text-black mb-3 flex items-center gap-2">
-                <MessageSquare className="w-4 h-4" />
-                Comments ({state.comments?.length || 0})
-              </h4>
-              <div className="space-y-3">
-                {state.comments && state.comments.length > 0 ? (
-                  state.comments.map(comment => {
-                    const user = state.users?.find(u => u.id === comment.userId);
-                    return (
-                      <div key={comment.id} className="p-3 bg-gray-50 rounded-lg">
-                        <div className="flex items-start gap-2 mb-2">
-                          <div 
-                            className="w-6 h-6 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0"
-                            style={{ backgroundColor: user?.color || '#6B7280' }}
-                          >
-                            {user?.name.charAt(0).toUpperCase() || 'U'}
-                          </div>
-                          <div className="flex-1">
-                            <div className="text-xs text-gray-600 mb-1">
-                              {user?.name || 'Unknown'} • {new Date(comment.timestamp).toLocaleString()}
-                            </div>
-                            <p className="text-sm text-black">
-                              {comment.content.split(/(@\w+)/).map((part, index) => {
-                                if (part.startsWith('@')) {
-                                  const username = part.substring(1);
-                                  const mentionedUser = state.users?.find(u => u.name.toLowerCase() === username.toLowerCase());
-                                  return (
-                                    <span 
-                                      key={index}
-                                      className="bg-blue-100 text-blue-800 px-1 rounded text-xs font-medium"
-                                      style={{ backgroundColor: mentionedUser?.color + '20' }}
-                                    >
-                                      {part}
-                                    </span>
-                                  );
-                                }
-                                return part;
-                              })}
-                            </p>
-                            {comment.mentions && comment.mentions.length > 0 && (
-                              <div className="mt-1 text-xs text-gray-500">
-                                Mentions: {comment.mentions.map(mention => `@${mention}`).join(', ')}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })
-                ) : (
-                  <p className="text-sm text-gray-500 italic">No comments yet</p>
-                )}
-              </div>
-            </div>
+          {/* Tab Content */}
+          <div className="flex-1 flex flex-col overflow-hidden">
+            {activeTab === 'comments' && (
+              <>
+                {/* Comments List */}
+                <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                  {selectedVersionsForCompare.length > 0 ? (
+                    state.comments
+                      .filter(c => selectedVersionsForCompare.includes(c.versionId))
+                      .map(comment => (
+                        <CommentThread
+                          key={comment.id}
+                          comment={comment}
+                          users={state.users}
+                          currentUserId={state.currentUserId}
+                          onReply={(commentId, content) => 
+                            addCommentReply(commentId, state.currentUserId, content)
+                          }
+                          onResolve={resolveComment}
+                          onDelete={deleteComment}
+                          onDeleteReply={deleteCommentReply}
+                        />
+                      ))
+                  ) : (
+                    <p className="text-sm text-gray-500 italic text-center">
+                      Select versions to see their comments
+                    </p>
+                  )}
+                </div>
             
-            {/* Add Comment */}
-            <div className="p-4 border-t border-gray-200 mt-auto">
-              <textarea
-                value={newComment}
-                onChange={(e) => setNewComment(e.target.value)}
-                placeholder="Add a comment..."
-                rows={3}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-black mb-2"
-              />
-              <button
-                onClick={() => {
-                  if (newComment.trim() && selectedVersionsForCompare[0]) {
-                    addComment(selectedVersionsForCompare[0], state.currentUserId, newComment.trim());
-                    setNewComment('');
-                  }
+                {/* Add Comment */}
+                <div className="p-4 border-t border-gray-200 mt-auto">
+                  <textarea
+                    value={newComment}
+                    onChange={(e) => setNewComment(e.target.value)}
+                    placeholder="Add a comment... Use @ to mention someone"
+                    rows={3}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-black mb-2"
+                  />
+                  <button
+                    onClick={() => {
+                      if (newComment.trim() && selectedVersionsForCompare[0]) {
+                        addComment(selectedVersionsForCompare[0], state.currentUserId, newComment.trim());
+                        setNewComment('');
+                      }
+                    }}
+                    disabled={!newComment.trim()}
+                    className="w-full px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
+                  >
+                    Add Comment
+                  </button>
+                </div>
+              </>
+            )}
+
+            {activeTab === 'lineage' && selectedVersionsForCompare.length > 0 && (
+              <ParagraphLineageView 
+                versionId={selectedVersionsForCompare[0]}
+                onRevert={(paragraphId, targetVersionId) => {
+                  console.log('Revert paragraph', paragraphId, 'to version', targetVersionId);
                 }}
-                disabled={!newComment.trim()}
-                className="w-full px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
-              >
-                Add Comment
-              </button>
-            </div>
+              />
+            )}
+
+            {activeTab === 'suggest' && selectedVersionsForCompare.length > 0 && (
+              <div className="p-4">
+                <SuggestChangesMode
+                  versionId={selectedVersionsForCompare[0]}
+                  isEnabled={showSuggestMode}
+                  onToggle={() => setShowSuggestMode(!showSuggestMode)}
+                  onAcceptChange={(changeId) => {
+                    console.log('Accept change:', changeId);
+                    // Implement accept logic
+                  }}
+                  onRejectChange={(changeId) => {
+                    console.log('Reject change:', changeId);
+                    // Implement reject logic
+                  }}
+                />
+              </div>
+            )}
           </div>
         </div>
       )}

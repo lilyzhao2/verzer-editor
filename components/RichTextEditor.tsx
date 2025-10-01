@@ -50,7 +50,7 @@ import {
   ZoomOut,
   MessageSquare
 } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, forwardRef, useImperativeHandle } from 'react';
 
 interface RichTextEditorProps {
   content: string;
@@ -67,7 +67,7 @@ interface RichTextEditorProps {
   onAddComment?: (selectedText: string, position: { start: number; end: number }) => void;
 }
 
-export function RichTextEditor({ 
+export const RichTextEditor = forwardRef<any, RichTextEditorProps>(({ 
   content, 
   onChange, 
   onSave, 
@@ -80,18 +80,13 @@ export function RichTextEditor({
   onDownload,
   onPrint,
   onAddComment
-}: RichTextEditorProps) {
+}, ref) => {
   const [mounted, setMounted] = useState(false);
   const [showColorPicker, setShowColorPicker] = useState(false);
   const [showFontPicker, setShowFontPicker] = useState(false);
   const [showFontSizePicker, setShowFontSizePicker] = useState(false);
   const [showHighlightPicker, setShowHighlightPicker] = useState(false);
   const [isInitialRender, setIsInitialRender] = useState(true);
-
-  useEffect(() => {
-    setMounted(true);
-    setTimeout(() => setIsInitialRender(false), 100);
-  }, []);
 
   const editor = useEditor({
     extensions: [
@@ -143,6 +138,15 @@ export function RichTextEditor({
       },
     },
   });
+
+  // Expose editor instance to parent
+  useImperativeHandle(ref, () => editor, [editor]);
+
+  // Initialize mounted state
+  useEffect(() => {
+    setMounted(true);
+    setTimeout(() => setIsInitialRender(false), 100);
+  }, []);
 
   // Update content when it changes from outside (e.g., version switch)
   if (editor && editor.getHTML() !== content) {
@@ -606,4 +610,6 @@ export function RichTextEditor({
       </div>
     </div>
   );
-}
+});
+
+RichTextEditor.displayName = 'RichTextEditor';
