@@ -33,6 +33,8 @@ export function DocumentCompare() {
   const [starredChanges, setStarredChanges] = useState<Set<string>>(new Set());
   const [currentChangeIndex, setCurrentChangeIndex] = useState(0);
   const [searchTerm, setSearchTerm] = useState('');
+  const [viewMode, setViewMode] = useState<'word' | 'sentence' | 'paragraph'>('word');
+  const [showUnchanged, setShowUnchanged] = useState(true);
   
   const leftPanelRef = useRef<HTMLDivElement>(null);
   const rightPanelRef = useRef<HTMLDivElement>(null);
@@ -45,19 +47,28 @@ export function DocumentCompare() {
     return div.textContent || '';
   };
   
-  // Compute all changes with word-level diff
+  // Compute all changes with word/sentence/paragraph-level diff
   const changes = useMemo((): Change[] => {
     if (!currentVersion || !compareVersion) return [];
     
     const leftText = stripHTML(compareVersion.content);
     const rightText = stripHTML(currentVersion.content);
     
-    const diff = Diff.diffWords(leftText, rightText);
+    // Choose diff function based on view mode
+    let diff;
+    if (viewMode === 'paragraph') {
+      diff = Diff.diffLines(leftText, rightText);
+    } else if (viewMode === 'sentence') {
+      diff = Diff.diffSentences(leftText, rightText);
+    } else {
+      diff = Diff.diffWords(leftText, rightText);
+    }
+    
     const detectedChanges: Change[] = [];
     let changeId = 0;
     let leftIdx = 0;
     let rightIdx = 0;
-    let totalLength = Math.max(leftText.length, rightText.length);
+    const totalLength = Math.max(leftText.length, rightText.length);
     
     for (let i = 0; i < diff.length; i++) {
       const part = diff[i];
@@ -66,6 +77,7 @@ export function DocumentCompare() {
         const nextPart = diff[i + 1];
         if (nextPart && nextPart.added) {
           // Replacement
+          const position = (leftIdx / totalLength) * 100;
           detectedChanges.push({
             id: `change-${changeId++}`,
             type: 'replaced',
@@ -73,32 +85,34 @@ export function DocumentCompare() {
             rightText: nextPart.value,
             leftIndex: leftIdx,
             rightIndex: rightIdx,
-            position: (leftIdx / totalLength) * 100
+            position: position
           });
           leftIdx += part.value.length;
           rightIdx += nextPart.value.length;
           i++; // Skip next
         } else {
           // Deletion
+          const position = (leftIdx / totalLength) * 100;
           detectedChanges.push({
             id: `change-${changeId++}`,
             type: 'deleted',
             leftText: part.value,
             leftIndex: leftIdx,
             rightIndex: rightIdx,
-            position: (leftIdx / totalLength) * 100
+            position: position
           });
           leftIdx += part.value.length;
         }
       } else if (part.added) {
         // Insertion
+        const position = (rightIdx / totalLength) * 100;
         detectedChanges.push({
           id: `change-${changeId++}`,
           type: 'inserted',
           rightText: part.value,
           leftIndex: leftIdx,
           rightIndex: rightIdx,
-          position: (rightIdx / totalLength) * 100
+          position: position
         });
         rightIdx += part.value.length;
       } else {
@@ -109,7 +123,7 @@ export function DocumentCompare() {
     }
     
     return detectedChanges;
-  }, [currentVersion, compareVersion]);
+  }, [currentVersion, compareVersion, viewMode]);
   
   // Render document with highlighting
   const renderHighlightedDocument = (version: any, isLeft: boolean) => {
@@ -258,6 +272,34 @@ export function DocumentCompare() {
         {/* Toolbar */}
         <div className="px-4 py-3 border-b bg-white flex items-center justify-between">
           <div className="flex items-center gap-4">
+            {/* View Mode Toggle */}
+            <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
+              <button
+                onClick={() => setViewMode('word')}
+                className={`px-3 py-1.5 text-xs font-medium rounded transition-colors ${
+                  viewMode === 'word' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                Word
+              </button>
+              <button
+                onClick={() => setViewMode('sentence')}
+                className={`px-3 py-1.5 text-xs font-medium rounded transition-colors ${
+                  viewMode === 'sentence' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                Sentence
+              </button>
+              <button
+                onClick={() => setViewMode('paragraph')}
+                className={`px-3 py-1.5 text-xs font-medium rounded transition-colors ${
+                  viewMode === 'paragraph' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                Paragraph
+              </button>
+            </div>
+            
             {/* Navigation */}
             <div className="flex items-center gap-2">
               <button
@@ -339,25 +381,41 @@ export function DocumentCompare() {
             </div>
           </div>
           
-          {/* Center minimap */}
-          <div className="w-16 bg-gray-100 border-r relative overflow-hidden flex-shrink-0">
-            {changes.map((change) => (
-              <div
-                key={change.id}
-                className={`absolute left-0 right-0 h-1 cursor-pointer hover:h-2 transition-all ${
-                  change.type === 'inserted' ? 'bg-green-500' :
-                  change.type === 'deleted' ? 'bg-red-500' :
-                  change.type === 'replaced' ? 'bg-blue-500' :
-                  'bg-purple-500'
-                }`}
-                style={{ top: `${change.position}%` }}
-                onClick={() => {
-                  const idx = filteredChanges.findIndex(c => c.id === change.id);
-                  if (idx !== -1) goToChange(idx);
-                }}
-                title={change.type}
-              />
-            ))}
+          {/* Center minimap - smart positioning */}
+          <div className="w-16 bg-gray-50 border-r relative overflow-hidden flex-shrink-0">
+            {/* Only show bars at actual change locations */}
+            {changes.map((change) => {
+              const barHeight = viewMode === 'paragraph' ? 8 : viewMode === 'sentence' ? 4 : 2;
+              return (
+                <div
+                  key={change.id}
+                  className={`absolute left-0 right-0 cursor-pointer transition-all group ${
+                    change.type === 'inserted' ? 'bg-green-500 hover:bg-green-600' :
+                    change.type === 'deleted' ? 'bg-red-500 hover:bg-red-600' :
+                    change.type === 'replaced' ? 'bg-blue-500 hover:bg-blue-600' :
+                    'bg-purple-500 hover:bg-purple-600'
+                  }`}
+                  style={{ 
+                    top: `${change.position}%`,
+                    height: `${barHeight}px`,
+                    minHeight: '2px'
+                  }}
+                  onClick={() => {
+                    const idx = filteredChanges.findIndex(c => c.id === change.id);
+                    if (idx !== -1) goToChange(idx);
+                  }}
+                  title={`${change.type.toUpperCase()} - Click to view`}
+                >
+                  {/* Hover tooltip preview */}
+                  <div className="hidden group-hover:block absolute left-full ml-2 bg-gray-900 text-white text-xs p-2 rounded shadow-lg z-10 w-48 pointer-events-none">
+                    <div className="font-medium mb-1">{change.type.toUpperCase()}</div>
+                    <div className="line-clamp-2">
+                      {change.leftText || change.rightText || ''}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
           
           {/* Right panel */}
