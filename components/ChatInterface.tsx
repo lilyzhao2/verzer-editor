@@ -122,8 +122,8 @@ export function ChatInterface({ viewMode }: ChatInterfaceProps) {
               onChange={(e) => handleModelChange(e.target.value as AIModel)}
               className="text-sm text-gray-700 bg-transparent border border-gray-300 rounded px-3 py-1.5 cursor-pointer hover:bg-gray-50 font-medium"
             >
-              <option value="claude-3-5-haiku-20241022">Haiku</option>
-              <option value="claude-3-5-sonnet-20241022">Sonnet</option>
+              <option value="claude-3-5-haiku-20241022">Claude Haiku 3.5</option>
+              <option value="claude-3-7-sonnet-20250219">Claude Sonnet 3.7</option>
             </select>
           </div>
           <div className="flex-1 overflow-hidden">

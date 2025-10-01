@@ -207,7 +207,7 @@ ${content}`;
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
-        model: model || 'claude-3-5-haiku-20241022',
+        model: model || 'claude-3-7-sonnet-20250219',
         max_tokens: 4000,
         messages: [
           {

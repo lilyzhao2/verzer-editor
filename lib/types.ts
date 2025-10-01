@@ -129,7 +129,7 @@ export interface ChatMessage {
   timestamp: Date;
 }
 
-export type AIModel = 'claude-3-5-haiku-20241022' | 'claude-3-5-sonnet-20241022';
+export type AIModel = 'claude-3-5-haiku-20241022' | 'claude-3-7-sonnet-20250219';
 
 export type ViewMode = 'context' | 'document' | 'iterate' | 'compare' | 'parallel' | 'smartmerge';
 

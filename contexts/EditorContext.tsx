@@ -117,7 +117,7 @@ export function EditorProvider({ children }: { children: React.ReactNode }) {
       chatHistory: [],
       comments: [],
       projectNotes: [],
-      selectedModel: 'claude-3-5-haiku-20241022' as AIModel,
+      selectedModel: 'claude-3-7-sonnet-20250219' as AIModel,
       viewMode: 'document' as ViewMode,
       pendingAIEdit: null,
       projectConfigs: [defaultConfig],
@@ -195,7 +195,7 @@ export function EditorProvider({ children }: { children: React.ReactNode }) {
               id: `msg-${Date.now()}-${index}-${Math.random().toString(36).substr(2, 9)}`,
               timestamp: new Date(c.timestamp)
             })),
-            selectedModel: parsed.selectedModel || 'claude-3-5-haiku-20241022',
+            selectedModel: parsed.selectedModel || 'claude-3-7-sonnet-20250219',
             viewMode: parsed.viewMode || 'document',
             pendingAIEdit: null,
             paragraphLineage: parsed.paragraphLineage || [],
