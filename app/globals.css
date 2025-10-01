@@ -13,10 +13,49 @@
   border-bottom: 2px solid #f59e0b;
   cursor: pointer;
   padding: 2px 0;
+  position: relative;
 }
 
 .comment-highlight:hover {
   background-color: #fde68a;
+}
+
+/* Floating comment button animation */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.2s ease-out;
+}
+
+/* Comment tooltip on hover */
+.comment-highlight::after {
+  content: attr(data-comment-preview);
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  background: rgba(0, 0, 0, 0.8);
+  color: white;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s;
+  z-index: 1000;
+}
+
+.comment-highlight:hover::after {
+  opacity: 1;
 }
 
 @theme inline {

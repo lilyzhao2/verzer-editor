@@ -50,7 +50,12 @@ export function DocumentEditor() {
     setTimeout(() => {
       isUpdatingRef.current = false;
     }, 100);
-  }, [currentVersion]);
+    
+    // Auto-show comment sidebar if there are comments for this version
+    if (currentVersion && state.comments.some(c => c.versionId === currentVersion.id)) {
+      setShowCommentSidebar(true);
+    }
+  }, [currentVersion, state.comments]);
 
   const handleContentChange = useCallback((newContent: string) => {
     if (isUpdatingRef.current) return;
@@ -172,9 +177,26 @@ export function DocumentEditor() {
     }
   };
 
-  const handleAddComment = (selectedText: string, position: { start: number; end: number }) => {
-    setSelectedTextForComment({ text: selectedText, position });
-    setShowAddCommentModal(true);
+  const handleAddComment = (selectedText: string, position: { start: number; end: number }, comment?: string) => {
+    if (!currentVersion) return;
+    
+    // If comment is provided directly (from inline input), use it
+    if (comment) {
+      addComment(
+        currentVersion.id,
+        state.currentUserId,
+        comment,
+        position,
+        selectedText
+      );
+      
+      // Show the sidebar to see the new comment
+      setShowCommentSidebar(true);
+    } else {
+      // Fallback to modal (for toolbar button)
+      setSelectedTextForComment({ text: selectedText, position });
+      setShowAddCommentModal(true);
+    }
   };
 
   const handleSubmitComment = () => {

@@ -15,6 +15,7 @@ import Highlight from '@tiptap/extension-highlight';
 import HorizontalRule from '@tiptap/extension-horizontal-rule';
 import FontSize from 'tiptap-extension-font-size';
 import { CommentExtension } from '@/lib/tiptap-comment-extension';
+import { FloatingCommentButton } from './FloatingCommentButton';
 import { 
   Bold, 
   Italic, 
@@ -64,7 +65,7 @@ interface RichTextEditorProps {
   versionNumber?: string;
   onDownload?: () => void;
   onPrint?: () => void;
-  onAddComment?: (selectedText: string, position: { start: number; end: number }) => void;
+  onAddComment?: (selectedText: string, position: { start: number; end: number }, comment?: string) => void;
 }
 
 export const RichTextEditor = forwardRef<any, RichTextEditorProps>(({ 
@@ -153,11 +154,24 @@ export const RichTextEditor = forwardRef<any, RichTextEditorProps>(({
     editor.commands.setContent(content);
   }
 
-  // Handle Cmd+S for manual save
+  // Handle keyboard shortcuts
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    // Cmd+S for save
     if ((e.metaKey || e.ctrlKey) && e.key === 's') {
       e.preventDefault();
       onSave?.();
+    }
+    
+    // Cmd+Alt+M for comment (like Google Docs)
+    if ((e.metaKey || e.ctrlKey) && e.altKey && e.key === 'm') {
+      e.preventDefault();
+      if (onAddComment && editor) {
+        const { from, to } = editor.state.selection;
+        const selectedText = editor.state.doc.textBetween(from, to);
+        if (selectedText.trim()) {
+          onAddComment(selectedText, { start: from, end: to });
+        }
+      }
     }
   };
 
@@ -605,8 +619,14 @@ export const RichTextEditor = forwardRef<any, RichTextEditorProps>(({
 
 
       {/* Editor Content */}
-      <div className={`flex-1 overflow-y-auto bg-white ${isPrintView ? 'print-view' : ''}`}>
+      <div className={`flex-1 overflow-y-auto bg-white ${isPrintView ? 'print-view' : ''} relative`}>
         <EditorContent editor={editor} />
+        {onAddComment && (
+          <FloatingCommentButton 
+            onAddComment={(text, pos, comment) => onAddComment(text, pos, comment)}
+            editorRef={{ current: editor }}
+          />
+        )}
       </div>
     </div>
   );
