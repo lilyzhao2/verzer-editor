@@ -54,6 +54,37 @@ export interface Comment {
   timestamp: Date;
   resolved: boolean;
   position?: { start: number; end: number }; // Text selection position
+  mentions?: string[]; // @mentions in the comment
+}
+
+export interface ParagraphLineage {
+  id: string;
+  paragraphIndex: number; // Index of paragraph in document
+  versionId: string; // Which version this paragraph belongs to
+  promptId: string; // Which prompt created this paragraph
+  prompt: string; // The actual prompt text
+  timestamp: Date; // When this paragraph was created
+  userId: string; // Who made the change
+  userName: string; // Name of the user
+  isLocked: boolean; // Whether this paragraph is locked from changes
+  originalContent: string; // Original content when first created
+  currentContent: string; // Current content (may have been modified)
+}
+
+export interface ChangeMetadata {
+  id: string;
+  versionId: string;
+  promptId: string;
+  prompt: string;
+  timestamp: Date;
+  userId: string;
+  userName: string;
+  changeType: 'addition' | 'modification' | 'deletion';
+  paragraphIndex?: number; // Which paragraph was affected
+  startPosition?: number; // Character position where change starts
+  endPosition?: number; // Character position where change ends
+  oldContent?: string; // Content before change
+  newContent?: string; // Content after change
 }
 
 export interface Version {
@@ -154,4 +185,6 @@ export interface EditorState {
   todoHistory: TodoSession[]; // Past todo sessions
   debugMode: boolean; // Show system prompts and debug info
   lastSystemPrompt: string | null; // Last system prompt sent to AI
+  paragraphLineage: ParagraphLineage[]; // Track paragraph-level changes
+  changeMetadata: ChangeMetadata[]; // Track all changes with metadata
 }

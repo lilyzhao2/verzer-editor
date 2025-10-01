@@ -9,7 +9,7 @@ import { GripVertical } from 'lucide-react';
 
 export function ChatInterface() {
   const { state, setSelectedModel } = useEditor();
-  const [splitPosition, setSplitPosition] = useState(60); // percentage - 60% for chat, 40% for tree
+  const [splitPosition, setSplitPosition] = useState(60); // percentage - 60% for tree, 40% for chat
   const [isResizing, setIsResizing] = useState(false);
 
   const handleModelChange = (model: AIModel) => {
@@ -56,20 +56,25 @@ export function ChatInterface() {
 
   return (
     <div id="chat-interface-container" className="h-full flex flex-col bg-gray-50">
-      {/* Top Section - Version Tree */}
+      {/* Top Section - AI Chat */}
       <div 
         className="overflow-hidden border-b border-gray-200"
         style={{ height: `${splitPosition}%` }}
       >
         <div className="h-full flex flex-col">
-          <div className="px-4 py-2 bg-white border-b border-gray-200 flex items-center justify-between">
-            <span className="text-sm font-medium text-gray-700">Version Tree</span>
-            <div className="text-xs text-gray-500">
-              {state.versions.length} versions
-            </div>
+          <div className="px-5 py-3 bg-white border-b border-gray-200 flex items-center justify-between">
+            <span className="text-base font-semibold text-gray-800">AI Chat</span>
+            <select
+              value={state.selectedModel}
+              onChange={(e) => handleModelChange(e.target.value as AIModel)}
+              className="text-sm text-gray-700 bg-transparent border border-gray-300 rounded px-3 py-1.5 cursor-pointer hover:bg-gray-50 font-medium"
+            >
+              <option value="claude-3-5-haiku-20241022">Haiku</option>
+              <option value="claude-3-5-sonnet-20241022">Sonnet</option>
+            </select>
           </div>
           <div className="flex-1 overflow-hidden">
-            <VersionTree />
+            <ConversationalChat />
           </div>
         </div>
       </div>
@@ -82,28 +87,23 @@ export function ChatInterface() {
         }`}
         title="Drag to resize"
       >
-        <GripVertical className="w-4 h-3 text-gray-400" />
+        <GripVertical className="w-5 h-4 text-gray-400" />
       </div>
 
-      {/* Bottom Section - AI Chat */}
+      {/* Bottom Section - Version Tree */}
       <div 
         className="flex-1 overflow-hidden"
         style={{ height: `${100 - splitPosition}%` }}
       >
         <div className="h-full flex flex-col">
-          <div className="px-4 py-2 bg-white border-b border-gray-200 flex items-center justify-between">
-            <span className="text-sm font-medium text-gray-700">AI Chat</span>
-            <select
-              value={state.selectedModel}
-              onChange={(e) => handleModelChange(e.target.value as AIModel)}
-              className="text-xs text-gray-600 bg-transparent border border-gray-300 rounded px-2 py-1 cursor-pointer hover:bg-gray-50"
-            >
-              <option value="claude-3-5-haiku-20241022">Haiku</option>
-              <option value="claude-3-5-sonnet-20241022">Sonnet</option>
-            </select>
+          <div className="px-5 py-3 bg-white border-b border-gray-200 flex items-center justify-between">
+            <span className="text-base font-semibold text-gray-800">Version Tree</span>
+            <div className="text-sm text-gray-600 font-medium">
+              {state.versions.length} versions
+            </div>
           </div>
           <div className="flex-1 overflow-hidden">
-            <ConversationalChat />
+            <VersionTree />
           </div>
         </div>
       </div>

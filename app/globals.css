@@ -3,6 +3,8 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  /* Increase base font size */
+  font-size: 17px;
 }
 
 @theme inline {

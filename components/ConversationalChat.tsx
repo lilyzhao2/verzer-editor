@@ -404,21 +404,8 @@ export function ConversationalChat() {
             className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'} group`}
           >
             <div className="flex items-start gap-2 max-w-[85%]">
-              {message.role !== 'user' && (
-                <button
-                  onClick={() => handleCopyMessage(message.content.replace(/<[^>]*>/g, ''), message.id)}
-                  className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 hover:bg-gray-200 rounded mt-1"
-                  title="Copy message"
-                >
-                  {copiedMessageId === message.id ? (
-                    <Check className="w-4 h-4 text-green-600" />
-                  ) : (
-                    <Copy className="w-4 h-4 text-gray-600" />
-                  )}
-                </button>
-              )}
               <div
-                className={`rounded-lg px-4 py-3 ${
+                className={`rounded-lg px-4 py-3 relative ${
                   message.role === 'user'
                     ? 'bg-blue-600 text-white'
                     : message.role === 'system'
@@ -443,20 +430,20 @@ export function ConversationalChat() {
                 <p className="text-xs opacity-60 mt-2">
                   {message.timestamp.toLocaleTimeString()}
                 </p>
-              </div>
-              {message.role === 'user' && (
+                
+                {/* Copy button - bottom right */}
                 <button
                   onClick={() => handleCopyMessage(message.content.replace(/<[^>]*>/g, ''), message.id)}
-                  className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 hover:bg-gray-200 rounded mt-1"
+                  className="absolute bottom-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity p-1.5 hover:bg-white/20 rounded"
                   title="Copy message"
                 >
                   {copiedMessageId === message.id ? (
                     <Check className="w-4 h-4 text-green-600" />
                   ) : (
-                    <Copy className="w-4 h-4 text-gray-600" />
+                    <Copy className={`w-4 h-4 ${message.role === 'user' ? 'text-white' : 'text-gray-600'}`} />
                   )}
                 </button>
-              )}
+              </div>
             </div>
           </div>
         ))}

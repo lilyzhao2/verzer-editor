@@ -109,14 +109,18 @@ export function ProfessionalCompare() {
     const inserted = annotatedChanges.filter(c => c.type === 'inserted').reduce((acc, c) => acc + c.wordCount, 0);
     const removed = annotatedChanges.filter(c => c.type === 'removed' || (c.type === 'replaced' && c.removed)).reduce((acc, c) => acc + c.wordCount, 0);
     const replaced = annotatedChanges.filter(c => c.type === 'replaced').length / 2; // Divided by 2 because replaced has 2 parts
+    const wordCount = inserted + removed;
+    const originalLength = compareVersion ? stripHTML(compareVersion.content).split(/\s+/).length : 0;
     
     return {
       inserted,
       removed,
       replaced: Math.floor(replaced),
-      total: inserted + removed + Math.floor(replaced)
+      total: inserted + removed + Math.floor(replaced),
+      wordCount,
+      originalLength
     };
-  }, [annotatedChanges]);
+  }, [annotatedChanges, compareVersion]);
   
   // Synchronized scrolling for side-by-side view
   const handleLeftScroll = (e: React.UIEvent<HTMLDivElement>) => {
@@ -234,27 +238,47 @@ export function ProfessionalCompare() {
           </div>
         </div>
         
-        {/* Statistics & Navigation Bar */}
+        {/* Enhanced Statistics & Navigation Bar */}
         <div className="px-6 py-3 bg-white border-t border-gray-100 flex items-center justify-between">
           <div className="flex items-center gap-6">
-            <div className="flex items-center gap-2">
-              <div className="px-2 py-1 bg-green-50 border border-green-200 rounded text-xs font-medium text-green-700">
-                <span className="font-bold">+{stats.inserted}</span> Inserted
+            {/* Change Statistics */}
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                <div className="px-3 py-1.5 bg-green-50 border border-green-200 rounded-lg text-sm font-medium text-green-700">
+                  <span className="font-bold text-lg">+{stats.inserted}</span>
+                  <span className="ml-1">Inserted</span>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="px-3 py-1.5 bg-red-50 border border-red-200 rounded-lg text-sm font-medium text-red-700">
+                  <span className="font-bold text-lg">-{stats.removed}</span>
+                  <span className="ml-1">Removed</span>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="px-3 py-1.5 bg-blue-50 border border-blue-200 rounded-lg text-sm font-medium text-blue-700">
+                  <span className="font-bold text-lg">{stats.replaced}</span>
+                  <span className="ml-1">Replaced</span>
+                </div>
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              <div className="px-2 py-1 bg-red-50 border border-red-200 rounded text-xs font-medium text-red-700">
-                <span className="font-bold">-{stats.removed}</span> Removed
+            
+            <div className="h-6 w-px bg-gray-300"></div>
+            
+            {/* Document Statistics */}
+            <div className="flex items-center gap-4 text-sm text-gray-600">
+              <div className="flex items-center gap-1">
+                <span className="font-semibold">{stats.total}</span>
+                <span>total changes</span>
               </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="px-2 py-1 bg-blue-50 border border-blue-200 rounded text-xs font-medium text-blue-700">
-                <span className="font-bold">{stats.replaced}</span> Replaced
+              <div className="flex items-center gap-1">
+                <span className="font-semibold">{stats.wordCount}</span>
+                <span>words changed</span>
               </div>
-            </div>
-            <div className="h-4 w-px bg-gray-300"></div>
-            <div className="text-sm text-gray-600">
-              <span className="font-semibold">{stats.total}</span> total changes
+              <div className="flex items-center gap-1">
+                <span className="font-semibold">{Math.round((stats.total / Math.max(stats.originalLength, 1)) * 100)}%</span>
+                <span>change rate</span>
+              </div>
             </div>
           </div>
           
@@ -343,11 +367,11 @@ export function ProfessionalCompare() {
                       <span
                         key={change.id}
                         ref={el => { changeRefs.current[index] = el; }}
-                        className="inline-flex items-baseline gap-1 bg-green-50 border-l-4 border-green-500 px-2 py-0.5 mx-0.5 rounded"
+                        className="inline-flex items-baseline gap-1 bg-green-100 border-2 border-green-300 px-3 py-1 mx-0.5 rounded-lg shadow-sm hover:bg-green-200 transition-colors"
                       >
-                        <span className="text-[10px] font-bold text-green-700 uppercase">Inserted</span>
+                        <span className="text-[10px] font-bold text-green-800 uppercase tracking-wide">+</span>
                         <span className="text-green-900 font-medium">{change.value}</span>
-                        <span className="text-[10px] text-green-600">+{change.wordCount}w</span>
+                        <span className="text-[10px] text-green-700 bg-green-200 px-1 rounded font-semibold">+{change.wordCount}w</span>
                       </span>
                     );
                   } else if (change.type === 'removed') {
@@ -355,7 +379,7 @@ export function ProfessionalCompare() {
                       <span
                         key={change.id}
                         ref={el => { changeRefs.current[index] = el; }}
-                        className="inline-flex items-baseline gap-1 bg-red-50 border-l-4 border-red-500 px-2 py-0.5 mx-0.5 rounded line-through"
+                        className="inline-flex items-baseline gap-1 bg-red-100 border-2 border-red-300 px-3 py-1 mx-0.5 rounded-lg shadow-sm hover:bg-red-200 transition-colors line-through"
                       >
                         <span className="text-[10px] font-bold text-red-700 uppercase">Removed</span>
                         <span className="text-red-900">{change.value}</span>
@@ -367,19 +391,25 @@ export function ProfessionalCompare() {
                       <span
                         key={change.id}
                         ref={el => { changeRefs.current[index] = el; }}
-                        className={`inline-flex items-baseline gap-1 border-l-4 px-2 py-0.5 mx-0.5 rounded ${
+                        className={`inline-flex items-baseline gap-1 border-2 px-3 py-1 mx-0.5 rounded-lg shadow-sm transition-colors ${
                           change.removed 
-                            ? 'bg-blue-50 border-blue-500 line-through' 
-                            : 'bg-blue-50 border-blue-500'
+                            ? 'bg-orange-100 border-orange-300 line-through hover:bg-orange-200' 
+                            : 'bg-blue-100 border-blue-300 hover:bg-blue-200'
                         }`}
                       >
-                        <span className="text-[10px] font-bold text-blue-700 uppercase">
-                          {change.removed ? 'Replaced' : 'With'}
+                        <span className={`text-[10px] font-bold uppercase tracking-wide ${
+                          change.removed ? 'text-orange-800' : 'text-blue-800'
+                        }`}>
+                          {change.removed ? 'OLD' : 'NEW'}
                         </span>
-                        <span className={change.removed ? 'text-blue-900' : 'text-blue-900 font-medium'}>
+                        <span className={change.removed ? 'text-orange-900' : 'text-blue-900 font-medium'}>
                           {change.value}
                         </span>
-                        <span className="text-[10px] text-blue-600">
+                        <span className={`text-[10px] px-1 rounded font-semibold ${
+                          change.removed 
+                            ? 'text-orange-700 bg-orange-200' 
+                            : 'text-blue-700 bg-blue-200'
+                        }`}>
                           {change.removed ? `-${change.wordCount}w` : `+${change.wordCount}w`}
                         </span>
                       </span>

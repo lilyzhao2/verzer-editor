@@ -1,7 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
-import { Version, ChatMessage, EditorState, AIModel, ViewMode, Checkpoint, PendingAIEdit, Comment, ProjectNote, ProjectConfig, EditorTab, TodoSession, TodoTask } from '@/lib/types';
+import { Version, ChatMessage, EditorState, AIModel, ViewMode, Checkpoint, PendingAIEdit, Comment, ProjectNote, ProjectConfig, EditorTab, TodoSession, TodoTask, ParagraphLineage, ChangeMetadata } from '@/lib/types';
 
 interface EditorContextType {
   state: EditorState;
@@ -47,6 +47,13 @@ interface EditorContextType {
   toggleDebugMode: () => void;
   setLastSystemPrompt: (prompt: string) => void;
   addChatMessage: (prompt: string, response: string) => void;
+  // Paragraph lineage tracking
+  trackParagraphChange: (versionId: string, promptId: string, prompt: string, paragraphIndex: number, content: string) => void;
+  lockParagraph: (paragraphId: string) => void;
+  unlockParagraph: (paragraphId: string) => void;
+  revertParagraph: (paragraphId: string, targetVersionId: string) => void;
+  getParagraphLineage: (versionId: string) => ParagraphLineage[];
+  getChangeMetadata: (versionId: string) => ChangeMetadata[];
 }
 
 const EditorContext = createContext<EditorContextType | undefined>(undefined);
@@ -116,7 +123,9 @@ export function EditorProvider({ children }: { children: React.ReactNode }) {
       activeTodoSession: null,
       todoHistory: [],
       debugMode: false,
-      lastSystemPrompt: null
+      lastSystemPrompt: null,
+      paragraphLineage: [],
+      changeMetadata: []
     };
   });
 
@@ -183,7 +192,9 @@ export function EditorProvider({ children }: { children: React.ReactNode }) {
             })),
             selectedModel: parsed.selectedModel || 'claude-3-5-haiku-20241022',
             viewMode: parsed.viewMode || 'document',
-            pendingAIEdit: null
+            pendingAIEdit: null,
+            paragraphLineage: parsed.paragraphLineage || [],
+            changeMetadata: parsed.changeMetadata || []
           });
         } catch (error) {
           console.error('Failed to load state:', error);
@@ -696,6 +707,76 @@ Break this into 3-7 clear tasks. Be specific and actionable. Return ONLY the JSO
     }));
   }, []);
 
+  // Paragraph lineage tracking functions
+  const trackParagraphChange = useCallback((versionId: string, promptId: string, prompt: string, paragraphIndex: number, content: string) => {
+    const currentUser = state.users.find(u => u.id === state.currentUserId);
+    const newLineage: ParagraphLineage = {
+      id: `para-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      paragraphIndex,
+      versionId,
+      promptId,
+      prompt,
+      timestamp: new Date(),
+      userId: state.currentUserId,
+      userName: currentUser?.name || 'Unknown',
+      isLocked: false,
+      originalContent: content,
+      currentContent: content
+    };
+
+    setState(prev => ({
+      ...prev,
+      paragraphLineage: [...prev.paragraphLineage, newLineage]
+    }));
+  }, [state.users, state.currentUserId]);
+
+  const lockParagraph = useCallback((paragraphId: string) => {
+    setState(prev => ({
+      ...prev,
+      paragraphLineage: prev.paragraphLineage.map(para => 
+        para.id === paragraphId ? { ...para, isLocked: true } : para
+      )
+    }));
+  }, []);
+
+  const unlockParagraph = useCallback((paragraphId: string) => {
+    setState(prev => ({
+      ...prev,
+      paragraphLineage: prev.paragraphLineage.map(para => 
+        para.id === paragraphId ? { ...para, isLocked: false } : para
+      )
+    }));
+  }, []);
+
+  const revertParagraph = useCallback((paragraphId: string, targetVersionId: string) => {
+    const targetVersion = state.versions.find(v => v.id === targetVersionId);
+    if (!targetVersion) return;
+
+    // Find the paragraph in the target version
+    const paragraphs = targetVersion.content.split('\n\n');
+    const paragraphLineage = state.paragraphLineage.find(p => p.id === paragraphId);
+    if (!paragraphLineage) return;
+
+    const targetContent = paragraphs[paragraphLineage.paragraphIndex] || '';
+    
+    setState(prev => ({
+      ...prev,
+      paragraphLineage: prev.paragraphLineage.map(para => 
+        para.id === paragraphId 
+          ? { ...para, currentContent: targetContent }
+          : para
+      )
+    }));
+  }, [state.versions, state.paragraphLineage]);
+
+  const getParagraphLineage = useCallback((versionId: string) => {
+    return state.paragraphLineage.filter(p => p.versionId === versionId);
+  }, [state.paragraphLineage]);
+
+  const getChangeMetadata = useCallback((versionId: string) => {
+    return state.changeMetadata.filter(c => c.versionId === versionId);
+  }, [state.changeMetadata]);
+
   // Retry function for API calls
   const retryApiCall = async (apiCall: () => Promise<Response>, maxRetries = 3, baseDelay = 1000) => {
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -856,6 +937,15 @@ Break this into 3-7 clear tasks. Be specific and actionable. Return ONLY the JSO
       const newVersionId = `v${Date.now()}`;
       createVersion(editedContent, prompt, parentId, undefined, newVersionId);
       
+      // Track paragraph changes for lineage
+      const promptId = `prompt-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      const paragraphs = editedContent.split('\n\n');
+      paragraphs.forEach((paragraph: string, index: number) => {
+        if (paragraph.trim()) {
+          trackParagraphChange(newVersionId, promptId, prompt, index, paragraph);
+        }
+      });
+      
       // If in parallel mode and autoOpen is true, open the new version in a tab
       if (options?.autoOpenInParallel && state.viewMode === 'parallel') {
         // Open the tab immediately with the known ID
@@ -994,6 +1084,14 @@ Break this into 3-7 clear tasks. Be specific and actionable. Return ONLY the JSO
 
   // Comment functions
   const addComment = useCallback((versionId: string, userId: string, content: string, position?: { start: number; end: number }) => {
+    // Parse @mentions from content
+    const mentionRegex = /@(\w+)/g;
+    const mentions: string[] = [];
+    let match;
+    while ((match = mentionRegex.exec(content)) !== null) {
+      mentions.push(match[1]);
+    }
+
     const newComment: Comment = {
       id: `comment-${Date.now()}`,
       userId,
@@ -1002,6 +1100,7 @@ Break this into 3-7 clear tasks. Be specific and actionable. Return ONLY the JSO
       timestamp: new Date(),
       position,
       resolved: false,
+      mentions,
     };
     setState(prev => ({
       ...prev,
@@ -1112,6 +1211,12 @@ Break this into 3-7 clear tasks. Be specific and actionable. Return ONLY the JSO
         toggleDebugMode,
         setLastSystemPrompt,
         addChatMessage,
+        trackParagraphChange,
+        lockParagraph,
+        unlockParagraph,
+        revertParagraph,
+        getParagraphLineage,
+        getChangeMetadata,
       }}
     >
       {children}

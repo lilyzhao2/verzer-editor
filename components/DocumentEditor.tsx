@@ -2,10 +2,11 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useEditor } from '@/contexts/EditorContext';
-import { CheckCircle, Save, Upload, Printer, Plus, Minus, FileText, Users } from 'lucide-react';
+import { CheckCircle, Save, Upload, Printer, Plus, Minus, FileText, Users, GitBranch } from 'lucide-react';
 import { RichTextEditor } from './RichTextEditor';
 import { ProjectSetup } from './ProjectSetup';
 import { DocumentUpload } from './DocumentUpload';
+import { ParagraphLineageView } from './ParagraphLineageView';
 
 export function DocumentEditor() {
   const { 
@@ -28,6 +29,7 @@ export function DocumentEditor() {
   const [documentName, setDocumentName] = useState('Untitled');
   const [showUserBranchModal, setShowUserBranchModal] = useState(false);
   const [newUserName, setNewUserName] = useState('');
+  const [showLineagePanel, setShowLineagePanel] = useState(false);
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const isUpdatingRef = useRef(false);
 
@@ -213,25 +215,25 @@ export function DocumentEditor() {
               <div className="flex items-center gap-2">
                 <button
                   onClick={handleOverwriteVersion}
-                  className="flex items-center gap-2 px-3 py-2 bg-gray-600 text-white text-sm font-medium rounded-lg hover:bg-gray-700 transition-colors"
-                  title="Overwrite current version"
+                  className="flex items-center gap-2 px-4 py-2.5 bg-gray-600 text-white text-base font-semibold rounded-lg hover:bg-gray-700 transition-colors"
+                  title={`Overwrite V${currentVersion?.number.toUpperCase()}`}
                 >
-                  <Save className="w-4 h-4" />
-                  Save
+                  <Save className="w-5 h-5" />
+                  Overwrite V{currentVersion?.number.toUpperCase()}
                 </button>
                 <button
                   onClick={handleSaveAsVariation}
-                  className="px-3 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 transition-colors"
-                  title={`Save as variation ${getNextVariationNumber()}`}
+                  className="px-4 py-2.5 bg-amber-600 text-white text-base font-semibold rounded-lg hover:bg-amber-700 transition-colors"
+                  title={`Save as new variation (${getNextVariationNumber()})`}
                 >
-                  V{getNextVariationNumber().toUpperCase()}
+                  Save to New Variation
                 </button>
                 <button
                   onClick={handleSaveAsNewVersion}
-                  className="px-3 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
-                  title={`Save as new version ${getNextRootVersion()}`}
+                  className="px-4 py-2.5 bg-blue-600 text-white text-base font-semibold rounded-lg hover:bg-blue-700 transition-colors"
+                  title={`Save as new root version (${getNextRootVersion()})`}
                 >
-                  V{getNextRootVersion()}
+                  Save to New Version
                 </button>
               </div>
             )}
@@ -244,6 +246,19 @@ export function DocumentEditor() {
             >
               <Users className="w-4 h-4" />
               New User Branch
+            </button>
+
+            <button
+              onClick={() => setShowLineagePanel(!showLineagePanel)}
+              className={`flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg transition-colors ${
+                showLineagePanel 
+                  ? 'bg-blue-600 text-white' 
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+              title="Show paragraph lineage and change tracking"
+            >
+              <GitBranch className="w-4 h-4" />
+              Lineage
             </button>
 
             {/* Export Options */}
@@ -294,25 +309,41 @@ export function DocumentEditor() {
         </div>
       </div>
 
-      {/* Editor */}
-      <div 
-        className="flex-1 overflow-hidden"
-        style={{ 
-          transform: `scale(${zoomLevel / 100})`,
-          transformOrigin: 'top left',
-          width: `${100 / (zoomLevel / 100)}%`,
-          height: `${100 / (zoomLevel / 100)}%`
-        }}
-      >
-        <div className={`h-full ${isPrintView ? 'print-view' : ''}`}>
-          <RichTextEditor
-            content={localContent}
-            onChange={handleContentChange}
-            onSave={handleOverwriteVersion}
-            placeholder="Start writing your document here..."
-            isPrintView={isPrintView}
-          />
+      {/* Main Content Area */}
+      <div className="flex-1 flex overflow-hidden">
+        {/* Editor */}
+        <div 
+          className={`flex-1 overflow-hidden ${showLineagePanel ? 'w-2/3' : 'w-full'}`}
+          style={{ 
+            transform: `scale(${zoomLevel / 100})`,
+            transformOrigin: 'top left',
+            width: showLineagePanel ? `${(100 / (zoomLevel / 100)) * 0.67}%` : `${100 / (zoomLevel / 100)}%`,
+            height: `${100 / (zoomLevel / 100)}%`
+          }}
+        >
+          <div className={`h-full ${isPrintView ? 'print-view' : ''}`}>
+            <RichTextEditor
+              content={localContent}
+              onChange={handleContentChange}
+              onSave={handleOverwriteVersion}
+              placeholder="Start writing your document here..."
+              isPrintView={isPrintView}
+            />
+          </div>
         </div>
+
+        {/* Lineage Panel */}
+        {showLineagePanel && currentVersion && (
+          <div className="w-1/3 border-l border-gray-200 bg-white">
+            <ParagraphLineageView 
+              versionId={currentVersion.id}
+              onRevert={(paragraphId, targetVersionId) => {
+                // Handle paragraph revert
+                console.log('Revert paragraph', paragraphId, 'to version', targetVersionId);
+              }}
+            />
+          </div>
+        )}
       </div>
 
       {/* Upload Modal */}

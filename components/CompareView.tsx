@@ -296,7 +296,7 @@ export function CompareView() {
         <div className="px-6 py-4 bg-white border-b border-gray-200">
           <div className="flex items-center justify-between">
             <div>
-            <h2 className="text-xl font-bold text-gray-800">Track Changes</h2>
+                  <h2 className="text-xl font-bold text-gray-800">History</h2>
             <p className="text-sm text-black mt-1">
               {selectedVersionsForCompare.length === 0 
                 ? 'Select 2 versions from the Version Tree to compare them →'
@@ -402,7 +402,29 @@ export function CompareView() {
                             <div className="text-xs text-gray-600 mb-1">
                               {user?.name || 'Unknown'} • {new Date(comment.timestamp).toLocaleString()}
                             </div>
-                            <p className="text-sm text-black">{comment.content}</p>
+                            <p className="text-sm text-black">
+                              {comment.content.split(/(@\w+)/).map((part, index) => {
+                                if (part.startsWith('@')) {
+                                  const username = part.substring(1);
+                                  const mentionedUser = state.users?.find(u => u.name.toLowerCase() === username.toLowerCase());
+                                  return (
+                                    <span 
+                                      key={index}
+                                      className="bg-blue-100 text-blue-800 px-1 rounded text-xs font-medium"
+                                      style={{ backgroundColor: mentionedUser?.color + '20' }}
+                                    >
+                                      {part}
+                                    </span>
+                                  );
+                                }
+                                return part;
+                              })}
+                            </p>
+                            {comment.mentions && comment.mentions.length > 0 && (
+                              <div className="mt-1 text-xs text-gray-500">
+                                Mentions: {comment.mentions.map(mention => `@${mention}`).join(', ')}
+                              </div>
+                            )}
                           </div>
                         </div>
                       </div>
