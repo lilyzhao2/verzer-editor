@@ -3,7 +3,15 @@ import { NextRequest, NextResponse } from 'next/server';
 
 export async function POST(request: NextRequest) {
   try {
-    const { prompt, content, model, mode = 'edit' } = await request.json();
+    const { prompt, content, model, mode = 'edit', projectConfig } = await request.json();
+    
+    // Check if content is provided
+    if (!content || content.trim() === '') {
+      return NextResponse.json(
+        { error: 'No document content provided. Please write some text in the document first.' },
+        { status: 400 }
+      );
+    }
     
     // Check for API key in environment variable
     const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -14,24 +22,57 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Build project context if provided
+    let projectContext = '';
+    if (projectConfig) {
+      projectContext = `PROJECT CONTEXT:
+Project Name: ${projectConfig.projectName || 'Untitled'}
+Description: ${projectConfig.description || 'No description'}
+${projectConfig.styleGuide ? `Writing Style: ${projectConfig.styleGuide}` : ''}
+${projectConfig.tone ? `Tone: ${projectConfig.tone}` : ''}
+${projectConfig.audience ? `Target Audience: ${projectConfig.audience}` : ''}
+${projectConfig.constraints ? `Constraints: ${projectConfig.constraints}` : ''}
+${projectConfig.references?.length ? `Style References: ${projectConfig.references.join(', ')}` : ''}
+${projectConfig.additionalContext ? `Additional Context: ${projectConfig.additionalContext}` : ''}
+
+Please keep all edits and responses aligned with this project context.
+
+---
+
+`;
+    }
+
     // Different prompts based on mode
     let userContent: string;
     
     if (mode === 'chat') {
-      userContent = `Document content: ${content}\n\nQuestion: ${prompt}`;
+      userContent = `${projectContext}Document content: ${content}\n\nQuestion: ${prompt}`;
+    } else if (mode === 'analyze') {
+      // Context extraction mode - no project context needed
+      userContent = prompt + '\n\nDocument to analyze:\n' + content;
     } else {
-      // For edit mode, ask for structured response
-      userContent = `Edit the following document according to this instruction: "${prompt}"
+      // Ask AI to return both the edited document AND an explanation
+      userContent = `${projectContext}Edit the following HTML document according to this instruction: "${prompt}"
 
-IMPORTANT: Return your response in this exact format:
+IMPORTANT RULES:
+1. The document is in HTML format. Preserve ALL HTML tags and formatting.
+2. Keep existing HTML tags like <p>, <strong>, <em>, <h1>, <h2>, <ul>, <li>, etc.
+3. Add appropriate HTML tags for any new formatting:
+   - For bold text, use <strong> tags
+   - For italic text, use <em> tags  
+   - For new paragraphs, use <p> tags
+   - For headings, use <h1>, <h2>, <h3> etc.
+   - For lists, use <ul>/<ol> with <li> tags
+
+Return your response in this exact format:
 [DOCUMENT]
-(Put the edited document text here - just the clean text, no explanations)
+(Put the edited HTML document here with all formatting preserved)
 [/DOCUMENT]
 [EXPLANATION]
-(Put your explanation of what changes you made here)
+(Explain what changes you made and why)
 [/EXPLANATION]
 
-Original document:
+Original HTML document:
 ${content}`;
     }
 
@@ -72,12 +113,32 @@ ${content}`;
         mode: 'chat',
         response: responseText 
       });
+    } else if (mode === 'analyze') {
+      // For analyze mode, try to extract and return clean JSON
+      try {
+        // Try to find JSON in the response
+        const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          const jsonData = JSON.parse(jsonMatch[0]);
+          return NextResponse.json({ 
+            mode: 'analyze',
+            response: jsonData 
+          });
+        }
+      } catch (e) {
+        console.error('Failed to parse JSON from analyze response:', e);
+      }
+      // If JSON parsing fails, return the raw text
+      return NextResponse.json({ 
+        mode: 'analyze',
+        response: responseText 
+      });
     } else {
       // Parse the structured response for edit mode
       const documentMatch = responseText.match(/\[DOCUMENT\]([\s\S]*?)\[\/DOCUMENT\]/);
       const explanationMatch = responseText.match(/\[EXPLANATION\]([\s\S]*?)\[\/EXPLANATION\]/);
       
-      let editedContent = responseText; // fallback to full response
+      let editedContent = responseText; // fallback to full response if parsing fails
       let explanation = '';
       
       if (documentMatch && documentMatch[1]) {
