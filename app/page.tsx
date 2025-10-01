@@ -12,7 +12,8 @@ import { DocumentCompare } from '@/components/DocumentCompare';
 import { TabBar } from '@/components/TabBar';
 import { ParallelView } from '@/components/ParallelView';
 import { DebugPanel } from '@/components/DebugPanel';
-import { MessageSquare, FileText, GitBranch, Settings, Scale, Layers, Bug, ChevronDown } from 'lucide-react';
+import { SmartMerge } from '@/components/SmartMerge';
+import { MessageSquare, FileText, GitBranch, Settings, Scale, Layers, Bug, ChevronDown, GitMerge, Clock } from 'lucide-react';
 import { formatVersionNumber } from '@/lib/formatVersion';
 
 function ViewModeTabs() {
@@ -23,7 +24,8 @@ function ViewModeTabs() {
     { id: 'document' as const, label: 'Document', icon: FileText, description: 'Focus on writing' },
     { id: 'parallel' as const, label: 'Parallel', icon: Layers, description: 'Work on multiple versions simultaneously' },
     { id: 'compare' as const, label: 'Compare', icon: Scale, description: 'Legal document comparison' },
-        { id: 'iterate' as const, label: 'Cherry Pick', icon: GitBranch, description: 'Track changes and collaborate' },
+    { id: 'smartmerge' as const, label: 'Smart Merge', icon: GitMerge, description: 'Review and cherry-pick the best changes' },
+    { id: 'iterate' as const, label: 'History (In Progress)', icon: Clock, description: 'Track changes and collaborate' },
   ];
 
   const { toggleDebugMode } = useEditor();
@@ -207,7 +209,12 @@ function MainContent() {
       return <DocumentCompare />;
     }
 
-    // Iterate View: Compare and iterate on versions
+    // Smart Merge: Review and cherry-pick changes
+    if (state.viewMode === 'smartmerge') {
+      return <SmartMerge />;
+    }
+
+    // Iterate View: Compare and iterate on versions (In Progress)
     if (state.viewMode === 'iterate') {
       return <CompareView />;
     }

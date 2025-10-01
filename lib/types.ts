@@ -130,7 +130,7 @@ export interface ChatMessage {
 
 export type AIModel = 'claude-3-5-haiku-20241022' | 'claude-3-5-sonnet-20241022';
 
-export type ViewMode = 'context' | 'document' | 'iterate' | 'compare' | 'parallel';
+export type ViewMode = 'context' | 'document' | 'iterate' | 'compare' | 'parallel' | 'smartmerge';
 
 
 export interface ProjectNote {

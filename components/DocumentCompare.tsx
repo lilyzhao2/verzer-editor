@@ -496,11 +496,11 @@ export function DocumentCompare() {
                 <button
                   onClick={() => toggleVersionStar(compareVersion.id)}
                   className="p-1 hover:bg-gray-200 rounded transition-colors"
-                  title={compareVersion.starred ? "Unstar version" : "Star version"}
+                  title={compareVersion.isStarred ? "Unstar version" : "Star version"}
                 >
                   <Star 
                     className={`w-4 h-4 ${
-                      compareVersion.starred 
+                      compareVersion.isStarred 
                         ? 'fill-yellow-400 text-yellow-400' 
                         : 'text-gray-400 hover:text-yellow-400'
                     }`} 
@@ -567,11 +567,11 @@ export function DocumentCompare() {
                 <button
                   onClick={() => toggleVersionStar(currentVersion.id)}
                   className="p-1 hover:bg-gray-200 rounded transition-colors"
-                  title={currentVersion.starred ? "Unstar version" : "Star version"}
+                  title={currentVersion.isStarred ? "Unstar version" : "Star version"}
                 >
                   <Star 
                     className={`w-4 h-4 ${
-                      currentVersion.starred 
+                      currentVersion.isStarred 
                         ? 'fill-yellow-400 text-yellow-400' 
                         : 'text-gray-400 hover:text-yellow-400'
                     }`} 
