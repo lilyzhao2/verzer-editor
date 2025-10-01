@@ -30,6 +30,9 @@ export function ParallelView() {
   const [focusedBranchId, setFocusedBranchId] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   
+  // Local state for optimistic versions (generating versions)
+  const [optimisticVersions, setOptimisticVersions] = useState<Version[]>([]);
+  
   // Filter states
   const [showOnlyStarred, setShowOnlyStarred] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
@@ -53,8 +56,11 @@ export function ParallelView() {
 
   // Initialize branches from versions (excluding v0) with filters
   useEffect(() => {
+    // Combine real and optimistic versions
+    const allVersions = [...state.versions, ...optimisticVersions];
+    
     // Get all root versions except v0 (no 'b' in version number and not '0')
-    let rootVersions = state.versions.filter(v => 
+    let rootVersions = allVersions.filter(v => 
       typeof v.number === 'string' && 
       !v.number.includes('b') && 
       v.number !== '0'
@@ -99,11 +105,12 @@ export function ParallelView() {
     console.log('Parallel View - Root versions found:', rootVersions.length, rootVersions.map(v => v.number));
     console.log('Parallel View - All versions:', state.versions.length, state.versions.map(v => v.number));
     setBranches(initialBranches);
-  }, [state.versions, showOnlyStarred, showArchived, filterType, collapseAll]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [state.versions, optimisticVersions, showOnlyStarred, showArchived, filterType, collapseAll]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Get all child versions of a parent
   const getChildVersions = (parentId: string): Version[] => {
-    return state.versions.filter(v => v.parentId === parentId);
+    const allVersions = [...state.versions, ...optimisticVersions];
+    return allVersions.filter(v => v.parentId === parentId);
   };
 
   // Check if a branch should be hidden based on filters
@@ -132,47 +139,66 @@ export function ParallelView() {
     }
   };
 
-  // Handle AI chat for creating new version
+  // Handle AI chat for creating new version with optimistic UI
   const handleCreateNewVersion = async (branchId: string, versionId: string) => {
     const branch = branches.find(b => b.id === branchId);
     const chatInput = branch?.chatInputs[versionId] || '';
     if (!branch || !chatInput.trim()) return;
 
-    setBranches(prev => prev.map(b => 
-      b.id === branchId ? { 
-        ...b, 
-        processingVersions: { ...b.processingVersions, [versionId]: true }
-      } : b
-    ));
-
     // Set this version as current for context
     setCurrentVersion(versionId);
     
+    // Generate next version number
+    const allVersions = [...(state.versions || []), ...optimisticVersions];
+    const maxNumber = Math.max(...allVersions.map(v => parseInt(v.number) || 0));
+    const nextNumber = (maxNumber + 1).toString();
+    
+    // Generate unique ID for optimistic version
+    const optimisticVersionId = `temp-${Date.now()}`;
+    
+    // Create optimistic version immediately
+    const optimisticVersion: Version = {
+      id: optimisticVersionId,
+      number: nextNumber,
+      content: '', // Will be filled when AI responds
+      prompt: chatInput,
+      note: null,
+      timestamp: new Date(),
+      isOriginal: false,
+      parentId: versionId,
+      checkpoints: [],
+      isGenerating: true, // Special flag for loading state
+    };
+    
+    // Add to local optimistic state
+    setOptimisticVersions(prev => [...prev, optimisticVersion]);
+    
+    // Clear the input immediately
+    setBranches(prev => prev.map(b => 
+      b.id === branchId ? { 
+        ...b, 
+        chatInputs: { ...b.chatInputs, [versionId]: '' }
+      } : b
+    ));
+    
     try {
-      // Create a new root version using AI
+      // Call AI in background - this will create the real version
       await applyAIEdit(chatInput);
       
-      // Clear input and stop processing for this version
-      setBranches(prev => prev.map(b => 
-        b.id === branchId ? { 
-          ...b, 
-          chatInputs: { ...b.chatInputs, [versionId]: '' },
-          processingVersions: { ...b.processingVersions, [versionId]: false }
-        } : b
-      ));
-
-      // Refresh branches to show new version
+      // Remove optimistic version and refresh to show real one
+      setOptimisticVersions(prev => prev.filter(v => v.id !== optimisticVersionId));
+      
       setTimeout(() => {
-        window.location.reload(); // Simple refresh for now
+        window.location.reload();
       }, 500);
+      
     } catch (error) {
       console.error('Version creation failed:', error);
-      setBranches(prev => prev.map(b => 
-        b.id === branchId ? { 
-          ...b, 
-          processingVersions: { ...b.processingVersions, [versionId]: false }
-        } : b
-      ));
+      
+      // Remove optimistic version on error
+      setOptimisticVersions(prev => prev.filter(v => v.id !== optimisticVersionId));
+      
+      alert('Failed to create version. Please try again.');
     }
   };
 
@@ -329,21 +355,33 @@ export function ParallelView() {
           style={{ marginLeft: `${depth * 32}px` }}
         >
           {/* Streamlined Version Header */}
-          <div className="px-4 py-3 border-b bg-gray-50 rounded-t-lg">
+          <div className={`px-4 py-3 border-b rounded-t-lg ${version.isGenerating ? 'bg-blue-50 border-blue-200' : 'bg-gray-50'}`}>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <button
                   onClick={() => {
-                    setCurrentVersion(version.id);
-                    setViewMode('document');
+                    if (!version.isGenerating) {
+                      setCurrentVersion(version.id);
+                      setViewMode('document');
+                    }
                   }}
-                  className="text-sm font-medium px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
-                  title="View in document editor"
+                  className={`text-sm font-medium px-3 py-1 rounded transition-colors ${
+                    version.isGenerating 
+                      ? 'bg-blue-400 text-white cursor-not-allowed' 
+                      : 'bg-blue-600 text-white hover:bg-blue-700'
+                  }`}
+                  title={version.isGenerating ? "Generating..." : "View in document editor"}
+                  disabled={version.isGenerating}
                 >
                   View V{version.number}
                 </button>
                 
-                {version.isOriginal ? (
+                {version.isGenerating ? (
+                  <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded flex items-center gap-1">
+                    <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+                    Generating...
+                  </span>
+                ) : version.isOriginal ? (
                   <span className="text-xs bg-gray-100 text-black px-2 py-1 rounded">
                     Original
                   </span>
@@ -396,6 +434,7 @@ export function ParallelView() {
           {version.prompt && (
             <div className="px-4 py-2 border-b bg-white">
               <p className="text-xs text-black line-clamp-2">
+                {version.isGenerating && <span className="text-blue-600 font-medium">✨ </span>}
                 {version.prompt}
               </p>
             </div>
@@ -413,7 +452,21 @@ export function ParallelView() {
           {/* Compact Document Content - Expandable and Editable */}
           <div className="p-3 bg-white rounded-b-lg">
             
-            {branch.editingVersions[version.id] ? (
+            {version.isGenerating ? (
+              // Loading skeleton for generating content
+              <div className={`border border-gray-200 rounded-lg p-3 ${collapseAll ? 'h-96' : 'h-64'} bg-gradient-to-r from-gray-100 via-gray-50 to-gray-100 bg-[length:200%_100%] animate-pulse`}>
+                <div className="space-y-3">
+                  <div className="h-4 bg-gray-300 rounded animate-pulse"></div>
+                  <div className="h-4 bg-gray-300 rounded w-5/6 animate-pulse"></div>
+                  <div className="h-4 bg-gray-300 rounded w-4/6 animate-pulse"></div>
+                  <div className="h-4 bg-gray-300 rounded w-3/4 animate-pulse"></div>
+                  <div className="h-4 bg-gray-300 rounded w-2/3 animate-pulse"></div>
+                </div>
+                <div className="mt-4 text-center text-sm text-blue-600 font-medium">
+                  AI is writing your content...
+                </div>
+              </div>
+            ) : branch.editingVersions[version.id] ? (
               // Inline editor
               <div className="space-y-2">
                 <textarea
@@ -509,7 +562,7 @@ export function ParallelView() {
                 }}
                 placeholder="Describe changes with AI..."
                 className="flex-1 px-3 py-2 border rounded-lg text-sm text-black focus:outline-none focus:ring-2 focus:ring-blue-500"
-                disabled={branch.processingVersions[version.id]}
+                disabled={false}
                 data-version-id={version.id}
               />
               {branch.processingVersions[version.id] && (
