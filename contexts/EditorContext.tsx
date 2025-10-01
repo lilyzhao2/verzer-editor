@@ -26,6 +26,7 @@ interface EditorContextType {
   revertToCheckpoint: (versionId: string, checkpointId: string) => void;
   setCurrentVersion: (versionId: string) => void;
   setCompareVersion: (versionId: string | null) => void;
+  setCompareVersionId: (versionId: string | null) => void;
   getCurrentVersion: () => Version | undefined;
   getCompareVersion: () => Version | undefined;
   applyAIEdit: (prompt: string, options?: { autoOpenInParallel?: boolean; parentId?: string }) => Promise<void>;
@@ -680,6 +681,13 @@ Break this into 3-7 clear tasks. Be specific and actionable. Return ONLY the JSO
     }));
   }, []);
 
+  const setCompareVersionId = useCallback((versionId: string | null) => {
+    setState(prev => ({
+      ...prev,
+      compareVersionId: versionId,
+    }));
+  }, []);
+
   const getCurrentVersion = useCallback(() => {
     return state.versions.find(v => v.id === state.currentVersionId);
   }, [state]);
@@ -1254,6 +1262,7 @@ Break this into 3-7 clear tasks. Be specific and actionable. Return ONLY the JSO
         cancelTodoSession,
         setCurrentVersion,
         setCompareVersion,
+        setCompareVersionId,
         getCurrentVersion,
         getCompareVersion,
         applyAIEdit,
