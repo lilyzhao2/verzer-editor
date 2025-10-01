@@ -2,14 +2,17 @@
 
 import React, { useState } from 'react';
 import { useEditor } from '@/contexts/EditorContext';
-import { Send, Loader2, MessageSquare, AlertCircle, Zap, Brain } from 'lucide-react';
+import { Send, Loader2, MessageSquare, AlertCircle, Zap, Brain, List, GitBranch, MessageCircle } from 'lucide-react';
 import { AIModel } from '@/lib/types';
+import { VersionTree } from './VersionTree';
+import { ConversationalChat } from './ConversationalChat';
 
 export function ChatInterface() {
   const { state, applyAIEdit, setSelectedModel, setCurrentVersion, setCompareVersion } = useEditor();
   const [prompt, setPrompt] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [historyView, setHistoryView] = useState<'tree' | 'timeline' | 'chat'>('tree');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -34,53 +37,61 @@ export function ChatInterface() {
 
   return (
     <div className="h-full flex flex-col bg-gray-50">
-      <div className="px-6 py-4 border-b bg-white border-gray-200">
+      <div className="px-4 py-3 border-b bg-white border-gray-200">
+        {/* View Toggle */}
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
-            <MessageSquare className="w-5 h-5" />
-            AI Editor
-          </h2>
+          <span className="text-sm font-semibold text-gray-800">
+            {historyView === 'tree' ? 'History' : historyView === 'timeline' ? 'Timeline' : 'Chat'}
+          </span>
           
-          {/* Model Selector */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
             <button
-              onClick={() => handleModelChange('claude-3-5-haiku-20241022')}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center gap-1.5 ${
-                state.selectedModel === 'claude-3-5-haiku-20241022'
-                  ? 'bg-blue-100 text-blue-700 border-2 border-blue-300'
-                  : 'bg-gray-100 text-gray-600 border-2 border-transparent hover:bg-gray-200'
+              onClick={() => setHistoryView('tree')}
+              className={`p-1.5 rounded ${
+                historyView === 'tree'
+                  ? 'bg-white text-blue-600 shadow-sm'
+                  : 'text-gray-600 hover:text-gray-900'
               }`}
-              title="Fast and affordable"
+              title="History tree"
             >
-              <Zap className="w-3.5 h-3.5" />
-              Haiku
+              <GitBranch className="w-4 h-4" />
             </button>
             <button
-              onClick={() => handleModelChange('claude-3-5-sonnet-20241022')}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center gap-1.5 ${
-                state.selectedModel === 'claude-3-5-sonnet-20241022'
-                  ? 'bg-purple-100 text-purple-700 border-2 border-purple-300'
-                  : 'bg-gray-100 text-gray-600 border-2 border-transparent hover:bg-gray-200'
+              onClick={() => setHistoryView('timeline')}
+              className={`p-1.5 rounded ${
+                historyView === 'timeline'
+                  ? 'bg-white text-blue-600 shadow-sm'
+                  : 'text-gray-600 hover:text-gray-900'
               }`}
-              title="Higher quality, more creative"
+              title="Version timeline"
             >
-              <Brain className="w-3.5 h-3.5" />
-              Sonnet
+              <List className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => setHistoryView('chat')}
+              className={`p-1.5 rounded ${
+                historyView === 'chat'
+                  ? 'bg-white text-blue-600 shadow-sm'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+              title="Conversational AI"
+            >
+              <MessageCircle className="w-4 h-4" />
             </button>
           </div>
         </div>
-        
-        {/* Model Description */}
-        <p className="text-xs text-gray-500 mt-2">
-          {state.selectedModel === 'claude-3-5-haiku-20241022' 
-            ? '⚡ Fast & affordable - Best for quick edits and iterations'
-            : '🎨 Higher quality - Best for creative writing and complex edits'}
-        </p>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-3">
-        {state.chatHistory.length === 0 ? (
-          <div className="text-center py-12">
+      <div className="flex-1 overflow-y-auto">
+        {historyView === 'tree' ? (
+          // Tree View
+          <VersionTree />
+        ) : historyView === 'chat' ? (
+          // Conversational Chat
+          <ConversationalChat />
+        ) : state.chatHistory.length === 0 ? (
+          // Empty State
+          <div className="text-center py-12 px-4">
             <MessageSquare className="w-12 h-12 text-gray-400 mx-auto mb-4" />
             <p className="text-gray-600 mb-2">No edits yet</p>
             <p className="text-sm text-gray-500">
@@ -88,7 +99,9 @@ export function ChatInterface() {
             </p>
           </div>
         ) : (
-          state.chatHistory.map((message, index) => {
+          // List View
+          <div className="p-4 space-y-3">
+            {state.chatHistory.map((message, index) => {
             const prevVersion = message.versionCreated > 0 ? message.versionCreated - 1 : null;
             const isLatest = message.versionCreated === state.versions.length - 1;
             const isCurrent = state.currentVersionId === `v${message.versionCreated}`;
@@ -184,7 +197,8 @@ export function ChatInterface() {
                 </div>
               </div>
             );
-          })
+            })}
+          </div>
         )}
       </div>
 
@@ -202,39 +216,69 @@ export function ChatInterface() {
         </div>
       )}
 
-      <form onSubmit={handleSubmit} className="p-6 bg-white border-t border-gray-200">
-        <div className="flex gap-2">
-          <input
-            type="text"
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            placeholder="e.g., Make it more compelling, Add humor, Make it formal..."
-            className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white text-gray-900 placeholder-gray-500"
-            disabled={isLoading}
-          />
+      <div className="bg-white border-t border-gray-200">
+        {/* Model Selector at Bottom */}
+        <div className="px-4 py-2 border-b border-gray-200 flex items-center gap-2 justify-center">
           <button
-            type="submit"
-            disabled={isLoading || !prompt.trim()}
-            className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+            onClick={() => handleModelChange('claude-3-5-haiku-20241022')}
+            className={`flex-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center justify-center gap-1.5 ${
+              state.selectedModel === 'claude-3-5-haiku-20241022'
+                ? 'bg-blue-100 text-blue-700 border-2 border-blue-300'
+                : 'bg-gray-100 text-gray-600 border-2 border-transparent hover:bg-gray-200'
+            }`}
+            title="Fast and affordable"
           >
-            {isLoading ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Editing...
-              </>
-            ) : (
-              <>
-                <Send className="w-4 h-4" />
-                Edit
-              </>
-            )}
+            <Zap className="w-3.5 h-3.5" />
+            Haiku
+          </button>
+          <button
+            onClick={() => handleModelChange('claude-3-5-sonnet-20241022')}
+            className={`flex-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center justify-center gap-1.5 ${
+              state.selectedModel === 'claude-3-5-sonnet-20241022'
+                ? 'bg-purple-100 text-purple-700 border-2 border-purple-300'
+                : 'bg-gray-100 text-gray-600 border-2 border-transparent hover:bg-gray-200'
+            }`}
+            title="Higher quality, more creative"
+          >
+            <Brain className="w-3.5 h-3.5" />
+            Sonnet
           </button>
         </div>
         
-        <div className="mt-2 text-xs text-gray-500">
-          Using {state.selectedModel === 'claude-3-5-haiku-20241022' ? 'Claude 3.5 Haiku' : 'Claude 3.5 Sonnet'} model
-        </div>
-      </form>
+        {/* Input Form */}
+        <form onSubmit={handleSubmit} className="p-4">
+          <div className="mb-2 text-xs text-gray-500">
+            {state.viewMode === 'document' && 'Ask me to edit: "make it funnier", "add a conclusion"...'}
+            {state.viewMode === 'compare' && 'Ask me to: "compare v3 vs v5", "accept paragraph 2 from v7"...'}
+          </div>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              placeholder={
+                state.viewMode === 'document' 
+                  ? "e.g., Make it more compelling..." 
+                  : "e.g., Show me changes in v3..."
+              }
+              className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white text-gray-900 placeholder-gray-500"
+              disabled={isLoading}
+            />
+            <button
+              type="submit"
+              disabled={isLoading || !prompt.trim()}
+              className="px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors flex items-center justify-center"
+              title="Send"
+            >
+              {isLoading ? (
+                <Loader2 className="w-5 h-5 animate-spin" />
+              ) : (
+                <Send className="w-5 h-5" />
+              )}
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }

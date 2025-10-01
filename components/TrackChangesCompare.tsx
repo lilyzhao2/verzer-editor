@@ -2,7 +2,8 @@
 
 import React, { useState, useMemo } from 'react';
 import { useEditor } from '@/contexts/EditorContext';
-import { Check, X, CheckCircle, XCircle } from 'lucide-react';
+import { useCompare } from '@/contexts/CompareContext';
+import { Check, X, CheckCircle, XCircle, Sparkles } from 'lucide-react';
 
 type GranularityLevel = 'word' | 'sentence' | 'paragraph' | 'page';
 
@@ -12,7 +13,7 @@ interface Change {
   content: string;
   oldContent?: string;
   versionId: string;
-  versionNumber: number;
+  versionNumber: string;
   level: 'word' | 'sentence' | 'paragraph';
   paragraphIndex: number;
   sentenceIndex?: number;
@@ -21,27 +22,16 @@ interface Change {
 
 export function TrackChangesCompare() {
   const { state, createVersion, getCurrentVersion } = useEditor();
+  const { selectedVersionsForCompare } = useCompare();
   const [baseVersionId, setBaseVersionId] = useState(state.currentVersionId);
-  const [compareVersionIds, setCompareVersionIds] = useState<string[]>([]);
   const [granularity, setGranularity] = useState<GranularityLevel>('sentence');
   const [acceptedChanges, setAcceptedChanges] = useState<Set<string>>(new Set());
   const [rejectedChanges, setRejectedChanges] = useState<Set<string>>(new Set());
 
   const baseVersion = state.versions.find(v => v.id === baseVersionId);
-  const compareVersions = compareVersionIds
+  const compareVersions = selectedVersionsForCompare
     .map(id => state.versions.find(v => v.id === id))
     .filter(Boolean);
-
-  const toggleCompareVersion = (versionId: string) => {
-    setCompareVersionIds(prev => {
-      if (prev.includes(versionId)) {
-        return prev.filter(id => id !== versionId);
-      } else if (prev.length < 3) {
-        return [...prev, versionId];
-      }
-      return prev;
-    });
-  };
 
   // Extract text from HTML
   const extractText = (html: string): string => {
@@ -191,8 +181,22 @@ export function TrackChangesCompare() {
       }
     });
 
+    // Create detailed prompt showing what was applied
     const versionNumbers = [...new Set(acceptedChangesList.map(c => `v${c.versionNumber}`))].join(', ');
-    createVersion(mergedContent, `Applied changes from ${versionNumbers} (${acceptedChangesList.length} changes)`);
+    const changesByVersion = new Map<string, number>();
+    acceptedChangesList.forEach(c => {
+      const count = changesByVersion.get(c.versionNumber) || 0;
+      changesByVersion.set(c.versionNumber, count + 1);
+    });
+    
+    const changeSummary = Array.from(changesByVersion.entries())
+      .map(([ver, count]) => `${count} from v${ver}`)
+      .join(', ');
+    
+    const prompt = `Merged ${acceptedChangesList.length} changes (${changeSummary}) into v${baseVersion.number}`;
+    
+    // Create new version branching from base
+    createVersion(mergedContent, prompt, baseVersion.id);
     
     // Reset
     setAcceptedChanges(new Set());
@@ -201,93 +205,81 @@ export function TrackChangesCompare() {
 
   const versionColors = ['bg-yellow-100 border-yellow-400', 'bg-blue-100 border-blue-400', 'bg-purple-100 border-purple-400'];
 
+  // Group changes by paragraph
+  const changesByParagraph = useMemo(() => {
+    const grouped = new Map<number, typeof changes>();
+    changes.forEach(change => {
+      const existing = grouped.get(change.paragraphIndex) || [];
+      grouped.set(change.paragraphIndex, [...existing, change]);
+    });
+    return grouped;
+  }, [changes]);
+
   return (
     <div className="h-full flex flex-col bg-white">
-      {/* Header */}
-      <div className="px-6 py-4 border-b bg-gray-50">
-        <h2 className="text-xl font-bold text-gray-800 mb-3">Track Changes</h2>
-        
-        {/* Base Version Selection */}
-        <div className="flex items-center gap-4 mb-4">
-          <span className="text-sm font-medium text-gray-700">Base Version:</span>
-          <select
-            value={baseVersionId}
-            onChange={(e) => setBaseVersionId(e.target.value)}
-            className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm"
-          >
-            {state.versions.map(v => (
-              <option key={v.id} value={v.id}>
-                v{v.number} {v.prompt ? `- ${v.prompt.substring(0, 30)}...` : ''}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        {/* Compare Versions Selection */}
-        <div className="mb-4">
-          <p className="text-sm font-medium text-gray-700 mb-2">
-            Compare with (select up to 3):
-          </p>
-          <div className="flex flex-wrap gap-2">
-            {state.versions
-              .filter(v => v.id !== baseVersionId)
-              .map((version, idx) => {
-                const isSelected = compareVersionIds.includes(version.id);
-                const colorIndex = compareVersionIds.indexOf(version.id);
-                
+      {/* Compact Header */}
+      <div className="px-6 py-3 border-b bg-gray-50">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium text-gray-700">Base:</span>
+              <select
+                value={baseVersionId}
+                onChange={(e) => setBaseVersionId(e.target.value)}
+                className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm font-medium"
+              >
+                {state.versions.map(v => (
+                  <option key={v.id} value={v.id}>v{v.number}</option>
+                ))}
+              </select>
+            </div>
+            
+            <div className="text-sm text-gray-500">
+              Comparing: {selectedVersionsForCompare.length > 0 ? selectedVersionsForCompare.map(id => {
+                const v = state.versions.find(ver => ver.id === id);
+                const colorIndex = selectedVersionsForCompare.indexOf(id);
                 return (
-                  <button
-                    key={version.id}
-                    onClick={() => toggleCompareVersion(version.id)}
-                    disabled={!isSelected && compareVersionIds.length >= 3}
-                    className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
-                      isSelected
-                        ? `${versionColors[colorIndex]} border-2`
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200 border-2 border-transparent'
-                    } disabled:opacity-50 disabled:cursor-not-allowed`}
-                  >
-                    v{version.number}
-                  </button>
+                  <span key={id} className={`inline-block px-2 py-0.5 rounded text-xs font-bold ml-1 ${versionColors[colorIndex]}`}>
+                    v{v?.number}
+                  </span>
                 );
-              })}
+              }) : 'Select from History →'}
+            </div>
           </div>
-        </div>
 
-        {/* Granularity Selection */}
-        {compareVersionIds.length > 0 && (
-          <div className="mb-4">
-            <p className="text-sm font-medium text-gray-700 mb-2">Granularity:</p>
-            <div className="flex gap-2">
-              {(['word', 'sentence', 'paragraph', 'page'] as GranularityLevel[]).map(level => (
+          {/* Granularity */}
+          {selectedVersionsForCompare.length > 0 && (
+            <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
+              {(['sentence', 'paragraph'] as GranularityLevel[]).map(level => (
                 <button
                   key={level}
                   onClick={() => setGranularity(level)}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                  className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
                     granularity === level
-                      ? 'bg-blue-600 text-white shadow-sm'
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      ? 'bg-white text-gray-900 shadow-sm'
+                      : 'text-gray-600 hover:text-gray-900'
                   }`}
                 >
                   {level.charAt(0).toUpperCase() + level.slice(1)}
                 </button>
               ))}
             </div>
-          </div>
-        )}
+          )}
+        </div>
 
         {/* Bulk Actions */}
         {changes.length > 0 && (
           <div className="flex items-center gap-2">
             <button
               onClick={handleAcceptAll}
-              className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700"
+              className="flex items-center gap-1.5 px-4 py-1.5 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 font-medium"
             >
               <CheckCircle className="w-4 h-4" />
               Accept All ({changes.length})
             </button>
             <button
               onClick={handleRejectAll}
-              className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white text-sm rounded-lg hover:bg-red-700"
+              className="flex items-center gap-1.5 px-4 py-1.5 bg-red-600 text-white text-sm rounded-lg hover:bg-red-700 font-medium"
             >
               <XCircle className="w-4 h-4" />
               Reject All
@@ -295,8 +287,9 @@ export function TrackChangesCompare() {
             {acceptedChanges.size > 0 && (
               <button
                 onClick={handleApplyChanges}
-                className="ml-auto flex items-center gap-2 px-6 py-2 bg-gradient-to-r from-blue-600 to-purple-600 text-white font-semibold rounded-lg hover:from-blue-700 hover:to-purple-700"
+                className="ml-auto flex items-center gap-2 px-6 py-2 bg-gradient-to-r from-blue-600 to-purple-600 text-white font-bold rounded-lg hover:from-blue-700 hover:to-purple-700 shadow-md"
               >
+                <Sparkles className="w-4 h-4" />
                 Apply {acceptedChanges.size} Changes
               </button>
             )}
@@ -305,92 +298,153 @@ export function TrackChangesCompare() {
       </div>
 
       {/* Content */}
-      {compareVersionIds.length === 0 ? (
+      {selectedVersionsForCompare.length === 0 ? (
         <div className="flex-1 flex items-center justify-center text-gray-500">
-          <p>Select versions above to see changes</p>
+          <p>Click + buttons in History to select versions for comparison</p>
         </div>
       ) : changes.length === 0 ? (
         <div className="flex-1 flex items-center justify-center text-gray-500">
           <p>No changes detected at {granularity} level</p>
         </div>
       ) : (
-        <div className="flex-1 overflow-auto p-6">
-          <div className="max-w-4xl mx-auto space-y-4">
-            {changes.map((change) => {
-              const isAccepted = acceptedChanges.has(change.id);
-              const isRejected = rejectedChanges.has(change.id);
-              const colorClass = versionColors[compareVersionIds.indexOf(change.versionId)] || versionColors[0];
-              
-              return (
-                <div
-                  key={change.id}
-                  className={`p-4 rounded-lg border-2 transition-all ${
-                    isAccepted
-                      ? 'border-green-500 bg-green-50'
-                      : isRejected
-                      ? 'border-red-500 bg-red-50 opacity-50'
-                      : colorClass
-                  }`}
+        <div className="flex-1 flex overflow-hidden">
+          {/* Left: Base Document with Inline Changes */}
+          <div className="flex-1 overflow-auto p-6 bg-white border-r border-gray-200">
+            <div className="max-w-3xl">
+              <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
+                <span>Base Document</span>
+                <span className="text-sm font-normal text-gray-600">
+                  (v{baseVersion?.number})
+                </span>
+              </h3>
+              <div 
+                className="prose prose-sm max-w-none"
+                dangerouslySetInnerHTML={{ __html: baseVersion?.content || '' }}
+              />
+            </div>
+          </div>
+
+          {/* Right: Changes Sidebar */}
+          <div className="w-96 overflow-auto bg-gray-50 p-4">
+            <div className="sticky top-0 bg-gray-50 pb-3 mb-3 border-b border-gray-200 z-10">
+              <h3 className="text-sm font-bold text-gray-800 mb-2">
+                {changes.length} Changes Detected
+              </h3>
+              <div className="flex gap-2 text-xs mb-2">
+                <span className="px-2 py-1 bg-green-100 text-green-700 rounded font-medium">
+                  {acceptedChanges.size} accepted
+                </span>
+                <span className="px-2 py-1 bg-red-100 text-red-700 rounded font-medium">
+                  {rejectedChanges.size} rejected
+                </span>
+              </div>
+              {acceptedChanges.size > 0 && (
+                <button
+                  onClick={handleApplyChanges}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-purple-600 text-white font-bold rounded-lg hover:from-blue-700 hover:to-purple-700 shadow-md"
                 >
-                  <div className="flex items-start justify-between mb-2">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-2">
-                        <span className="text-xs font-bold px-2 py-1 bg-white rounded">
-                          v{change.versionNumber}
-                        </span>
-                        <span className="text-xs text-gray-600">
-                          {change.level} • Paragraph {change.paragraphIndex + 1}
-                        </span>
-                      </div>
+                  <Sparkles className="w-4 h-4" />
+                  Apply {acceptedChanges.size} Changes
+                </button>
+              )}
+            </div>
+
+            <div className="space-y-4">
+              {Array.from(changesByParagraph.entries()).map(([paraIndex, paraChanges]) => (
+                <div key={paraIndex} className="bg-white rounded-lg border border-gray-200 overflow-hidden shadow-sm">
+                  {/* Paragraph Header */}
+                  <div className="px-3 py-2 bg-gray-100 border-b border-gray-200 flex items-center justify-between">
+                    <span className="text-xs font-bold text-gray-800">
+                      ¶{paraIndex + 1} • {paraChanges.length} change{paraChanges.length !== 1 ? 's' : ''}
+                    </span>
+                    <button
+                      onClick={() => paraChanges.forEach(c => handleAcceptChange(c.id))}
+                      className="text-xs px-2 py-1 bg-green-600 text-white rounded hover:bg-green-700"
+                    >
+                      Accept All
+                    </button>
+                  </div>
+
+                  {/* Changes */}
+                  <div className="p-2 space-y-2">
+                    {paraChanges.map((change) => {
+                      const isAccepted = acceptedChanges.has(change.id);
+                      const isRejected = rejectedChanges.has(change.id);
+                      const colorIndex = selectedVersionsForCompare.indexOf(change.versionId);
                       
-                      {change.type === 'modification' && (
-                        <div className="space-y-2">
-                          <div className="text-sm text-red-700 line-through" dangerouslySetInnerHTML={{ __html: change.oldContent || '' }} />
-                          <div className="text-sm text-green-700 font-medium" dangerouslySetInnerHTML={{ __html: change.content }} />
-                        </div>
-                      )}
-                      
-                      {change.type === 'addition' && (
-                        <div className="text-sm text-green-700 font-medium">
-                          + {change.content}
-                        </div>
-                      )}
-                      
-                      {change.type === 'deletion' && (
-                        <div className="text-sm text-red-700 line-through">
-                          - {change.content}
-                        </div>
-                      )}
-                    </div>
-                    
-                    <div className="flex items-center gap-2 ml-4">
-                      {!isAccepted && (
-                        <button
-                          onClick={() => handleAcceptChange(change.id)}
-                          className="p-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
-                          title="Accept"
+                      return (
+                        <div
+                          key={change.id}
+                          className={`p-2 rounded border transition-all ${
+                            isAccepted
+                              ? 'border-green-500 bg-green-50'
+                              : isRejected
+                              ? 'border-gray-300 bg-gray-100 opacity-50'
+                              : colorIndex === 0 
+                              ? 'border-yellow-400 bg-yellow-50'
+                              : colorIndex === 1
+                              ? 'border-blue-400 bg-blue-50'
+                              : 'border-purple-400 bg-purple-50'
+                          }`}
                         >
-                          <Check className="w-4 h-4" />
-                        </button>
-                      )}
-                      {!isRejected && (
-                        <button
-                          onClick={() => handleRejectChange(change.id)}
-                          className="p-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
-                          title="Reject"
-                        >
-                          <X className="w-4 h-4" />
-                        </button>
-                      )}
-                    </div>
+                          <div className="flex items-start gap-2">
+                            <div className="flex-1 text-xs">
+                              <span className={`font-bold px-1.5 py-0.5 rounded ${
+                                colorIndex === 0 ? 'bg-yellow-200 text-yellow-900' :
+                                colorIndex === 1 ? 'bg-blue-200 text-blue-900' :
+                                'bg-purple-200 text-purple-900'
+                              }`}>
+                                v{change.versionNumber}
+                              </span>
+                              <div className="mt-1.5">
+                                {change.type === 'addition' && (
+                                  <div className="text-green-700">
+                                    <span className="font-semibold">+</span> {change.content}
+                                  </div>
+                                )}
+                                {change.type === 'deletion' && (
+                                  <div className="text-red-700 line-through">
+                                    <span className="font-semibold">-</span> {change.content}
+                                  </div>
+                                )}
+                                {change.type === 'modification' && (
+                                  <>
+                                    <div className="text-red-700 line-through mb-1">- {change.oldContent}</div>
+                                    <div className="text-green-700">+ {change.content}</div>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                            
+                            {!isAccepted && !isRejected && (
+                              <div className="flex gap-1">
+                                <button
+                                  onClick={() => handleAcceptChange(change.id)}
+                                  className="p-1.5 bg-green-600 text-white rounded hover:bg-green-700"
+                                >
+                                  <Check className="w-4 h-4" />
+                                </button>
+                                <button
+                                  onClick={() => handleRejectChange(change.id)}
+                                  className="p-1.5 bg-red-600 text-white rounded hover:bg-red-700"
+                                >
+                                  <X className="w-4 h-4" />
+                                </button>
+                              </div>
+                            )}
+                            {isAccepted && <Check className="w-5 h-5 text-green-600" />}
+                            {isRejected && <X className="w-5 h-5 text-gray-400" />}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
-              );
-            })}
+              ))}
+            </div>
           </div>
         </div>
       )}
     </div>
   );
 }
-

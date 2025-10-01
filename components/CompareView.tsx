@@ -2,6 +2,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { useEditor } from '@/contexts/EditorContext';
+import { useCompare } from '@/contexts/CompareContext';
 import { CheckCircle, X, Sparkles, Layers, FileEdit } from 'lucide-react';
 import { TrackChangesCompare } from './TrackChangesCompare';
 
@@ -12,19 +13,11 @@ interface ParagraphChoice {
 
 export function CompareView() {
   const { state, createVersion } = useEditor();
-  const [selectedVersions, setSelectedVersions] = useState<string[]>([]);
+  const { selectedVersionsForCompare } = useCompare();
   const [compareMode, setCompareMode] = useState<'full' | 'paragraph' | 'track'>('full');
   const [paragraphChoices, setParagraphChoices] = useState<Map<number, string>>(new Map());
 
-  const toggleVersion = (versionId: string) => {
-    setSelectedVersions(prev => 
-      prev.includes(versionId)
-        ? prev.filter(id => id !== versionId)
-        : [...prev, versionId]
-    );
-  };
-
-  const selectedVersionObjects = selectedVersions
+  const selectedVersionObjects = selectedVersionsForCompare
     .map(id => state.versions.find(v => v.id === id))
     .filter(Boolean);
 
@@ -101,11 +94,22 @@ export function CompareView() {
     <div className="h-full flex flex-col bg-gray-50">
       {/* Header */}
       <div className="px-6 py-4 bg-white border-b border-gray-200">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-xl font-bold text-gray-800">Compare Versions</h2>
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-xl font-bold text-gray-800">Compare Versions</h2>
+            <p className="text-sm text-gray-600 mt-1">
+              {selectedVersionsForCompare.length === 0 
+                ? 'Click + buttons in the History panel to select versions for comparison →'
+                : compareMode === 'full' 
+                ? `Comparing ${selectedVersionsForCompare.length} versions side-by-side`
+                : compareMode === 'paragraph'
+                ? 'Click paragraphs to choose the best version of each one'
+                : 'Accept or reject changes at word, sentence, or paragraph level'}
+            </p>
+          </div>
           
           {/* Mode Toggle */}
-          {selectedVersions.length >= 1 && (
+          {selectedVersionsForCompare.length >= 1 && (
             <div className="flex items-center gap-2 bg-gray-100 rounded-lg p-1">
               <button
                 onClick={() => setCompareMode('full')}
@@ -143,61 +147,21 @@ export function CompareView() {
             </div>
           )}
         </div>
-        <p className="text-sm text-gray-600">
-          {compareMode === 'full' 
-            ? 'Select versions below to compare them side-by-side'
-            : compareMode === 'paragraph'
-            ? 'Click paragraphs to choose the best version of each one'
-            : 'Accept or reject changes at word, sentence, or paragraph level'}
-        </p>
-      </div>
-
-      {/* Version Selection */}
-      <div className="px-6 py-4 bg-white border-b border-gray-200">
-        <p className="text-sm font-medium text-gray-700 mb-3">
-          Select versions to compare ({selectedVersions.length} selected):
-        </p>
-        <div className="flex flex-wrap gap-2">
-          {state.versions.map((version) => {
-            const isSelected = selectedVersions.includes(version.id);
-            return (
-              <button
-                key={version.id}
-                onClick={() => toggleVersion(version.id)}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                  isSelected
-                    ? 'bg-blue-600 text-white shadow-md'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                <div className="flex items-center gap-2">
-                  {isSelected && <CheckCircle className="w-4 h-4" />}
-                  <span>v{version.number}</span>
-                </div>
-                {version.prompt && (
-                  <div className="text-xs opacity-80 mt-1 truncate max-w-[200px]">
-                    {version.prompt}
-                  </div>
-                )}
-              </button>
-            );
-          })}
-        </div>
       </div>
 
       {/* Comparison View */}
-      {selectedVersions.length === 0 ? (
+      {selectedVersionsForCompare.length === 0 ? (
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center text-gray-500">
             <p className="text-lg font-medium mb-2">No versions selected</p>
-            <p className="text-sm">Select 2 or more versions above to compare</p>
+            <p className="text-sm">Click + buttons in the History tree to select versions</p>
           </div>
         </div>
-      ) : selectedVersions.length === 1 ? (
+      ) : selectedVersionsForCompare.length === 1 ? (
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center text-gray-500">
             <p className="text-lg font-medium mb-2">Select at least one more version</p>
-            <p className="text-sm">Choose another version to start comparing</p>
+            <p className="text-sm">Click another + button in the History tree</p>
           </div>
         </div>
       ) : compareMode === 'track' ? (
@@ -206,31 +170,22 @@ export function CompareView() {
       ) : compareMode === 'full' ? (
         // Full document comparison
         <div className="flex-1 overflow-auto">
-          <div className={`grid gap-4 p-6`} style={{ gridTemplateColumns: `repeat(${selectedVersions.length}, minmax(0, 1fr))` }}>
+          <div className={`grid gap-4 p-6`} style={{ gridTemplateColumns: `repeat(${selectedVersionsForCompare.length}, minmax(0, 1fr))` }}>
             {selectedVersionObjects.map((version) => {
               if (!version) return null;
               
               return (
                 <div key={version.id} className="flex flex-col bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
                   {/* Version Header */}
-                  <div className="px-4 py-3 bg-gradient-to-r from-blue-50 to-purple-50 border-b border-gray-200 flex items-center justify-between">
-                    <div>
-                      <h3 className="text-sm font-bold text-gray-800">
-                        Version {version.number}
-                      </h3>
-                      {version.prompt && (
-                        <p className="text-xs text-gray-600 mt-1 line-clamp-2">
-                          {version.prompt}
-                        </p>
-                      )}
-                    </div>
-                    <button
-                      onClick={() => toggleVersion(version.id)}
-                      className="p-1 hover:bg-gray-200 rounded transition-colors"
-                      title="Remove from comparison"
-                    >
-                      <X className="w-4 h-4 text-gray-600" />
-                    </button>
+                  <div className="px-4 py-3 bg-gradient-to-r from-blue-50 to-purple-50 border-b border-gray-200">
+                    <h3 className="text-sm font-bold text-gray-800">
+                      Version {version.number}
+                    </h3>
+                    {version.prompt && (
+                      <p className="text-xs text-gray-600 mt-1 line-clamp-2">
+                        {version.prompt}
+                      </p>
+                    )}
                   </div>
 
                   {/* Version Content */}

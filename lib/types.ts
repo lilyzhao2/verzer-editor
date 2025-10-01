@@ -1,12 +1,21 @@
 // Core types for the document editor
 
+export interface Checkpoint {
+  id: string;
+  content: string;
+  timestamp: Date;
+  type: 'auto-save' | 'manual';
+}
+
 export interface Version {
   id: string;
-  number: number;
+  number: string;
   content: string;
   prompt: string | null;
   timestamp: Date;
   isOriginal: boolean;
+  parentId: string | null;
+  checkpoints: Checkpoint[]; // Track auto-save checkpoints
 }
 
 export interface Diff {
@@ -18,7 +27,7 @@ export interface ChatMessage {
   id: string;
   prompt: string;
   response?: string; // AI's explanation of what it changed
-  versionCreated: number;
+  versionCreated: string; // Changed to string for hierarchical versions
   timestamp: Date;
 }
 

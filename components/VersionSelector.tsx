@@ -9,7 +9,7 @@ export function VersionSelector() {
   const currentVersion = getCurrentVersion();
 
   return (
-    <div className="flex items-center justify-end gap-4 p-4 border-b bg-white border-gray-200">
+    <div className="flex items-center justify-end p-3 border-b bg-white border-gray-200">
       <div className="relative">
         <select
           value={currentVersion?.id || ''}
@@ -18,7 +18,7 @@ export function VersionSelector() {
         >
           {state.versions.map((version) => (
             <option key={version.id} value={version.id}>
-              v{version.number} {version.prompt ? `- ${version.prompt.substring(0, 50)}...` : '- (original)'}
+              v{version.number}
             </option>
           ))}
         </select>

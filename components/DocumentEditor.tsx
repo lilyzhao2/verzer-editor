@@ -7,7 +7,7 @@ import { Check, X, CheckCircle, Save } from 'lucide-react';
 import { RichTextEditor } from './RichTextEditor';
 
 export function DocumentEditor() {
-  const { state, updateVersion, getCurrentVersion, getCompareVersion, createVersion } = useEditor();
+  const { state, updateVersion, getCurrentVersion, getCompareVersion, createVersion, createCheckpoint, revertToCheckpoint } = useEditor();
   const currentVersion = getCurrentVersion();
   const compareVersion = getCompareVersion();
   const [localContent, setLocalContent] = useState(currentVersion?.content || '');
@@ -25,19 +25,22 @@ export function DocumentEditor() {
     setLocalContent(newContent);
     setHasUnsavedChanges(true);
     
-    // Auto-save after 10 seconds of no typing
+    // Auto-save checkpoint after 10 seconds of no typing
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current);
     }
     
     saveTimeoutRef.current = setTimeout(() => {
-      handleSaveVersion();
+      if (currentVersion) {
+        createCheckpoint(currentVersion.id, newContent, 'auto-save');
+        setHasUnsavedChanges(false);
+      }
     }, 10000);
   };
 
-  const handleSaveVersion = () => {
+  const handleUpdateVersion = () => {
     if (hasUnsavedChanges && currentVersion) {
-      // Update the current version with manual edits
+      // Update current version (commits all checkpoints)
       updateVersion(currentVersion.id, localContent);
       setHasUnsavedChanges(false);
       
@@ -50,11 +53,15 @@ export function DocumentEditor() {
 
   const handleSaveAsNewVersion = () => {
     if (hasUnsavedChanges && currentVersion) {
-      const prompt = state.compareVersionId 
-        ? `Manual edits to v${currentVersion.number} (compared with v${state.versions.find(v => v.id === state.compareVersionId)?.number})`
-        : `Manual edits to v${currentVersion.number}`;
+      // "Save as New Version" creates next root-level version (v3)
+      const prompt = `New version based on v${currentVersion.number}`;
       
-      createVersion(localContent, prompt);
+      // Find next root-level version number
+      const rootVersions = state.versions.filter(v => !v.number.includes('.'));
+      const nextRootNumber = rootVersions.length.toString();
+      
+      // Create version with no parentId to make it root-level
+      createVersion(localContent, prompt, 'v0'); // Parent is always v0 for root versions
       setHasUnsavedChanges(false);
       if (saveTimeoutRef.current) {
         clearTimeout(saveTimeoutRef.current);
@@ -169,7 +176,7 @@ export function DocumentEditor() {
             {hasUnsavedChanges && (
               <div className="flex items-center gap-2">
                 <button
-                  onClick={handleSaveVersion}
+                  onClick={handleUpdateVersion}
                   className="flex items-center gap-2 px-3 py-1.5 bg-gray-600 text-white text-sm rounded-lg hover:bg-gray-700 transition-colors"
                   title="Update current version"
                 >
@@ -186,6 +193,16 @@ export function DocumentEditor() {
                 </button>
               </div>
             )}
+            
+            {/* Checkpoint indicator */}
+            {currentVersion && currentVersion.checkpoints.length > 0 && (
+              <button
+                className="text-xs text-amber-600 hover:text-amber-700 font-medium"
+                title="View auto-save checkpoints"
+              >
+                {currentVersion.checkpoints.length} checkpoint{currentVersion.checkpoints.length !== 1 ? 's' : ''}
+              </button>
+            )}
             <span className="text-sm text-gray-500">
               {currentVersion?.timestamp && new Date(currentVersion.timestamp).toLocaleString()}
             </span>
@@ -197,7 +214,7 @@ export function DocumentEditor() {
         <RichTextEditor
           content={localContent}
           onChange={handleContentChange}
-          onSave={handleSaveVersion}
+          onSave={handleUpdateVersion}
           placeholder="Start writing your document here..."
         />
       </div>

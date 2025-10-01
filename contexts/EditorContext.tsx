@@ -1,12 +1,14 @@
 'use client';
 
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
-import { Version, ChatMessage, EditorState, AIModel, ViewMode } from '@/lib/types';
+import { Version, ChatMessage, EditorState, AIModel, ViewMode, Checkpoint } from '@/lib/types';
 
 interface EditorContextType {
   state: EditorState;
-  createVersion: (content: string, prompt: string | null) => void;
+  createVersion: (content: string, prompt: string | null, parentId?: string) => void;
   updateVersion: (versionId: string, content: string) => void;
+  createCheckpoint: (versionId: string, content: string, type: 'auto-save' | 'manual') => void;
+  revertToCheckpoint: (versionId: string, checkpointId: string) => void;
   setCurrentVersion: (versionId: string) => void;
   setCompareVersion: (versionId: string | null) => void;
   getCurrentVersion: () => Version | undefined;
@@ -38,7 +40,7 @@ export function EditorProvider({ children }: { children: React.ReactNode }) {
             timestamp: new Date(c.timestamp)
           })),
           selectedModel: parsed.selectedModel || 'claude-3-5-haiku-20241022',
-          viewMode: parsed.viewMode || 'chat'
+          viewMode: parsed.viewMode || 'document'
         };
       }
     }
@@ -46,11 +48,13 @@ export function EditorProvider({ children }: { children: React.ReactNode }) {
     // Default initial state with empty document
     const initialVersion: Version = {
       id: 'v0',
-      number: 0,
+      number: '0',
       content: '',
       prompt: null,
       timestamp: new Date(),
       isOriginal: true,
+      parentId: null,
+      checkpoints: [],
     };
 
     return {
@@ -59,7 +63,7 @@ export function EditorProvider({ children }: { children: React.ReactNode }) {
       compareVersionId: null,
       chatHistory: [],
       selectedModel: 'claude-3-5-haiku-20241022' as AIModel,
-      viewMode: 'chat' as ViewMode,
+      viewMode: 'document' as ViewMode,
     };
   });
 
@@ -70,22 +74,57 @@ export function EditorProvider({ children }: { children: React.ReactNode }) {
     }
   }, [state]);
 
-  const createVersion = useCallback((content: string, prompt: string | null) => {
+  const createVersion = useCallback((content: string, prompt: string | null, parentId?: string) => {
     setState(prev => {
-      const versionNumber = prev.versions.length;
+      // Determine parent: explicit parentId, or current version
+      let parent: Version | undefined;
+      let isRootLevelVersion = false;
+      
+      if (parentId === 'v0') {
+        // Explicitly creating a root-level version
+        parent = prev.versions[0];
+        isRootLevelVersion = true;
+      } else if (parentId) {
+        parent = prev.versions.find(v => v.id === parentId);
+      } else {
+        parent = prev.versions.find(v => v.id === prev.currentVersionId);
+      }
+      
+      // Generate hierarchical version number
+      let newVersionNumber: string;
+      let newVersionId: string;
+      
+      if (isRootLevelVersion || !parent || parent.isOriginal) {
+        // Creating root-level version: v1, v2, v3...
+        const rootVersions = prev.versions.filter(v => !v.number.includes('.'));
+        newVersionNumber = rootVersions.length.toString();
+      } else {
+        // Creating branch: v2 → v2.1, v2.1 → v2.1.1
+        const parentNumber = parent.number;
+        const siblings = prev.versions.filter(v => 
+          v.parentId === parent.id && v.number.startsWith(parentNumber + '.')
+        );
+        const nextChild = siblings.length + 1;
+        newVersionNumber = `${parentNumber}.${nextChild}`;
+      }
+      
+      newVersionId = `v${newVersionNumber}`;
+      
       const newVersion: Version = {
-        id: `v${versionNumber}`,
-        number: versionNumber,
+        id: newVersionId,
+        number: newVersionNumber,
         content,
         prompt,
         timestamp: new Date(),
         isOriginal: false,
+        parentId: parent?.id || null,
+        checkpoints: [],
       };
 
       const newChatMessage: ChatMessage | null = prompt ? {
         id: `msg-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
         prompt,
-        versionCreated: versionNumber,
+        versionCreated: newVersionNumber,
         timestamp: new Date(),
       } : null;
 
@@ -104,6 +143,43 @@ export function EditorProvider({ children }: { children: React.ReactNode }) {
       versions: prev.versions.map(v =>
         v.id === versionId ? { ...v, content } : v
       ),
+    }));
+  }, []);
+
+  const createCheckpoint = useCallback((versionId: string, content: string, type: 'auto-save' | 'manual') => {
+    setState(prev => ({
+      ...prev,
+      versions: prev.versions.map(v => {
+        if (v.id === versionId) {
+          const newCheckpoint: Checkpoint = {
+            id: `cp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+            content,
+            timestamp: new Date(),
+            type,
+          };
+          return {
+            ...v,
+            content, // Update current content
+            checkpoints: [...v.checkpoints, newCheckpoint],
+          };
+        }
+        return v;
+      }),
+    }));
+  }, []);
+
+  const revertToCheckpoint = useCallback((versionId: string, checkpointId: string) => {
+    setState(prev => ({
+      ...prev,
+      versions: prev.versions.map(v => {
+        if (v.id === versionId) {
+          const checkpoint = v.checkpoints.find(cp => cp.id === checkpointId);
+          if (checkpoint) {
+            return { ...v, content: checkpoint.content };
+          }
+        }
+        return v;
+      }),
     }));
   }, []);
 
@@ -161,22 +237,8 @@ export function EditorProvider({ children }: { children: React.ReactNode }) {
 
       const { editedContent, explanation } = await response.json();
       
-      // Create the new version
-      createVersion(editedContent, prompt);
-      
-      // Add to chat history with the explanation
-      const newChatMessage: ChatMessage = {
-        id: `msg-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-        prompt,
-        response: explanation || 'Changes applied successfully.',
-        versionCreated: state.versions.length, // This will be the new version number
-        timestamp: new Date(),
-      };
-      
-      setState(prev => ({
-        ...prev,
-        chatHistory: [...prev.chatHistory, newChatMessage],
-      }));
+      // Create the new version (createVersion will handle hierarchical numbering and chat history)
+      createVersion(editedContent, prompt, currentVersion.id);
     } catch (error) {
       console.error('Error applying AI edit:', error);
       throw error;
@@ -200,6 +262,8 @@ export function EditorProvider({ children }: { children: React.ReactNode }) {
         applyAIEdit,
         setSelectedModel,
         setViewMode,
+        createCheckpoint,
+        revertToCheckpoint,
       }}
     >
       {children}
