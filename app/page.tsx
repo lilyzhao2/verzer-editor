@@ -3,13 +3,11 @@
 import React, { useState, useEffect } from 'react';
 import { EditorProvider, useEditor } from '@/contexts/EditorContext';
 import { CompareProvider } from '@/contexts/CompareContext';
-import { VersionSelector } from '@/components/VersionSelector';
 import { DocumentEditor } from '@/components/DocumentEditor';
 import { ChatInterface } from '@/components/ChatInterface';
 import { CompareView } from '@/components/CompareView';
 import { ClearDataButton } from '@/components/ClearDataButton';
 import { ProjectSetup } from '@/components/ProjectSetup';
-import { LegalCompare } from '@/components/LegalCompare';
 import { DocumentCompare } from '@/components/DocumentCompare';
 import { TabBar } from '@/components/TabBar';
 import { ParallelView } from '@/components/ParallelView';

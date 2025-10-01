@@ -126,7 +126,7 @@ export function DocumentCompare() {
   }, [currentVersion, compareVersion, viewMode]);
   
   // Render document with highlighting
-  const renderHighlightedDocument = (version: any, isLeft: boolean) => {
+  const renderHighlightedDocument = (version: { content: string }, isLeft: boolean) => {
     if (!version || !compareVersion) return null;
     
     const text = stripHTML(version.content);

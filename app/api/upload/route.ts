@@ -80,7 +80,7 @@ export async function POST(request: NextRequest) {
       } else if (fileName.endsWith('.docx')) {
         console.log('Processing DOCX file');
         // Process Word document (docx)
-        const mammoth = require('mammoth');
+        const mammoth = await import('mammoth');
         const arrayBuffer = await file.arrayBuffer();
         const buffer = Buffer.from(arrayBuffer);
         const result = await mammoth.extractRawText({ buffer });
@@ -140,22 +140,22 @@ export async function POST(request: NextRequest) {
         fileType: fileName.split('.').pop()
       });
       
-    } catch (parseError: any) {
+    } catch (parseError: unknown) {
       console.error('Error parsing file:', fileName);
-      console.error('Error message:', parseError.message);
-      console.error('Stack trace:', parseError.stack);
+      const errorMessage = parseError instanceof Error ? parseError.message : 'Unknown parsing error';
+      console.error('Error message:', errorMessage);
       return NextResponse.json(
-        { error: `Failed to parse ${fileName.split('.').pop()?.toUpperCase()} file: ${parseError.message}` },
+        { error: `Failed to parse ${fileName.split('.').pop()?.toUpperCase()} file: ${errorMessage}` },
         { status: 400 }
       );
     }
     
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error in upload API:');
-    console.error('Error message:', error.message);
-    console.error('Stack trace:', error.stack);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error('Error message:', errorMessage);
     return NextResponse.json(
-      { error: error.message || 'Failed to process file' },
+      { error: errorMessage || 'Failed to process file' },
       { status: 500 }
     );
   }
