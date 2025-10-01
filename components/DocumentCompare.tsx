@@ -35,7 +35,7 @@ export function DocumentCompare() {
   const [starredChanges, setStarredChanges] = useState<Set<string>>(new Set());
   const [currentChangeIndex, setCurrentChangeIndex] = useState(0);
   const [searchTerm, setSearchTerm] = useState('');
-  const [viewMode, setViewMode] = useState<'word' | 'sentence' | 'paragraph'>('word');
+  const [viewMode, setViewMode] = useState<'sentence' | 'paragraph'>('sentence');
   const [showUnchanged, setShowUnchanged] = useState(true);
   const [selectedChange, setSelectedChange] = useState<string | null>(null);
   const [commentText, setCommentText] = useState('');
@@ -111,16 +111,11 @@ export function DocumentCompare() {
     if (viewMode === 'paragraph') {
       leftUnits = extractParagraphs(compareVersion.content);
       rightUnits = extractParagraphs(currentVersion.content);
-    } else if (viewMode === 'sentence') {
+    } else { // sentence
       const leftText = stripHTML(compareVersion.content);
       const rightText = stripHTML(currentVersion.content);
       leftUnits = extractSentences(leftText);
       rightUnits = extractSentences(rightText);
-    } else { // word
-      const leftText = stripHTML(compareVersion.content);
-      const rightText = stripHTML(currentVersion.content);
-      leftUnits = extractWords(leftText);
-      rightUnits = extractWords(rightText);
     }
     
     // Build similarity matrix to detect moved content
@@ -232,12 +227,9 @@ export function DocumentCompare() {
     let units: string[];
     if (viewMode === 'paragraph') {
       units = extractParagraphs(version.content);
-    } else if (viewMode === 'sentence') {
+    } else { // sentence
       const text = stripHTML(version.content);
       units = extractSentences(text);
-    } else {
-      const text = stripHTML(version.content);
-      units = extractWords(text);
     }
     
     const elements: React.ReactNode[] = [];
@@ -291,7 +283,7 @@ export function DocumentCompare() {
           }
         }
         
-        const separator = viewMode === 'word' ? ' ' : viewMode === 'sentence' ? '. ' : '\n\n';
+        const separator = viewMode === 'sentence' ? '. ' : '\n\n';
         
         elements.push(
           <span
@@ -301,9 +293,9 @@ export function DocumentCompare() {
                 changeRefs.current.set(change.id + (isLeft ? '-left' : '-right'), el);
               }
             }}
-            className={`${bgColor} ${textColor} ${decoration} cursor-pointer hover:opacity-80 transition-all px-1 py-0.5 rounded ${
+            className={`${bgColor} ${textColor} ${decoration} cursor-pointer hover:opacity-80 transition-all ${
               isSelected ? 'ring-2 ring-blue-500 ring-offset-1' : ''
-            } ${viewMode === 'paragraph' ? 'block mb-4 p-3 rounded-lg' : 'inline'}`}
+            } ${viewMode === 'paragraph' ? 'block mb-4 p-3 rounded-lg' : 'inline px-1 py-0.5 rounded'}`}
             onClick={() => {
               setSelectedChange(change.id);
               // Jump to corresponding unit in other panel
@@ -327,11 +319,11 @@ export function DocumentCompare() {
         );
       } else {
         // Unchanged unit
-        const separator = viewMode === 'word' ? ' ' : viewMode === 'sentence' ? '. ' : '\n\n';
+        const separator = viewMode === 'sentence' ? '. ' : '\n\n';
         elements.push(
           <span
             key={`unit-${idx}`}
-            className={viewMode === 'paragraph' ? 'block mb-4' : 'inline'}
+            className={viewMode === 'paragraph' ? 'block mb-4 p-3 rounded-lg bg-gray-50' : 'inline'}
           >
             {unit}
             {separator === '\n\n' ? '' : separator}
@@ -513,14 +505,6 @@ export function DocumentCompare() {
           <div className="flex items-center gap-4">
             {/* View Mode Toggle */}
             <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
-              <button
-                onClick={() => setViewMode('word')}
-                className={`px-3 py-1.5 text-xs font-medium rounded transition-colors ${
-                  viewMode === 'word' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-700 hover:text-gray-900'
-                }`}
-              >
-                Word
-              </button>
               <button
                 onClick={() => setViewMode('sentence')}
                 className={`px-3 py-1.5 text-xs font-medium rounded transition-colors ${
