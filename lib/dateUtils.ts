@@ -7,7 +7,6 @@ export function formatTimestamp(timestamp: Date | string): string {
   const day = String(date.getDate()).padStart(2, '0');
   let hours = date.getHours();
   const minutes = String(date.getMinutes()).padStart(2, '0');
-  const seconds = String(date.getSeconds()).padStart(2, '0');
   const ampm = hours >= 12 ? 'PM' : 'AM';
   
   // Convert to 12-hour format
@@ -15,14 +14,14 @@ export function formatTimestamp(timestamp: Date | string): string {
   hours = hours ? hours : 12; // the hour '0' should be '12'
   const hoursStr = String(hours).padStart(2, '0');
   
-  return `${month}/${day}/${year}, ${hoursStr}:${minutes}:${seconds} ${ampm}`;
+  // Remove seconds to prevent hydration mismatches
+  return `${month}/${day}/${year}, ${hoursStr}:${minutes} ${ampm}`;
 }
 
 export function formatTimeOnly(timestamp: Date | string): string {
   const date = new Date(timestamp);
   let hours = date.getHours();
   const minutes = String(date.getMinutes()).padStart(2, '0');
-  const seconds = String(date.getSeconds()).padStart(2, '0');
   const ampm = hours >= 12 ? 'PM' : 'AM';
   
   // Convert to 12-hour format
@@ -30,5 +29,6 @@ export function formatTimeOnly(timestamp: Date | string): string {
   hours = hours ? hours : 12; // the hour '0' should be '12'
   const hoursStr = String(hours).padStart(2, '0');
   
-  return `${hoursStr}:${minutes}:${seconds} ${ampm}`;
+  // Remove seconds to prevent hydration mismatches
+  return `${hoursStr}:${minutes} ${ampm}`;
 }
