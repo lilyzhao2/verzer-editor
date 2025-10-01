@@ -1,14 +1,20 @@
 @import "tailwindcss";
 
+/* Force reset and base sizing - v2 */
+html {
+  font-size: 16px !important;
+  -webkit-text-size-adjust: 100% !important;
+  -moz-text-size-adjust: 100% !important;
+  text-size-adjust: 100% !important;
+}
+
 :root {
   --background: #ffffff;
   --foreground: #171717;
-  /* Force standard base font size */
   font-size: 16px !important;
 }
 
-/* Force 16px base across all contexts */
-:root, html, body {
+body {
   font-size: 16px !important;
 }
 
