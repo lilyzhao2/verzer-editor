@@ -13,6 +13,7 @@ import { TabBar } from '@/components/TabBar';
 import { ParallelView } from '@/components/ParallelView';
 import { DebugPanel } from '@/components/DebugPanel';
 import { SmartMerge } from '@/components/SmartMerge';
+import { WelcomePage } from '@/components/WelcomePage';
 import { MessageSquare, FileText, GitBranch, Settings, Scale, Layers, Bug, ChevronDown, GitMerge, Clock } from 'lucide-react';
 import { formatVersionNumber } from '@/lib/formatVersion';
 
@@ -29,6 +30,11 @@ function ViewModeTabs() {
   ];
 
   const { toggleDebugMode } = useEditor();
+
+  // Hide tabs when no versions exist (showing welcome page)
+  if (state.versions.length === 0) {
+    return null;
+  }
 
   return (
     <div className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between gap-4">
@@ -182,6 +188,11 @@ function MainContent() {
   }, [state.versions, state.currentVersionId]);
 
   const renderMainView = () => {
+    // Show welcome page if no versions exist
+    if (state.versions.length === 0) {
+      return <WelcomePage />;
+    }
+
     // Context View: Project configuration
     if (state.viewMode === 'context') {
       return <ProjectSetup />;
@@ -300,7 +311,7 @@ export default function Home() {
     <EditorProvider>
       <CompareProvider>
         <div className="h-screen flex flex-col bg-gray-100">
-          {/* Debug Panel */}
+          {/* Debug Panel - only show when there are versions */}
           <DebugPanel />
           
           {/* View Mode Tabs (includes version selector and utility buttons) */}

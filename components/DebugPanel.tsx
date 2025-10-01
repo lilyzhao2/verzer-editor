@@ -9,7 +9,7 @@ export function DebugPanel() {
   const { state, toggleDebugMode } = useEditor();
   const [copied, setCopied] = useState(false);
 
-  if (!state.debugMode) return null;
+  if (!state.debugMode || state.versions.length === 0) return null;
 
   const copyToClipboard = async () => {
     if (state.lastSystemPrompt) {
