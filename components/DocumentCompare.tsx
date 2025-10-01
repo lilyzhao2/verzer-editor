@@ -9,7 +9,9 @@ import {
   Filter,
   Search,
   X,
-  Star
+  Star,
+  FileText,
+  Save
 } from 'lucide-react';
 import * as Diff from 'diff';
 
@@ -41,10 +43,30 @@ export function DocumentCompare() {
   const [commentText, setCommentText] = useState('');
   const [comments, setComments] = useState<Map<string, string>>(new Map());
   const [scrollPositions, setScrollPositions] = useState({ left: 0, right: 0 });
+  const [showReviewPanel, setShowReviewPanel] = useState(false);
+  const [reviewNote, setReviewNote] = useState('');
   
   const leftPanelRef = useRef<HTMLDivElement>(null);
   const rightPanelRef = useRef<HTMLDivElement>(null);
   const changeRefs = useRef<Map<string, HTMLElement>>(new Map());
+  
+  // Load saved review notes when comparison changes
+  useEffect(() => {
+    if (compareVersion && currentVersion) {
+      const key = `comparison-review-${compareVersion.id}-${currentVersion.id}`;
+      const saved = localStorage.getItem(key);
+      if (saved) {
+        try {
+          const data = JSON.parse(saved);
+          setReviewNote(data.note || '');
+        } catch (e) {
+          console.error('Failed to load review notes:', e);
+        }
+      } else {
+        setReviewNote('');
+      }
+    }
+  }, [compareVersion?.id, currentVersion?.id]);
   
   // Strip HTML and extract paragraphs
   const stripHTML = (html: string): string => {
@@ -614,7 +636,74 @@ export function DocumentCompare() {
               Paragraph
             </button>
           </div>
+          
+          {/* Toggle Review Notes */}
+          <button
+            onClick={() => setShowReviewPanel(!showReviewPanel)}
+            className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-100 rounded transition-colors"
+            title="Add review notes"
+          >
+            <FileText className="w-4 h-4" />
+            Review Notes
+            {showReviewPanel ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+          </button>
         </div>
+
+        {/* Collapsible Review Notes Panel */}
+        {showReviewPanel && (
+          <div className="border-b bg-blue-50 p-4">
+            <div className="max-w-4xl mx-auto">
+              <div className="flex items-center gap-2 mb-3">
+                <FileText className="w-5 h-5 text-blue-600" />
+                <h3 className="text-sm font-semibold text-gray-800">Comparison Review</h3>
+                <span className="text-xs text-gray-500">
+                  (V{compareVersion.number} vs V{currentVersion.number})
+                </span>
+              </div>
+              
+              <textarea
+                value={reviewNote}
+                onChange={(e) => setReviewNote(e.target.value)}
+                placeholder="Add your review notes here... 
+
+Examples:
+• Which version do you prefer and why?
+• What sections work better in each version?
+• Any concerns or things to watch out for?
+• Notes for the merge process"
+                className="w-full h-32 p-3 border border-blue-200 rounded-lg text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+              />
+              
+              <div className="flex items-center justify-between mt-3">
+                <span className="text-xs text-gray-500">
+                  {reviewNote.length > 0 ? `${reviewNote.length} characters` : 'Start typing your review notes...'}
+                </span>
+                <button
+                  onClick={() => {
+                    // Save to localStorage
+                    const key = `comparison-review-${compareVersion.id}-${currentVersion.id}`;
+                    localStorage.setItem(key, JSON.stringify({
+                      note: reviewNote,
+                      timestamp: new Date().toISOString(),
+                      baseVersion: compareVersion.number,
+                      currentVersion: currentVersion.number
+                    }));
+                    alert('Review notes saved!');
+                  }}
+                  disabled={!reviewNote.trim()}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    reviewNote.trim() 
+                      ? 'bg-blue-600 text-white hover:bg-blue-700' 
+                      : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                  }`}
+                >
+                  <Save className="w-4 h-4" />
+                  Save Notes
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         
         {/* Side-by-side with minimap */}
