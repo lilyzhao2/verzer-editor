@@ -5,9 +5,8 @@ import { useEditor } from '@/contexts/EditorContext';
 import { 
   Settings, GitMerge, Eye, EyeOff, ChevronDown, ChevronUp,
   AlertCircle, CheckCircle, XCircle, Sparkles, User, X, Check,
-  MessageSquare, Columns, List, Focus as FocusIcon, Sliders
+  MessageSquare, Columns, List, Focus as FocusIcon
 } from 'lucide-react';
-import { RuleBuilder } from './RuleBuilder';
 import { 
   ClassifiedChange, ViewMode, MergeRule, MergePreset, MergeStats,
   ChangeType, ImpactLevel
@@ -30,7 +29,6 @@ export function SmartMerge() {
   // UI state
   const [viewMode, setViewMode] = useState<ViewMode>('unified');
   const [showSettings, setShowSettings] = useState(false);
-  const [showRuleBuilder, setShowRuleBuilder] = useState(false);
   const [currentChangeIndex, setCurrentChangeIndex] = useState(0);
   const [showAutoHandled, setShowAutoHandled] = useState(false);
   const [expandedCategories, setExpandedCategories] = useState({
@@ -364,14 +362,6 @@ export function SmartMerge() {
               </select>
               
               <button
-                onClick={() => setShowRuleBuilder(true)}
-                className="flex items-center gap-2 px-3 py-1.5 text-sm border border-gray-300 rounded-lg bg-white hover:bg-gray-50"
-              >
-                <Sliders className="w-4 h-4" />
-                Custom Rules ({customRules.length})
-              </button>
-              
-              <button
                 onClick={() => setShowAutoHandled(!showAutoHandled)}
                 className="ml-auto text-sm text-blue-600 hover:text-blue-800"
               >
@@ -523,18 +513,6 @@ export function SmartMerge() {
           
         </div>
       </div>
-      
-      {/* Rule Builder Modal */}
-      {showRuleBuilder && (
-        <RuleBuilder
-          rules={customRules}
-          onRulesChange={(newRules) => {
-            setCustomRules(newRules);
-            // TODO: Save to project config
-          }}
-          onClose={() => setShowRuleBuilder(false)}
-        />
-      )}
     </div>
   );
 }
