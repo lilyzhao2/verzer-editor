@@ -360,10 +360,10 @@ export function SmartMerge() {
       )}
       
       {/* Settings Panel - NOW ALWAYS VISIBLE */}
-      <div className="border-b bg-gradient-to-r from-blue-50 to-purple-50 p-4">
+      <div className="border-b bg-white p-4 shadow-sm">
         <div className="max-w-4xl mx-auto">
           <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-semibold text-gray-800">🎛️ Smart Filtering & Rules</h3>
+            <h3 className="text-sm font-semibold text-gray-900">🎛️ Smart Filtering & Rules</h3>
             <button
               onClick={() => setShowSettings(!showSettings)}
               className="text-xs text-gray-600 hover:text-gray-800"
@@ -374,12 +374,12 @@ export function SmartMerge() {
           
           {/* Quick Controls - Always Visible */}
           <div className="flex items-center gap-3 flex-wrap">
-            <div className="flex items-center gap-2 bg-white px-3 py-2 rounded-lg border border-gray-200">
-              <label className="text-sm font-medium text-gray-700">Preset:</label>
+            <div className="flex items-center gap-2 bg-gray-50 px-3 py-2 rounded-lg border border-gray-300">
+              <label className="text-sm font-semibold text-gray-900">Preset:</label>
               <select
                 value={selectedPresetId}
                 onChange={(e) => setSelectedPresetId(e.target.value)}
-                className="px-2 py-1 text-sm border-0 bg-transparent focus:outline-none font-medium text-blue-600"
+                className="px-2 py-1 text-sm border-0 bg-transparent focus:outline-none font-semibold text-blue-700"
               >
                 {MERGE_PRESETS.map(preset => (
                   <option key={preset.id} value={preset.id}>
@@ -391,22 +391,22 @@ export function SmartMerge() {
             
             <button
               onClick={() => setShowRuleBuilder(true)}
-              className="flex items-center gap-2 px-3 py-2 text-sm bg-white border border-gray-200 rounded-lg hover:border-blue-300 hover:bg-blue-50 transition-colors"
+              className="flex items-center gap-2 px-3 py-2 text-sm bg-blue-50 border-2 border-blue-200 rounded-lg hover:bg-blue-100 transition-colors"
             >
-              <Sliders className="w-4 h-4 text-blue-600" />
-              <span className="font-medium">Custom Rules</span>
-              <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 text-xs font-bold rounded">
+              <Sliders className="w-4 h-4 text-blue-700" />
+              <span className="font-semibold text-gray-900">Custom Rules</span>
+              <span className="px-2 py-0.5 bg-blue-600 text-white text-xs font-bold rounded">
                 {customRules.length}
               </span>
             </button>
             
             <button
               onClick={() => setShowAutoHandled(!showAutoHandled)}
-              className="flex items-center gap-2 px-3 py-2 text-sm bg-white border border-gray-200 rounded-lg hover:border-green-300 hover:bg-green-50 transition-colors"
+              className="flex items-center gap-2 px-3 py-2 text-sm bg-green-50 border-2 border-green-200 rounded-lg hover:bg-green-100 transition-colors"
             >
-              {showAutoHandled ? <EyeOff className="w-4 h-4 text-gray-600" /> : <Eye className="w-4 h-4 text-green-600" />}
-              <span className="font-medium">{showAutoHandled ? 'Hide' : 'Show'} Auto-handled</span>
-              <span className="px-1.5 py-0.5 bg-green-100 text-green-700 text-xs font-bold rounded">
+              {showAutoHandled ? <EyeOff className="w-4 h-4 text-gray-900" /> : <Eye className="w-4 h-4 text-green-700" />}
+              <span className="font-semibold text-gray-900">{showAutoHandled ? 'Hide' : 'Show'} Auto-handled</span>
+              <span className="px-2 py-0.5 bg-green-600 text-white text-xs font-bold rounded">
                 {stats.autoHandled}
               </span>
             </button>
@@ -415,19 +415,19 @@ export function SmartMerge() {
           {/* Expanded Details */}
           {showSettings && (
             <div className="mt-4 p-4 bg-white rounded-lg border border-gray-200">
-              <h4 className="text-xs font-semibold text-gray-700 mb-2">Current Preset: {MERGE_PRESETS.find(p => p.id === selectedPresetId)?.name}</h4>
-              <p className="text-xs text-gray-600 mb-3">
+              <h4 className="text-sm font-bold text-gray-900 mb-2">Current Preset: {MERGE_PRESETS.find(p => p.id === selectedPresetId)?.name}</h4>
+              <p className="text-sm text-gray-700 mb-3">
                 {MERGE_PRESETS.find(p => p.id === selectedPresetId)?.description}
               </p>
               
-              <div className="text-xs text-gray-700 space-y-1">
-                <div><strong>Active Rules:</strong> {MERGE_PRESETS.find(p => p.id === selectedPresetId)?.rules.length} preset rules + {customRules.length} custom rules</div>
-                <div><strong>Auto-handling:</strong> {stats.autoHandled} changes automatically accepted</div>
-                <div><strong>Requires review:</strong> {changesToReview.length} changes</div>
+              <div className="text-sm text-gray-900 space-y-1 bg-gray-50 p-3 rounded">
+                <div><strong className="text-gray-900">Active Rules:</strong> {MERGE_PRESETS.find(p => p.id === selectedPresetId)?.rules.length} preset rules + {customRules.length} custom rules</div>
+                <div><strong className="text-gray-900">Auto-handling:</strong> {stats.autoHandled} changes automatically accepted</div>
+                <div><strong className="text-gray-900">Requires review:</strong> {changesToReview.length} changes</div>
               </div>
               
               <div className="mt-3 pt-3 border-t border-gray-200">
-                <p className="text-xs text-gray-600 mb-2">
+                <p className="text-sm text-gray-800 mb-2">
                   <strong>💡 Tip:</strong> Click "Custom Rules" to create your own IF-THEN rules for specific types of changes
                 </p>
               </div>
