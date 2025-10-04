@@ -212,4 +212,5 @@ export interface EditorState {
   // V2: New fields for single-page editor
   documentMode: DocumentMode; // Current viewing mode (clean, track-changes, side-by-side)
   hasUnsavedChanges: boolean; // Track unsaved edits
+  workingContent: string; // Current content being edited (may be unsaved)
 }

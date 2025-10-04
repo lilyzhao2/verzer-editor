@@ -292,7 +292,7 @@ export function ConversationalChat() {
         };
         setMessages(prev => [...prev, thinkingMessage]);
 
-        // Apply the edit
+        // Apply the edit (will use workingContent from global state)
         await applyAIEdit(input.trim());
 
         // Remove thinking message and add completion message

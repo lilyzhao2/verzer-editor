@@ -25,7 +25,8 @@ export function DocumentEditor() {
     setDocumentName,
     setDocumentMode,
     setHasUnsavedChanges: setGlobalUnsavedChanges,
-    setPendingAIEdit
+    setPendingAIEdit,
+    setWorkingContent
   } = useEditor();
   const currentVersion = getCurrentVersion();
   const [localContent, setLocalContent] = useState(currentVersion?.content || '');
@@ -63,6 +64,9 @@ export function DocumentEditor() {
       setLocalContent(newContent);
       setHasUnsavedChanges(true);
       
+      // V2: Update working content in global state so AI can access it
+      setWorkingContent(newContent);
+      
       // Update tab dirty state
       const activeTab = state.tabs?.find(t => t.id === state.activeTabId);
       if (activeTab && !activeTab.isDirty) {
@@ -81,7 +85,7 @@ export function DocumentEditor() {
         }
       }, 10000);
     }, 0);
-  }, [currentVersion, createCheckpoint, state.tabs, state.activeTabId, updateTabDirtyState]);
+  }, [currentVersion, createCheckpoint, state.tabs, state.activeTabId, updateTabDirtyState, setWorkingContent]);
 
   const handleOverwriteVersion = () => {
     if (hasUnsavedChanges && currentVersion) {

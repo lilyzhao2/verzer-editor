@@ -7,17 +7,17 @@ import {
   AlertCircle, CheckCircle, XCircle, Sparkles, User, X, Check,
   MessageSquare, Columns, List, Focus as FocusIcon, Sliders
 } from 'lucide-react';
-import { RuleBuilder } from './RuleBuilder';
+import { RuleBuilder } from './archive/RuleBuilder';
 import { 
   ClassifiedChange, ViewMode, MergeRule, MergePreset, MergeStats,
   ChangeType, ImpactLevel
-} from '@/lib/smartMergeTypes';
+} from '@/lib/archive/smartMergeTypes';
 import {
   classifyChange,
   applyRules,
   MERGE_PRESETS,
   generateImpactExplanation
-} from '@/lib/smartMergeEngine';
+} from '@/lib/archive/smartMergeEngine';
 
 export function SmartMerge() {
   const { state, createVersion } = useEditor();

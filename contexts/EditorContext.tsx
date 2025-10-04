@@ -30,7 +30,7 @@ interface EditorContextType {
   setCompareVersionId: (versionId: string | null) => void;
   getCurrentVersion: () => Version | undefined;
   getCompareVersion: () => Version | undefined;
-  applyAIEdit: (prompt: string, options?: { autoOpenInParallel?: boolean; parentId?: string }) => Promise<void>;
+  applyAIEdit: (prompt: string, options?: { autoOpenInParallel?: boolean; parentId?: string; content?: string }) => Promise<void>;
   createAIVariations: (prompts: string[]) => Promise<any>;
   saveManualEdit: (content: string) => Promise<void>;
   setSelectedModel: (model: AIModel) => void;
@@ -62,6 +62,7 @@ interface EditorContextType {
   // V2: Document mode management
   setDocumentMode: (mode: DocumentMode) => void;
   setHasUnsavedChanges: (hasChanges: boolean) => void;
+  setWorkingContent: (content: string) => void;
 }
 
 const EditorContext = createContext<EditorContextType | undefined>(undefined);
@@ -136,7 +137,8 @@ export function EditorProvider({ children }: { children: React.ReactNode }) {
       changeMetadata: [],
       documentName: 'Untitled Document',
       documentMode: 'clean',
-      hasUnsavedChanges: false
+      hasUnsavedChanges: false,
+      workingContent: '<p>Start writing your document here...</p>'
     };
   });
 
@@ -207,7 +209,8 @@ export function EditorProvider({ children }: { children: React.ReactNode }) {
             paragraphLineage: parsed.paragraphLineage || [],
             changeMetadata: parsed.changeMetadata || [],
             documentMode: parsed.documentMode || 'clean',
-            hasUnsavedChanges: parsed.hasUnsavedChanges || false
+            hasUnsavedChanges: parsed.hasUnsavedChanges || false,
+            workingContent: parsed.workingContent || parsed.versions[0]?.content || '<p>Start writing your document here...</p>'
           });
         } catch (error) {
           console.error('Failed to load state:', error);
@@ -859,9 +862,12 @@ Break this into 3-7 clear tasks. Be specific and actionable. Return ONLY the JSO
     }
   };
 
-  const applyAIEdit = useCallback(async (prompt: string, options?: { autoOpenInParallel?: boolean; parentId?: string }) => {
+  const applyAIEdit = useCallback(async (prompt: string, options?: { autoOpenInParallel?: boolean; parentId?: string; content?: string }) => {
     const currentVersion = getCurrentVersion();
     if (!currentVersion) return;
+
+    // V2: Use provided content, or workingContent (unsaved), or fall back to saved version
+    const contentToEdit = options?.content || state.workingContent || currentVersion.content;
 
     try {
       // Get the single project context (always use the first/only config)
@@ -872,6 +878,7 @@ Break this into 3-7 clear tasks. Be specific and actionable. Return ONLY the JSO
       console.log('Active Config ID:', state.activeConfigId);
       console.log('Project Configs:', state.projectConfigs?.length || 0);
       console.log('Found Project Config:', !!projectConfig);
+      console.log('Using unsaved content:', !!options?.content);
       if (projectConfig) {
         console.log('Examples Count:', projectConfig.examples?.length || 0);
         console.log('Has Learned Patterns:', !!projectConfig.learnedPatterns);
@@ -893,10 +900,10 @@ Break this into 3-7 clear tasks. Be specific and actionable. Return ONLY the JSO
 
 💬 USER REQUEST: ${prompt}
 
-📄 DOCUMENT PREVIEW: ${currentVersion.content.substring(0, 200)}...` :
+📄 DOCUMENT PREVIEW: ${contentToEdit.substring(0, 200)}...` :
         `💬 USER REQUEST: ${prompt}
 
-📄 DOCUMENT PREVIEW: ${currentVersion.content.substring(0, 200)}...`;
+📄 DOCUMENT PREVIEW: ${contentToEdit.substring(0, 200)}...`;
       
       setLastSystemPrompt(readablePrompt);
 
@@ -908,7 +915,7 @@ Break this into 3-7 clear tasks. Be specific and actionable. Return ONLY the JSO
           },
           body: JSON.stringify({
             prompt,
-            content: currentVersion.content,
+            content: contentToEdit,
             model: state.selectedModel,
             projectConfig,
           }),
@@ -968,11 +975,11 @@ Break this into 3-7 clear tasks. Be specific and actionable. Return ONLY the JSO
       });
       
       // V2: Instead of creating version immediately, analyze diff and set pending edit
-      const diffAnalysis = analyzeDiff(currentVersion.content, editedContent);
+      const diffAnalysis = analyzeDiff(contentToEdit, editedContent);
       
       // Set pending AI edit with mode suggestion
       setPendingAIEdit({
-        originalContent: currentVersion.content,
+        originalContent: contentToEdit,
         editedContent: editedContent,
         prompt: prompt,
         timestamp: new Date(),
@@ -1281,6 +1288,13 @@ Break this into 3-7 clear tasks. Be specific and actionable. Return ONLY the JSO
     }));
   }, []);
 
+  const setWorkingContent = useCallback((content: string) => {
+    setState(prev => ({
+      ...prev,
+      workingContent: content,
+    }));
+  }, []);
+
   return (
     <EditorContext.Provider
       value={{
@@ -1339,6 +1353,7 @@ Break this into 3-7 clear tasks. Be specific and actionable. Return ONLY the JSO
         getChangeMetadata,
         setDocumentMode,
         setHasUnsavedChanges,
+        setWorkingContent,
       }}
     >
       {children}
