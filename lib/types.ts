@@ -122,6 +122,7 @@ export interface Version {
   versionState?: VersionState; // Lifecycle state
   aiEditedContent?: string; // AI's original content (for comparison)
   workingDraft?: string | null; // Auto-saved unsaved edits
+  hasUserEdits?: boolean; // User made manual edits (shows "edited" label)
 }
 
 export interface Diff {

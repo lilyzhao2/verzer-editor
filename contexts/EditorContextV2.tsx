@@ -35,6 +35,7 @@ interface EditorContextTypeV2 {
   
   // Version management
   createVersion: (content: string, prompt: string | null, versionState?: VersionState) => string;
+  updateVersion: (versionId: string, content: string, markAsEdited?: boolean) => void;
   setCurrentVersion: (versionId: string) => void;
   getCurrentVersion: () => Version | undefined;
   getPreviousVersion: () => Version | undefined;
@@ -161,6 +162,19 @@ export function EditorProviderV2({ children }: { children: React.ReactNode }) {
     [state.versions, getCurrentVersion]
   );
 
+  // Update version content
+  const updateVersion = useCallback((versionId: string, content: string, markAsEdited: boolean = true) => {
+    setState((prev) => ({
+      ...prev,
+      versions: prev.versions.map((v) =>
+        v.id === versionId
+          ? { ...v, content, hasUserEdits: markAsEdited ? true : v.hasUserEdits }
+          : v
+      ),
+      workingContent: content,
+    }));
+  }, []);
+
   // Set current version
   const setCurrentVersion = useCallback((versionId: string) => {
     const version = state.versions.find((v) => v.id === versionId);
@@ -273,13 +287,12 @@ export function EditorProviderV2({ children }: { children: React.ReactNode }) {
         // Create new version (STAGED)
         const newVersionId = createVersion(aiContent, prompt, 'ai-created');
 
-        // Analyze diff to suggest mode
-        const diffResult = analyzeDiff(currentVersion.content, aiContent);
-
+        // Always default to Editing mode (clean view)
+        // User can switch to Tracking or Diff if needed
         setState((prev) => ({
           ...prev,
           chatHistory: [...prev.chatHistory, aiMessage],
-          documentMode: diffResult.suggestedView, // Auto-switch to tracking or diff-regenerate
+          documentMode: 'editing', // Default to clean view
         }));
 
       } catch (error) {
@@ -407,6 +420,7 @@ export function EditorProviderV2({ children }: { children: React.ReactNode }) {
   const value: EditorContextTypeV2 = {
     state,
     createVersion,
+    updateVersion,
     setCurrentVersion,
     getCurrentVersion,
     getPreviousVersion,

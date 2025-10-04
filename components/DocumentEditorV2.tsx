@@ -23,7 +23,9 @@ export default function DocumentEditorV2() {
     state,
     getCurrentVersion,
     getPreviousVersion,
+    updateVersion,
     setWorkingContent,
+    setCurrentVersion,
     setDocumentMode,
     acceptAllChanges,
     rejectAndRegenerate,
@@ -72,6 +74,31 @@ export default function DocumentEditorV2() {
     }
   }, [state.currentVersionId, state.documentMode]);
 
+  // Auto-save and mark as edited when user types
+  const autoSaveTimeoutRef = React.useRef<NodeJS.Timeout>();
+  React.useEffect(() => {
+    if (state.documentMode === 'editing' && currentVersion) {
+      // Clear previous timeout
+      if (autoSaveTimeoutRef.current) {
+        clearTimeout(autoSaveTimeoutRef.current);
+      }
+
+      // Set new timeout to save after 1 second of no typing
+      autoSaveTimeoutRef.current = setTimeout(() => {
+        if (state.workingContent !== currentVersion.content) {
+          // Update version and mark as edited
+          updateVersion(currentVersion.id, state.workingContent, true);
+        }
+      }, 1000);
+    }
+
+    return () => {
+      if (autoSaveTimeoutRef.current) {
+        clearTimeout(autoSaveTimeoutRef.current);
+      }
+    };
+  }, [state.workingContent, state.documentMode, currentVersion]);
+
   const hasPendingChanges = currentVersion?.versionState === 'ai-created';
 
   return (
@@ -85,9 +112,25 @@ export default function DocumentEditorV2() {
             onChange={(e) => setDocumentName(e.target.value)}
             className="text-lg font-semibold text-gray-900 bg-transparent border-none focus:outline-none focus:ring-2 focus:ring-blue-500 rounded px-2"
           />
-          <span className="text-sm text-gray-500">
-            {currentVersion?.number ? `V${currentVersion.number}` : ''}
-          </span>
+          
+          {/* Version Dropdown */}
+          <select
+            value={state.currentVersionId}
+            onChange={(e) => setCurrentVersion(e.target.value)}
+            className="px-3 py-1.5 text-sm font-medium text-gray-700 bg-gray-50 border border-gray-300 rounded-lg hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            {state.versions
+              .filter(v => !v.isArchived)
+              .sort((a, b) => Number(b.number) - Number(a.number))
+              .map((version) => (
+                <option key={version.id} value={version.id}>
+                  {version.number === '0' 
+                    ? state.documentName 
+                    : `V${version.number}${version.hasUserEdits ? ' (edited)' : ''}`
+                  }
+                </option>
+              ))}
+          </select>
         </div>
         
         <div className="flex items-center gap-4">
