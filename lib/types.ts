@@ -186,7 +186,7 @@ export interface TodoSession {
 }
 
 // V2: Document editing modes (Google Docs style)
-export type DocumentMode = 'editing' | 'suggesting' | 'viewing';
+export type DocumentMode = 'editing' | 'tracking' | 'diff-regenerate';
 
 // V2: Version lifecycle states
 export type VersionState = 

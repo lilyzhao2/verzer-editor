@@ -44,13 +44,11 @@ export function analyzeDiff(oldContent: string, newContent: string) {
   const changePercent = calculateChangePercent(wordDiff);
 
   // Determine suggested view based on change percentage
-  let suggestedView: 'suggesting' | 'viewing-sidebyside' | 'viewing-paragraph';
-  if (changePercent < 30) {
-    suggestedView = 'suggesting';
-  } else if (changePercent < 70) {
-    suggestedView = 'viewing-sidebyside';
+  let suggestedView: 'tracking' | 'diff-regenerate';
+  if (changePercent < 70) {
+    suggestedView = 'tracking'; // Use tracking mode for smaller changes
   } else {
-    suggestedView = 'viewing-paragraph';
+    suggestedView = 'diff-regenerate'; // Use diff view for major rewrites
   }
 
   return {
