@@ -862,7 +862,7 @@ Break this into 3-7 clear tasks. Be specific and actionable. Return ONLY the JSO
     }
   };
 
-  const applyAIEdit = useCallback(async (prompt: string, options?: { autoOpenInParallel?: boolean; parentId?: string; content?: string }) => {
+  const applyAIEdit = useCallback(async (prompt: string, options?: { autoOpenInParallel?: boolean; parentId?: string; content?: string; createBranch?: boolean }) => {
     const currentVersion = getCurrentVersion();
     if (!currentVersion) return;
 
@@ -974,21 +974,42 @@ Break this into 3-7 clear tasks. Be specific and actionable. Return ONLY the JSO
         hasExplanation: !!explanation
       });
       
-      // V2: Instead of creating version immediately, analyze diff and set pending edit
-      const diffAnalysis = analyzeDiff(contentToEdit, editedContent);
-      
-      // Set pending AI edit with mode suggestion
-      setPendingAIEdit({
-        originalContent: contentToEdit,
-        editedContent: editedContent,
-        prompt: prompt,
-        timestamp: new Date(),
-        mode: diffAnalysis.mode,
-        changePercent: diffAnalysis.changePercent,
-      });
-      
-      // Auto-switch to suggested mode
-      setDocumentMode(diffAnalysis.mode);
+      // V2: Check if this is a branch creation request
+      if (options?.createBranch) {
+        // Create a new branch immediately (no review needed for variations)
+        const newVersionId = `v${Date.now()}`;
+        createVersion(editedContent, prompt, currentVersion.id, undefined, newVersionId);
+        
+        // Add chat message for branch creation
+        const newChatMessage: ChatMessage = {
+          id: `msg-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          prompt,
+          response: explanation || 'Created a variation branch.',
+          versionCreated: state.versions.length.toString(),
+          timestamp: new Date(),
+        };
+        
+        setState(prev => ({
+          ...prev,
+          chatHistory: [...prev.chatHistory, newChatMessage],
+        }));
+      } else {
+        // Regular edit: analyze diff and set pending edit for review
+        const diffAnalysis = analyzeDiff(contentToEdit, editedContent);
+        
+        // Set pending AI edit with mode suggestion
+        setPendingAIEdit({
+          originalContent: contentToEdit,
+          editedContent: editedContent,
+          prompt: prompt,
+          timestamp: new Date(),
+          mode: diffAnalysis.mode,
+          changePercent: diffAnalysis.changePercent,
+        });
+        
+        // Auto-switch to suggested mode
+        setDocumentMode(diffAnalysis.mode);
+      }
       
       // OLD V1 CODE - Commented out for reference
       // Calculate what the new version number will be
