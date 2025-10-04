@@ -1,62 +1,208 @@
 'use client';
 
-import React from 'react';
-import { CheckCircle, XCircle } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { Change } from 'diff';
+import { Check, X } from 'lucide-react';
 
 interface TrackChangesViewProps {
-  originalContent: string;
-  editedContent: string;
+  changes: Change[];
   onAcceptAll: () => void;
   onRejectAll: () => void;
-  onAcceptPartial: (acceptedContent: string) => void;
+  onAcceptChange: (index: number) => void;
+  onRejectChange: (index: number) => void;
 }
 
-export function TrackChangesView({ 
-  originalContent, 
-  editedContent, 
-  onAcceptAll, 
+export function TrackChangesView({
+  changes,
+  onAcceptAll,
   onRejectAll,
-  onAcceptPartial 
+  onAcceptChange,
+  onRejectChange,
 }: TrackChangesViewProps) {
-  
+  const [acceptedChanges, setAcceptedChanges] = useState<Set<number>>(new Set());
+  const [rejectedChanges, setRejectedChanges] = useState<Set<number>>(new Set());
+  const [hoveredChange, setHoveredChange] = useState<number | null>(null);
+
+  // Calculate stats
+  const stats = useMemo(() => {
+    let additions = 0;
+    let deletions = 0;
+    changes.forEach(change => {
+      if (change.added) additions++;
+      if (change.removed) deletions++;
+    });
+    return { additions, deletions, total: additions + deletions };
+  }, [changes]);
+
+  const handleAccept = (index: number) => {
+    setAcceptedChanges(prev => new Set([...prev, index]));
+    setRejectedChanges(prev => {
+      const next = new Set(prev);
+      next.delete(index);
+      return next;
+    });
+    onAcceptChange(index);
+  };
+
+  const handleReject = (index: number) => {
+    setRejectedChanges(prev => new Set([...prev, index]));
+    setAcceptedChanges(prev => {
+      const next = new Set(prev);
+      next.delete(index);
+      return next;
+    });
+    onRejectChange(index);
+  };
+
+  const handleAcceptAll = () => {
+    const allChangeIndexes = new Set<number>();
+    changes.forEach((_, index) => {
+      if (changes[index].added || changes[index].removed) {
+        allChangeIndexes.add(index);
+      }
+    });
+    setAcceptedChanges(allChangeIndexes);
+    setRejectedChanges(new Set());
+    onAcceptAll();
+  };
+
+  const handleRejectAll = () => {
+    const allChangeIndexes = new Set<number>();
+    changes.forEach((_, index) => {
+      if (changes[index].added || changes[index].removed) {
+        allChangeIndexes.add(index);
+      }
+    });
+    setRejectedChanges(allChangeIndexes);
+    setAcceptedChanges(new Set());
+    onRejectAll();
+  };
+
   return (
-    <div className="h-full flex flex-col bg-white">
-      {/* Simple Preview of AI Edit */}
-      <div className="flex-1 overflow-y-auto p-6">
-        <div className="max-w-4xl mx-auto">
-          <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-            <p className="text-sm font-medium text-blue-900">
-              AI has suggested edits to your document
-            </p>
-            <p className="text-xs text-blue-700 mt-1">
-              Review the changes below and choose to accept or reject them
+    <div className="h-full flex flex-col">
+      {/* Header with stats and actions */}
+      <div className="bg-blue-50 border-b border-blue-200 p-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900">Track Changes</h3>
+            <p className="text-sm text-gray-600 mt-1">
+              {stats.additions} addition{stats.additions !== 1 ? 's' : ''}, {stats.deletions} deletion{stats.deletions !== 1 ? 's' : ''}
             </p>
           </div>
-          
-          <div 
-            className="prose prose-sm max-w-none"
-            dangerouslySetInnerHTML={{ __html: editedContent }}
-          />
+          <div className="flex gap-2">
+            <button
+              onClick={handleAcceptAll}
+              className="flex items-center gap-1.5 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+            >
+              <Check className="w-4 h-4" />
+              Accept All
+            </button>
+            <button
+              onClick={handleRejectAll}
+              className="flex items-center gap-1.5 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+            >
+              <X className="w-4 h-4" />
+              Reject All
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* Simple Action Buttons */}
-      <div className="bg-gray-50 border-t border-gray-200 p-4">
-        <div className="max-w-4xl mx-auto flex justify-end gap-3">
-          <button
-            onClick={onRejectAll}
-            className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
-          >
-            <XCircle className="w-4 h-4" />
-            Reject
-          </button>
-          <button
-            onClick={onAcceptAll}
-            className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
-          >
-            <CheckCircle className="w-4 h-4" />
-            Accept
-          </button>
+      {/* Document content with inline changes */}
+      <div className="flex-1 overflow-auto p-8 bg-white">
+        <div className="max-w-4xl mx-auto prose prose-lg">
+          {changes.map((change, index) => {
+            const isAccepted = acceptedChanges.has(index);
+            const isRejected = rejectedChanges.has(index);
+            const isHovered = hoveredChange === index;
+
+            if (!change.added && !change.removed) {
+              // Unchanged text
+              return (
+                <span key={index} className="text-gray-900">
+                  {change.value}
+                </span>
+              );
+            }
+
+            if (change.removed) {
+              // Deletion
+              return (
+                <span
+                  key={index}
+                  className={`relative inline-block ${
+                    isRejected
+                      ? 'opacity-30 line-through'
+                      : isAccepted
+                      ? 'hidden'
+                      : 'bg-red-100 text-red-800 line-through'
+                  }`}
+                  onMouseEnter={() => setHoveredChange(index)}
+                  onMouseLeave={() => setHoveredChange(null)}
+                >
+                  {change.value}
+                  {isHovered && !isAccepted && !isRejected && (
+                    <span className="absolute -top-8 left-0 flex gap-1 bg-white shadow-lg rounded-lg border border-gray-200 p-1 z-10">
+                      <button
+                        onClick={() => handleAccept(index)}
+                        className="p-1 hover:bg-green-100 rounded text-green-600"
+                        title="Keep deletion"
+                      >
+                        <Check className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => handleReject(index)}
+                        className="p-1 hover:bg-red-100 rounded text-red-600"
+                        title="Restore text"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </span>
+                  )}
+                </span>
+              );
+            }
+
+            if (change.added) {
+              // Addition
+              return (
+                <span
+                  key={index}
+                  className={`relative inline-block ${
+                    isRejected
+                      ? 'hidden'
+                      : isAccepted
+                      ? 'bg-green-50 text-green-900'
+                      : 'bg-green-200 text-green-900 underline decoration-green-600'
+                  }`}
+                  onMouseEnter={() => setHoveredChange(index)}
+                  onMouseLeave={() => setHoveredChange(null)}
+                >
+                  {change.value}
+                  {isHovered && !isAccepted && !isRejected && (
+                    <span className="absolute -top-8 left-0 flex gap-1 bg-white shadow-lg rounded-lg border border-gray-200 p-1 z-10">
+                      <button
+                        onClick={() => handleAccept(index)}
+                        className="p-1 hover:bg-green-100 rounded text-green-600"
+                        title="Accept addition"
+                      >
+                        <Check className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => handleReject(index)}
+                        className="p-1 hover:bg-red-100 rounded text-red-600"
+                        title="Reject addition"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </span>
+                  )}
+                </span>
+              );
+            }
+
+            return null;
+          })}
         </div>
       </div>
     </div>

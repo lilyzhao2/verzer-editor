@@ -137,6 +137,9 @@ export type AIModel = 'claude-3-5-haiku-20241022' | 'claude-3-7-sonnet-20250219'
 
 export type ViewMode = 'context' | 'document' | 'iterate' | 'compare' | 'parallel' | 'smartmerge';
 
+// V2: Document viewing modes within the single-page editor
+export type DocumentMode = 'clean' | 'track-changes' | 'side-by-side' | 'paragraph-stack';
+
 
 export interface ProjectNote {
   id: string;
@@ -152,6 +155,8 @@ export interface PendingAIEdit {
   editedContent: string;
   prompt: string;
   timestamp: Date;
+  mode?: DocumentMode; // Suggested viewing mode for this edit
+  changePercent?: number; // Percentage of content changed
 }
 
 export interface EditorTab {
@@ -204,4 +209,7 @@ export interface EditorState {
   paragraphLineage: ParagraphLineage[]; // Track paragraph-level changes
   changeMetadata: ChangeMetadata[]; // Track all changes with metadata
   documentName: string; // Persistent document name
+  // V2: New fields for single-page editor
+  documentMode: DocumentMode; // Current viewing mode (clean, track-changes, side-by-side)
+  hasUnsavedChanges: boolean; // Track unsaved edits
 }

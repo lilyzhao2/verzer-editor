@@ -1,7 +1,8 @@
 'use client';
 
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
-import { Version, ChatMessage, EditorState, AIModel, ViewMode, Checkpoint, PendingAIEdit, Comment, CommentReply, ProjectNote, ProjectConfig, EditorTab, TodoSession, TodoTask, ParagraphLineage, ChangeMetadata } from '@/lib/types';
+import { Version, ChatMessage, EditorState, AIModel, ViewMode, Checkpoint, PendingAIEdit, Comment, CommentReply, ProjectNote, ProjectConfig, EditorTab, TodoSession, TodoTask, ParagraphLineage, ChangeMetadata, DocumentMode } from '@/lib/types';
+import { analyzeDiff } from '@/lib/diffAnalysis';
 
 interface EditorContextType {
   state: EditorState;
@@ -58,6 +59,9 @@ interface EditorContextType {
   revertParagraph: (paragraphId: string, targetVersionId: string) => void;
   getParagraphLineage: (versionId: string) => ParagraphLineage[];
   getChangeMetadata: (versionId: string) => ChangeMetadata[];
+  // V2: Document mode management
+  setDocumentMode: (mode: DocumentMode) => void;
+  setHasUnsavedChanges: (hasChanges: boolean) => void;
 }
 
 const EditorContext = createContext<EditorContextType | undefined>(undefined);
@@ -130,7 +134,9 @@ export function EditorProvider({ children }: { children: React.ReactNode }) {
       lastSystemPrompt: null,
       paragraphLineage: [],
       changeMetadata: [],
-      documentName: 'Untitled Document'
+      documentName: 'Untitled Document',
+      documentMode: 'clean',
+      hasUnsavedChanges: false
     };
   });
 
@@ -199,7 +205,9 @@ export function EditorProvider({ children }: { children: React.ReactNode }) {
             viewMode: parsed.viewMode || 'document',
             pendingAIEdit: null,
             paragraphLineage: parsed.paragraphLineage || [],
-            changeMetadata: parsed.changeMetadata || []
+            changeMetadata: parsed.changeMetadata || [],
+            documentMode: parsed.documentMode || 'clean',
+            hasUnsavedChanges: parsed.hasUnsavedChanges || false
           });
         } catch (error) {
           console.error('Failed to load state:', error);
@@ -959,40 +967,59 @@ Break this into 3-7 clear tasks. Be specific and actionable. Return ONLY the JSO
         hasExplanation: !!explanation
       });
       
+      // V2: Instead of creating version immediately, analyze diff and set pending edit
+      const diffAnalysis = analyzeDiff(currentVersion.content, editedContent);
+      
+      // Set pending AI edit with mode suggestion
+      setPendingAIEdit({
+        originalContent: currentVersion.content,
+        editedContent: editedContent,
+        prompt: prompt,
+        timestamp: new Date(),
+        mode: diffAnalysis.mode,
+        changePercent: diffAnalysis.changePercent,
+      });
+      
+      // Auto-switch to suggested mode
+      setDocumentMode(diffAnalysis.mode);
+      
+      // OLD V1 CODE - Commented out for reference
       // Calculate what the new version number will be
       // Since AI creates root versions, it's the count of root versions
-      const rootVersions = state.versions?.filter(v => typeof v.number === 'string' && !v.number.includes('b')) || [];
-      const newVersionNumber = rootVersions.length.toString();
+      // const rootVersions = state.versions?.filter(v => typeof v.number === 'string' && !v.number.includes('b')) || [];
+      // const newVersionNumber = rootVersions.length.toString();
       
       // Create the new version directly
       // Use provided parentId or default to 'v0' for root versions
-      const parentId = options?.parentId || 'v0';
-      const newVersionId = `v${Date.now()}`;
-      createVersion(editedContent, prompt, parentId, undefined, newVersionId);
+      // const parentId = options?.parentId || 'v0';
+      // const newVersionId = `v${Date.now()}`;
+      // createVersion(editedContent, prompt, parentId, undefined, newVersionId);
       
+      // V2: These will happen when user accepts changes
       // Track paragraph changes for lineage
-      const promptId = `prompt-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-      const paragraphs = editedContent.split('\n\n');
-      paragraphs.forEach((paragraph: string, index: number) => {
-        if (paragraph.trim()) {
-          trackParagraphChange(newVersionId, promptId, prompt, index, paragraph);
-        }
-      });
+      // const promptId = `prompt-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      // const paragraphs = editedContent.split('\n\n');
+      // paragraphs.forEach((paragraph: string, index: number) => {
+      //   if (paragraph.trim()) {
+      //     trackParagraphChange(newVersionId, promptId, prompt, index, paragraph);
+      //   }
+      // });
       
       // If in parallel mode and autoOpen is true, open the new version in a tab
-      if (options?.autoOpenInParallel && state.viewMode === 'parallel') {
-        // Open the tab immediately with the known ID
-        setTimeout(() => {
-          openTab(newVersionId);
-        }, 100);
-      }
+      // if (options?.autoOpenInParallel && state.viewMode === 'parallel') {
+      //   // Open the tab immediately with the known ID
+      //   setTimeout(() => {
+      //     openTab(newVersionId);
+      //   }, 100);
+      // }
       
-      // Add to chat history with the explanation
+      // Add to chat history with the explanation (do this immediately)
+      // V2: Don't create version yet, just add chat message
       const newChatMessage: ChatMessage = {
         id: `msg-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
         prompt,
-        response: explanation || 'Changes applied successfully.',
-        versionCreated: newVersionNumber, // Use the calculated version number
+        response: explanation || `I've analyzed your changes - ${diffAnalysis.changePercent}% of the content was modified. Review them in ${diffAnalysis.mode} mode.`,
+        versionCreated: 'pending', // Will be created when user accepts
         timestamp: new Date(),
       };
       
@@ -1239,6 +1266,21 @@ Break this into 3-7 clear tasks. Be specific and actionable. Return ONLY the JSO
     }));
   }, []);
 
+  // V2: Document mode management
+  const setDocumentMode = useCallback((mode: DocumentMode) => {
+    setState(prev => ({
+      ...prev,
+      documentMode: mode,
+    }));
+  }, []);
+
+  const setHasUnsavedChanges = useCallback((hasChanges: boolean) => {
+    setState(prev => ({
+      ...prev,
+      hasUnsavedChanges: hasChanges,
+    }));
+  }, []);
+
   return (
     <EditorContext.Provider
       value={{
@@ -1295,6 +1337,8 @@ Break this into 3-7 clear tasks. Be specific and actionable. Return ONLY the JSO
         revertParagraph,
         getParagraphLineage,
         getChangeMetadata,
+        setDocumentMode,
+        setHasUnsavedChanges,
       }}
     >
       {children}

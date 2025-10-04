@@ -7,7 +7,11 @@ import { RichTextEditor } from './RichTextEditor';
 import { ProjectSetup } from './ProjectSetup';
 import { ParagraphLineageView } from './ParagraphLineageView';
 import { ShareModal } from './ShareModal';
+import { ModeToggle } from './ModeToggle';
+import { TrackChangesView } from './TrackChangesView';
+import { SideBySideView } from './SideBySideView';
 import { formatVersionNumber } from '@/lib/formatVersion';
+import { analyzeDiff } from '@/lib/diffAnalysis';
 
 export function DocumentEditor() {
   const { 
@@ -18,7 +22,10 @@ export function DocumentEditor() {
     createVersion, 
     createCheckpoint,
     updateTabDirtyState,
-    setDocumentName
+    setDocumentName,
+    setDocumentMode,
+    setHasUnsavedChanges: setGlobalUnsavedChanges,
+    setPendingAIEdit
   } = useEditor();
   const currentVersion = getCurrentVersion();
   const [localContent, setLocalContent] = useState(currentVersion?.content || '');
@@ -315,6 +322,22 @@ export function DocumentEditor() {
         </div>
       </div>
 
+      {/* Mode Toggle Bar */}
+      {state.pendingAIEdit && (
+        <div className="px-6 py-3 border-b bg-white flex items-center justify-between flex-shrink-0">
+          <ModeToggle
+            currentMode={state.documentMode}
+            onChange={setDocumentMode}
+            suggestedMode={state.pendingAIEdit.mode}
+            changePercent={state.pendingAIEdit.changePercent}
+          />
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-gray-600">
+              {Math.round(state.pendingAIEdit.changePercent || 0)}% of content changed
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* Main Content Area */}
       <div className="flex-1 flex overflow-hidden">
@@ -327,7 +350,9 @@ export function DocumentEditor() {
               : 'w-full'
           }`}
         >
-          <RichTextEditor
+          {/* Conditional rendering based on document mode */}
+          {(state.documentMode === 'clean' || !state.pendingAIEdit) && (
+            <RichTextEditor
             content={localContent}
             onChange={handleContentChange}
             onSave={handleOverwriteVersion}
@@ -349,6 +374,55 @@ export function DocumentEditor() {
             onPrint={() => window.print()}
             ref={editorInstanceRef}
           />
+          )}
+
+          {/* Track Changes Mode */}
+          {state.documentMode === 'track-changes' && state.pendingAIEdit && (
+            <TrackChangesView
+              changes={analyzeDiff(state.pendingAIEdit.originalContent, state.pendingAIEdit.editedContent).changes}
+              onAcceptAll={() => {
+                // Create new version with edited content
+                const rootVersions = state.versions.filter(v => !v.number.includes('b'));
+                const newVersionNumber = rootVersions.length.toString();
+                createVersion(state.pendingAIEdit!.editedContent, state.pendingAIEdit!.prompt, 'v0', `AI Edit: ${state.pendingAIEdit!.prompt}`);
+                setLocalContent(state.pendingAIEdit!.editedContent);
+                setHasUnsavedChanges(false);
+                setPendingAIEdit(null);
+                setDocumentMode('clean');
+              }}
+              onRejectAll={() => {
+                // Clear pending edit without creating version
+                setPendingAIEdit(null);
+                setDocumentMode('clean');
+              }}
+              onAcceptChange={(index) => {
+                // TODO: Implement partial accept
+                console.log('Accept change', index);
+              }}
+              onRejectChange={(index) => {
+                // TODO: Implement partial reject
+                console.log('Reject change', index);
+              }}
+            />
+          )}
+
+          {/* Side-by-Side Mode */}
+          {state.documentMode === 'side-by-side' && state.pendingAIEdit && (
+            <SideBySideView
+              oldContent={state.pendingAIEdit.originalContent}
+              newContent={state.pendingAIEdit.editedContent}
+              oldLabel={`${formatVersionNumber(currentVersion?.number || '0')} (Before)`}
+              newLabel="AI Edit (After)"
+              onUseLeft={(index) => {
+                // TODO: Use left paragraph
+                console.log('Use left', index);
+              }}
+              onUseRight={(index) => {
+                // TODO: Use right paragraph
+                console.log('Use right', index);
+              }}
+            />
+          )}
         </div>
 
         {/* Lineage Panel */}
