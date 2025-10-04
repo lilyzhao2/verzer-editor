@@ -14,7 +14,7 @@ interface Message {
 }
 
 export function ConversationalChat() {
-  const { state, applyAIEdit, getCurrentVersion, createTodoSession, createAIVariations, setViewMode, addChatMessage } = useEditor();
+  const { state, applyAIEdit, getCurrentVersion, createTodoSession, createAIVariations, setViewMode, addChatMessage, createVersion, setPendingAIEdit, setDocumentMode } = useEditor();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
@@ -145,6 +145,94 @@ export function ConversationalChat() {
     }
     
     return 'question';
+  };
+
+  const handleCreateVariation = async () => {
+    if (!input.trim() || isProcessing) return;
+    
+    const prompt = input.trim();
+    setIsProcessing(true);
+    setInput('');
+
+    const userMessage: Message = {
+      id: `msg-${Date.now()}`,
+      role: 'user',
+      content: `[Create Variation] ${prompt}`,
+      timestamp: new Date(),
+    };
+    setMessages(prev => [...prev, userMessage]);
+
+    try {
+      // Create a variation (branch) without replacing the current content
+      await applyAIEdit(prompt, { createBranch: true });
+      
+      const assistantMessage: Message = {
+        id: `msg-${Date.now()}-assistant`,
+        role: 'assistant',
+        content: `✓ Created a new variation! This is now a separate branch you can work with.`,
+        timestamp: new Date(),
+      };
+      setMessages(prev => [...prev, assistantMessage]);
+    } catch (error) {
+      console.error('Error creating variation:', error);
+      setMessages(prev => [...prev, {
+        id: `error-${Date.now()}`,
+        role: 'system',
+        content: `❌ Error creating variation: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        timestamp: new Date(),
+      }]);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleAcceptAllAndSend = async () => {
+    if (!input.trim() || isProcessing || !state.pendingAIEdit) return;
+    
+    const prompt = input.trim();
+    setIsProcessing(true);
+    setInput('');
+
+    const userMessage: Message = {
+      id: `msg-${Date.now()}`,
+      role: 'user',
+      content: `[Accept All & Send] ${prompt}`,
+      timestamp: new Date(),
+    };
+    setMessages(prev => [...prev, userMessage]);
+
+    try {
+      // Accept all pending changes
+      createVersion(
+        state.pendingAIEdit.editedContent,
+        state.pendingAIEdit.prompt
+      );
+      
+      // Clear pending edit
+      setPendingAIEdit(null);
+      setDocumentMode('clean');
+      
+      // Now apply the new prompt to the newly saved version
+      await applyAIEdit(prompt);
+      
+      const assistantMessage: Message = {
+        id: `msg-${Date.now()}-assistant`,
+        role: 'assistant',
+        content: `✓ Accepted all changes and applied your new request!`,
+        timestamp: new Date(),
+      };
+      setMessages(prev => [...prev, assistantMessage]);
+    } catch (error) {
+      console.error('Error in Accept All & Send:', error);
+      setMessages(prev => [...prev, {
+        id: `error-${Date.now()}`,
+        role: 'system',
+        content: `❌ Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        timestamp: new Date(),
+      }]);
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -473,37 +561,72 @@ export function ConversationalChat() {
 
       {/* Input */}
       <form onSubmit={handleSubmit} className="border-t bg-gray-50 p-4">
-        <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={async () => {
-              if (input.trim()) {
-                await createTodoSession(input.trim());
-                setShowTodoPanel(true);
-                setInput('');
-              }
-            }}
-            title="Break down into tasks"
-            className="px-3 py-2 bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200 transition-colors"
-          >
-            <ListTodo className="w-5 h-5" />
-          </button>
-          <input
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder={isProcessing ? "Processing..." : "Ask a question or give instructions..."}
-            disabled={isProcessing}
-            className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 text-black placeholder-gray-500"
-          />
-          <button
-            type="submit"
-            disabled={!input.trim() || isProcessing}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
-          >
-            <Send className="w-5 h-5" />
-          </button>
+        <div className="flex flex-col gap-2">
+          {/* Input Row */}
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={async () => {
+                if (input.trim()) {
+                  await createTodoSession(input.trim());
+                  setShowTodoPanel(true);
+                  setInput('');
+                }
+              }}
+              title="Break down into tasks"
+              className="px-3 py-2 bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200 transition-colors"
+            >
+              <ListTodo className="w-5 h-5" />
+            </button>
+            <input
+              type="text"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder={isProcessing ? "Processing..." : "Ask a question or give instructions..."}
+              disabled={isProcessing}
+              className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 text-black placeholder-gray-500"
+            />
+          </div>
+          
+          {/* 3-Button Row */}
+          <div className="flex gap-2">
+            <button
+              type="submit"
+              disabled={!input.trim() || isProcessing}
+              className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+            >
+              <Send className="w-4 h-4" />
+              <span className="text-sm font-medium">Send</span>
+            </button>
+            
+            <button
+              type="button"
+              onClick={handleCreateVariation}
+              disabled={!input.trim() || isProcessing}
+              className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+              title="Create a new variation without replacing current content"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+              </svg>
+              <span className="text-sm font-medium">Create Variation</span>
+            </button>
+            
+            {state.pendingAIEdit && (
+              <button
+                type="button"
+                onClick={handleAcceptAllAndSend}
+                disabled={!input.trim() || isProcessing}
+                className="flex-1 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+                title="Accept all pending changes and send new prompt"
+              >
+                <CheckCircle className="w-4 h-4" />
+                <span className="text-sm font-medium">Accept All & Send</span>
+              </button>
+            )}
+          </div>
         </div>
+        
         {isProcessing && (
           <div className="flex items-center gap-2 mt-2 text-sm text-black">
             <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-gray-600"></div>
