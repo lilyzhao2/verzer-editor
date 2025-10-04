@@ -247,16 +247,20 @@ export function EditorProviderV2({ children }: { children: React.ReactNode }) {
             prompt,
             content: state.workingContent,
             documentName: state.documentName,
-            model: 'claude-sonnet-3-7',
+            model: 'claude-3-7-sonnet-20250219',
+            mode: 'edit',
           }),
         });
 
         if (!response.ok) {
-          throw new Error('AI request failed');
+          const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+          console.error('AI API error:', errorData);
+          throw new Error(errorData.error || 'AI request failed');
         }
 
         const data = await response.json();
-        const aiContent = data.edited_content || data.content;
+        console.log('AI response:', data);
+        const aiContent = data.editedContent || data.edited_content || data.content;
 
         // Add AI response to chat
         const aiMessage: ChatMessage = {
@@ -345,7 +349,8 @@ export function EditorProviderV2({ children }: { children: React.ReactNode }) {
               prompt: currentVersion.prompt,
               content: state.workingContent,
               documentName: state.documentName,
-              model: 'claude-sonnet-3-7',
+              model: 'claude-3-7-sonnet-20250219',
+              mode: 'edit',
               temperature: 0.7 + i * 0.1, // Vary temperature for diversity
             }),
           });
@@ -353,7 +358,7 @@ export function EditorProviderV2({ children }: { children: React.ReactNode }) {
           if (!response.ok) continue;
 
           const data = await response.json();
-          const aiContent = data.edited_content || data.content;
+          const aiContent = data.editedContent || data.edited_content || data.content;
 
           const altVersion: Version = {
             id: `v${state.versions.length}-alt${i}`,

@@ -23,6 +23,7 @@ export default function ChatSidebar() {
       setInput('');
     } catch (error) {
       console.error('Chat error:', error);
+      alert(`Error: ${error instanceof Error ? error.message : 'Failed to send message'}`);
     } finally {
       setIsLoading(false);
     }
