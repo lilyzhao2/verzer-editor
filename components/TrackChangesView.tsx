@@ -130,32 +130,32 @@ export function TrackChangesView({
               return (
                 <span
                   key={index}
-                  className={`relative inline-block ${
+                  className={`relative inline-block group ${
                     isRejected
                       ? 'opacity-30 line-through'
                       : isAccepted
                       ? 'hidden'
-                      : 'bg-red-100 text-red-800 line-through'
+                      : 'bg-red-100 text-red-800 line-through px-1 rounded'
                   }`}
                   onMouseEnter={() => setHoveredChange(index)}
                   onMouseLeave={() => setHoveredChange(null)}
                 >
                   {change.value}
-                  {isHovered && !isAccepted && !isRejected && (
-                    <span className="absolute -top-8 left-0 flex gap-1 bg-white shadow-lg rounded-lg border border-gray-200 p-1 z-10">
+                  {!isAccepted && !isRejected && (
+                    <span className="inline-flex gap-0.5 ml-1 opacity-50 group-hover:opacity-100 transition-opacity">
                       <button
                         onClick={() => handleAccept(index)}
-                        className="p-1 hover:bg-green-100 rounded text-green-600"
+                        className="p-0.5 hover:bg-green-200 rounded text-green-700 text-xs"
                         title="Keep deletion"
                       >
-                        <Check className="w-4 h-4" />
+                        ✓
                       </button>
                       <button
                         onClick={() => handleReject(index)}
-                        className="p-1 hover:bg-red-100 rounded text-red-600"
+                        className="p-0.5 hover:bg-red-200 rounded text-red-700 text-xs"
                         title="Restore text"
                       >
-                        <X className="w-4 h-4" />
+                        ✕
                       </button>
                     </span>
                   )}
@@ -168,32 +168,32 @@ export function TrackChangesView({
               return (
                 <span
                   key={index}
-                  className={`relative inline-block ${
+                  className={`relative inline-block group ${
                     isRejected
                       ? 'hidden'
                       : isAccepted
                       ? 'bg-green-50 text-green-900'
-                      : 'bg-green-200 text-green-900 underline decoration-green-600'
+                      : 'bg-green-200 text-green-900 font-semibold px-1 rounded'
                   }`}
                   onMouseEnter={() => setHoveredChange(index)}
                   onMouseLeave={() => setHoveredChange(null)}
                 >
                   {change.value}
-                  {isHovered && !isAccepted && !isRejected && (
-                    <span className="absolute -top-8 left-0 flex gap-1 bg-white shadow-lg rounded-lg border border-gray-200 p-1 z-10">
+                  {!isAccepted && !isRejected && (
+                    <span className="inline-flex gap-0.5 ml-1 opacity-50 group-hover:opacity-100 transition-opacity">
                       <button
                         onClick={() => handleAccept(index)}
-                        className="p-1 hover:bg-green-100 rounded text-green-600"
+                        className="p-0.5 hover:bg-green-300 rounded text-green-800 text-xs font-bold"
                         title="Accept addition"
                       >
-                        <Check className="w-4 h-4" />
+                        ✓
                       </button>
                       <button
                         onClick={() => handleReject(index)}
-                        className="p-1 hover:bg-red-100 rounded text-red-600"
+                        className="p-0.5 hover:bg-red-200 rounded text-red-700 text-xs font-bold"
                         title="Reject addition"
                       >
-                        <X className="w-4 h-4" />
+                        ✕
                       </button>
                     </span>
                   )}
