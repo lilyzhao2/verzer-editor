@@ -7,12 +7,12 @@ import TrackingMode from './TrackingMode';
 import DiffRegenerateTab from './DiffRegenerateTab';
 import { useEditor as useTiptapEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
-import Underline from '@tiptap/extension-underline';
-import TextStyle from '@tiptap/extension-text-style';
-import Color from '@tiptap/extension-color';
-import FontFamily from '@tiptap/extension-font-family';
-import Highlight from '@tiptap/extension-highlight';
-import TextAlign from '@tiptap/extension-text-align';
+import { Underline } from '@tiptap/extension-underline';
+import { TextStyle } from '@tiptap/extension-text-style';
+import { Color } from '@tiptap/extension-color';
+import { FontFamily } from '@tiptap/extension-font-family';
+import { Highlight } from '@tiptap/extension-highlight';
+import { TextAlign } from '@tiptap/extension-text-align';
 
 /**
  * V2 Document Editor - Unified single-page experience
