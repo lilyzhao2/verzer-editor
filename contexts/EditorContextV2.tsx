@@ -375,7 +375,7 @@ export function EditorProviderV2({ children }: { children: React.ReactNode }) {
           const aiContent = data.editedContent || data.edited_content || data.content;
 
           const altVersion: Version = {
-            id: `v${state.versions.length}-alt${i}`,
+            id: `v${state.versions.length + newAlternatives.length}-alt${i}-${Date.now()}`,
             number: `${state.versions.length}`,
             content: aiContent,
             prompt: currentVersion.prompt,
