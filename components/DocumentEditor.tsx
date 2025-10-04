@@ -10,6 +10,7 @@ import { ShareModal } from './ShareModal';
 import { ModeToggle } from './ModeToggle';
 import { TrackChangesView } from './TrackChangesView';
 import { SideBySideView } from './SideBySideView';
+import { ParagraphStackView } from './ParagraphStackView';
 import { formatVersionNumber } from '@/lib/formatVersion';
 import { analyzeDiff } from '@/lib/diffAnalysis';
 
@@ -424,6 +425,28 @@ export function DocumentEditor() {
               onUseRight={(index) => {
                 // TODO: Use right paragraph
                 console.log('Use right', index);
+              }}
+            />
+          )}
+
+          {/* Paragraph Stack Mode */}
+          {state.documentMode === 'paragraph-stack' && state.pendingAIEdit && (
+            <ParagraphStackView
+              originalContent={state.pendingAIEdit.originalContent}
+              editedContent={state.pendingAIEdit.editedContent}
+              onAcceptAll={() => {
+                // Accept all - create new version
+                createVersion(
+                  state.pendingAIEdit!.editedContent,
+                  state.pendingAIEdit!.prompt
+                );
+                setPendingAIEdit(null);
+                setDocumentMode('clean');
+              }}
+              onRejectAll={() => {
+                // Reject all - clear pending
+                setPendingAIEdit(null);
+                setDocumentMode('clean');
               }}
             />
           )}

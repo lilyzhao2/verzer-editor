@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { FileText, GitCompare, Columns } from 'lucide-react';
+import { FileText, GitCompare, Columns, Layers } from 'lucide-react';
 import { DocumentMode } from '@/lib/types';
 
 interface ModeToggleProps {
@@ -16,6 +16,7 @@ export function ModeToggle({ currentMode, onChange, suggestedMode, changePercent
     { id: 'clean', label: 'Clean', icon: <FileText className="w-4 h-4" /> },
     { id: 'track-changes', label: 'Track Changes', icon: <GitCompare className="w-4 h-4" /> },
     { id: 'side-by-side', label: 'Side-by-Side', icon: <Columns className="w-4 h-4" /> },
+    { id: 'paragraph-stack', label: 'Paragraph Stack', icon: <Layers className="w-4 h-4" /> },
   ];
 
   return (
