@@ -32,6 +32,7 @@ export default function DocumentEditorV2() {
     generateAlternatives,
     setDocumentName,
     toggleDebugMode,
+    clearEverything,
   } = useEditorV2();
 
   const currentVersion = getCurrentVersion();
@@ -139,6 +140,14 @@ export default function DocumentEditorV2() {
             onModeChange={setDocumentMode}
             hasPendingChanges={hasPendingChanges}
           />
+          
+          <button
+            onClick={clearEverything}
+            className="px-3 py-1.5 text-xs font-medium text-red-600 bg-red-50 rounded hover:bg-red-100"
+            title="Clear all data and reset"
+          >
+            🗑️ Clear All
+          </button>
           
           <button
             onClick={toggleDebugMode}

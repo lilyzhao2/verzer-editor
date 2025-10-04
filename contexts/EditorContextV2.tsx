@@ -57,6 +57,7 @@ interface EditorContextTypeV2 {
   setDocumentName: (name: string) => void;
   setTrackUserEdits: (enabled: boolean) => void;
   toggleDebugMode: () => void;
+  clearEverything: () => void;
 }
 
 const EditorContextV2 = createContext<EditorContextTypeV2 | undefined>(undefined);
@@ -417,6 +418,42 @@ export function EditorProviderV2({ children }: { children: React.ReactNode }) {
     setState((prev) => ({ ...prev, debugMode: !prev.debugMode }));
   }, []);
 
+  // Clear everything and reset to initial state
+  const clearEverything = useCallback(() => {
+    if (!window.confirm('Are you sure? This will delete all versions and chat history.')) {
+      return;
+    }
+
+    const initialVersion: Version = {
+      id: 'v0',
+      number: '0',
+      content: '<p>Start writing your document here...</p>',
+      prompt: null,
+      note: 'Initial version',
+      timestamp: new Date(),
+      isOriginal: true,
+      parentId: null,
+      checkpoints: [],
+      versionState: 'reviewed',
+    };
+
+    setState({
+      documentName: 'Untitled Document',
+      versions: [initialVersion],
+      currentVersionId: 'v0',
+      documentMode: 'editing',
+      workingContent: initialVersion.content,
+      stagedChanges: [],
+      chatHistory: [],
+      alternatives: [],
+      trackUserEdits: true,
+      debugMode: false,
+    });
+
+    // Clear localStorage
+    localStorage.removeItem('verzer-editor-v2');
+  }, []);
+
   const value: EditorContextTypeV2 = {
     state,
     createVersion,
@@ -434,6 +471,7 @@ export function EditorProviderV2({ children }: { children: React.ReactNode }) {
     setDocumentName,
     setTrackUserEdits,
     toggleDebugMode,
+    clearEverything,
   };
 
   return (
