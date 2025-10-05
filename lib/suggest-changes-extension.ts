@@ -30,10 +30,11 @@ export const SuggestChangesExtension = Extension.create<SuggestChangesOptions>({
     
     // Create a shared state object that can be mutated
     const pluginState = { enabled, userId, userName };
+    const pluginKey = new PluginKey('suggestChanges');
 
     return [
       new Plugin({
-        key: new PluginKey('suggestChanges'),
+        key: pluginKey,
         
         state: {
           init() {
@@ -51,8 +52,8 @@ export const SuggestChangesExtension = Extension.create<SuggestChangesOptions>({
         },
         
         appendTransaction: (transactions, oldState, newState) => {
-          // Get state from the plugin
-          const state = this.getState(newState);
+          // Get state from the plugin using the key
+          const state = pluginKey.getState(newState);
           console.log('🔍 Checking enabled state:', state?.enabled, '(initial enabled was:', enabled, ')');
           
           if (!state?.enabled) {
