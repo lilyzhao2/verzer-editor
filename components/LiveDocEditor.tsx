@@ -13,6 +13,7 @@ import { Placeholder } from '@tiptap/extension-placeholder';
 import { CollaborationExtension, CollaboratorCursor } from '@/lib/collaboration-extension';
 import { TrackChangesExtension, TrackedEdit } from '@/lib/track-changes-v3';
 import { CommentsExtension, Comment, CommentReply } from '@/lib/comments-extension';
+import { AIInlineExtension } from '@/lib/ai-inline-extension';
 
 /**
  * MODE 1: LIVE DOC EDITOR
@@ -27,6 +28,9 @@ export default function LiveDocEditor() {
   const [comments, setComments] = useState<Comment[]>([]);
   const [showCommentSidebar, setShowCommentSidebar] = useState(false);
   const [selectedCommentId, setSelectedCommentId] = useState<string | null>(null);
+  const [aiMenuVisible, setAIMenuVisible] = useState(false);
+  const [aiMenuPosition, setAIMenuPosition] = useState({ x: 0, y: 0 });
+  const [aiMenuSelection, setAIMenuSelection] = useState({ text: '', from: 0, to: 0 });
   const [collaborators] = useState<CollaboratorCursor[]>([
     // Demo collaborators - will be real-time later
     // { id: 'user-2', name: 'Sarah', color: '#ea4335', position: 50 },
@@ -86,6 +90,7 @@ export default function LiveDocEditor() {
           ));
         },
       }),
+      AIInlineExtension,
     ],
     content: '<p></p>',
     immediatelyRender: false,
@@ -97,6 +102,49 @@ export default function LiveDocEditor() {
       },
     },
   });
+
+  // Update editor editable state when mode changes
+  React.useEffect(() => {
+    if (editor) {
+      editor.setEditable(editorEditable);
+    }
+  }, [editor, editorEditable]);
+
+  // Listen for AI menu events
+  React.useEffect(() => {
+    const handleShowAIMenu = (event: CustomEvent) => {
+      const { selectedText, from, to, x, y } = event.detail;
+      if (selectedText.trim().length > 0) {
+        setAIMenuSelection({ text: selectedText, from, to });
+        setAIMenuPosition({ x, y });
+        setAIMenuVisible(true);
+      }
+    };
+
+    window.addEventListener('show-ai-menu', handleShowAIMenu as EventListener);
+    
+    // Hide menu on click outside
+    const handleClickOutside = () => setAIMenuVisible(false);
+    document.addEventListener('click', handleClickOutside);
+
+    return () => {
+      window.removeEventListener('show-ai-menu', handleShowAIMenu as EventListener);
+      document.removeEventListener('click', handleClickOutside);
+    };
+  }, []);
+
+  const handleAskAI = async () => {
+    setAIMenuVisible(false);
+    alert(`AI thinking about: "${aiMenuSelection.text}"\n\n(AI integration coming soon!)`);
+  };
+
+  const handleRewriteText = async () => {
+    setAIMenuVisible(false);
+    const rewritePrompt = prompt(`How should AI rewrite this text?\n\n"${aiMenuSelection.text}"`);
+    if (!rewritePrompt) return;
+    
+    alert(`AI will rewrite with prompt: "${rewritePrompt}"\n\n(AI integration coming soon!)`);
+  };
 
   if (!editor) {
     return null;
@@ -134,14 +182,13 @@ export default function LiveDocEditor() {
         
         {/* Menu Bar */}
         <div className="flex items-center gap-4 mt-2 text-sm">
-          <button className="text-black hover:bg-gray-100 px-3 py-1 rounded">File</button>
-          <button className="text-black hover:bg-gray-100 px-3 py-1 rounded">Edit</button>
-          <button className="text-black hover:bg-gray-100 px-3 py-1 rounded">View</button>
-          <button className="text-black hover:bg-gray-100 px-3 py-1 rounded">Insert</button>
-          <button className="text-black hover:bg-gray-100 px-3 py-1 rounded">Format</button>
-          <button className="text-black hover:bg-gray-100 px-3 py-1 rounded">Tools</button>
-          <button className="text-black hover:bg-gray-100 px-3 py-1 rounded">Extensions</button>
-          <button className="text-black hover:bg-gray-100 px-3 py-1 rounded">Help</button>
+          {/* Placeholder for future modes */}
+          <button className="text-gray-400 px-3 py-1 rounded cursor-not-allowed" disabled title="Coming soon">
+            🤖 AI Mode
+          </button>
+          <button className="text-gray-400 px-3 py-1 rounded cursor-not-allowed" disabled title="Coming soon">
+            🔀 Diff Mode
+          </button>
           
           <div className="flex-1" />
           
@@ -588,6 +635,33 @@ export default function LiveDocEditor() {
           </div>
         )}
       </div>
+
+      {/* AI Floating Menu */}
+      {aiMenuVisible && (
+        <div
+          className="fixed z-50 bg-white border border-gray-300 rounded-lg shadow-lg py-1"
+          style={{
+            left: `${aiMenuPosition.x}px`,
+            top: `${aiMenuPosition.y + 10}px`,
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            onClick={handleAskAI}
+            className="w-full px-4 py-2 text-left text-sm text-black hover:bg-gray-100 flex items-center gap-2"
+          >
+            <span>💬</span>
+            <span>Ask AI for thoughts</span>
+          </button>
+          <button
+            onClick={handleRewriteText}
+            className="w-full px-4 py-2 text-left text-sm text-black hover:bg-gray-100 flex items-center gap-2"
+          >
+            <span>✨</span>
+            <span>Ask AI to rewrite</span>
+          </button>
+        </div>
+      )}
     </div>
   );
 }
