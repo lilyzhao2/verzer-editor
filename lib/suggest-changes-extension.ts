@@ -86,12 +86,39 @@ export const SuggestChangesExtension = Extension.create<SuggestChangesOptions>({
               console.log('📍 Position:', { from, to });
               console.log('📄 Slice:', stepJSON.slice);
 
-              // Get the inserted text from the new state
-              if (from < to) {
-                // Text was replaced/deleted
-                const insertedText = newState.doc.textBetween(from, to);
-                console.log('🔄 Replaced text:', insertedText);
-              } else if (stepJSON.slice && stepJSON.slice.content) {
+              // Handle deletions
+              if (from < to && (!stepJSON.slice || !stepJSON.slice.content || stepJSON.slice.content.length === 0)) {
+                // Text was deleted (from < to, but no new content)
+                const deletedText = oldState.doc.textBetween(from, to);
+                console.log('🗑️ Deletion detected:', deletedText);
+                
+                if (deletedText && deletedText.trim()) {
+                  // Get the deleted slice
+                  const deletedSlice = oldState.doc.slice(from, to);
+                  
+                  // Re-insert the deleted content
+                  tr.insert(from, deletedSlice.content);
+                  
+                  // Mark it as deleted
+                  const deletionMark = newState.schema.marks.deletion;
+                  if (deletionMark) {
+                    tr.addMark(
+                      from,
+                      from + deletedText.length,
+                      deletionMark.create({
+                        id: `delete-${Date.now()}-${index}`,
+                        userId: state.userId,
+                        userName: state.userName,
+                        timestamp: Date.now(),
+                      })
+                    );
+                    modified = true;
+                    console.log('✨ Applied deletion mark (text preserved) from', from, 'to', from + deletedText.length);
+                  }
+                }
+              }
+              // Handle insertions
+              else if (stepJSON.slice && stepJSON.slice.content) {
                 // Text was inserted
                 let insertedText = '';
                 const content = stepJSON.slice.content;
