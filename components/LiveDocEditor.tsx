@@ -125,12 +125,14 @@ export default function LiveDocEditor() {
     },
   });
 
-  // Update editor editable state when mode changes
+  // Update editor editable state when mode changes OR version locks
   React.useEffect(() => {
     if (editor) {
-      editor.setEditable(editorEditable);
+      // Lock editor if in viewing mode OR viewing old version
+      const shouldBeEditable = editorEditable && !isCurrentVersionLocked;
+      editor.setEditable(shouldBeEditable);
     }
-  }, [editor, editorEditable]);
+  }, [editor, editorEditable, isCurrentVersionLocked]);
 
   // Listen for AI menu events
   React.useEffect(() => {
@@ -190,11 +192,34 @@ export default function LiveDocEditor() {
 
   const loadVersion = (versionId: string) => {
     const version = versions.find((v) => v.id === versionId);
+    const latestVersion = versions[versions.length - 1];
+    
     if (version && editor) {
+      // Check if trying to load an old version
+      if (version.versionNumber < latestVersion.versionNumber) {
+        const confirmRevert = window.confirm(
+          `⚠️ Warning: You're viewing an older version (V${version.versionNumber}).\n\n` +
+          `This version is READ-ONLY. If you want to edit from this point:\n` +
+          `• All versions after V${version.versionNumber} will stay in history\n` +
+          `• Your next edit will create V${latestVersion.versionNumber + 1}\n` +
+          `• You'll continue from this version's content\n\n` +
+          `View this version?`
+        );
+        
+        if (!confirmRevert) return;
+      }
+      
       editor.commands.setContent(version.content);
       setCurrentVersionId(versionId);
     }
   };
+
+  // Check if current version is locked (old version)
+  const isCurrentVersionLocked = React.useMemo(() => {
+    if (!currentVersion) return false;
+    const latestVersion = versions[versions.length - 1];
+    return currentVersion.versionNumber < latestVersion.versionNumber;
+  }, [currentVersion, versions]);
 
   // Auto-save effect
   React.useEffect(() => {
@@ -213,11 +238,11 @@ export default function LiveDocEditor() {
     return () => clearInterval(interval);
   }, [editor, versionSettings.autoSaveFrequency, versionSettings.autoSaveEnabled, currentVersionId, versions]);
 
-  // Track changes for line-based auto-save
+  // Track changes for line-based auto-save AND suggesting mode
   React.useEffect(() => {
     if (!editor) return;
 
-    const handleUpdate = () => {
+    const handleUpdate = ({ transaction }: any) => {
       setChangesSinceLastSave((prev) => prev + 1);
 
       // Auto-save if reached line threshold
@@ -225,13 +250,58 @@ export default function LiveDocEditor() {
         const currentContent = editor.getHTML();
         createNewVersion(currentContent, true);
       }
+
+      // Track edits in suggesting mode
+      if (editingMode === 'suggesting' && transaction.docChanged) {
+        transaction.steps.forEach((step: any, index: number) => {
+          if (step.slice) {
+            const { from, to } = transaction.mapping.maps[index];
+            const content = step.slice.content;
+            
+            // Track insertion
+            if (content.size > 0) {
+              const newEdit: TrackedEdit = {
+                id: `edit-${Date.now()}-${index}`,
+                userId: 'user-1',
+                userName: 'You',
+                userColor: '#ff9800', // Orange for user edits
+                type: 'insertion',
+                from,
+                to: from + content.size,
+                text: editor.state.doc.textBetween(from, from + content.size),
+                timestamp: new Date(),
+              };
+              setTrackedEdits((prev) => [...prev, newEdit]);
+            }
+            
+            // Track deletion
+            if (to > from && content.size === 0) {
+              const deletedText = editor.state.doc.textBetween(from, to);
+              if (deletedText) {
+                const newEdit: TrackedEdit = {
+                  id: `edit-${Date.now()}-${index}`,
+                  userId: 'user-1',
+                  userName: 'You',
+                  userColor: '#ff9800',
+                  type: 'deletion',
+                  from,
+                  to,
+                  text: deletedText,
+                  timestamp: new Date(),
+                };
+                setTrackedEdits((prev) => [...prev, newEdit]);
+              }
+            }
+          }
+        });
+      }
     };
 
     editor.on('update', handleUpdate);
     return () => {
       editor.off('update', handleUpdate);
     };
-  }, [editor, changesSinceLastSave, versionSettings]);
+  }, [editor, changesSinceLastSave, versionSettings, editingMode]);
 
   if (!editor) {
     return null;
@@ -644,6 +714,31 @@ export default function LiveDocEditor() {
       <div className="flex-1 overflow-auto flex">
         {/* Page-like white container */}
         <div className="flex-1">
+          {/* Old Version Warning Banner */}
+          {isCurrentVersionLocked && (
+            <div className="max-w-[8.5in] mx-auto mt-6 mb-2 px-4 py-3 bg-yellow-100 border-l-4 border-yellow-500 rounded-r">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-2xl">🔒</span>
+                  <div>
+                    <p className="text-sm font-semibold text-yellow-800">
+                      Viewing Old Version (V{currentVersion?.versionNumber}) - READ ONLY
+                    </p>
+                    <p className="text-xs text-yellow-700">
+                      This version is locked. To edit, switch to the latest version or your edits will create V{versions[versions.length - 1].versionNumber + 1}.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => loadVersion(versions[versions.length - 1].id)}
+                  className="px-3 py-1.5 text-xs font-medium text-white bg-blue-600 rounded hover:bg-blue-700"
+                >
+                  Go to Latest
+                </button>
+              </div>
+            </div>
+          )}
+
           <div className="max-w-[8.5in] mx-auto my-6 bg-white shadow-lg">
             <style jsx global>{`
               .ProseMirror {
