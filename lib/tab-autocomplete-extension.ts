@@ -78,20 +78,25 @@ export const TabAutocompleteExtension = Extension.create<TabAutocompleteOptions>
             // Tab key to accept suggestion
             if (event.key === 'Tab' && currentSuggestion) {
               event.preventDefault();
+              event.stopPropagation();
               
               // Insert the suggestion
-              const tr = view.state.tr.insertText(currentSuggestion, suggestionFrom);
+              const { state } = view;
+              const tr = state.tr.insertText(currentSuggestion, suggestionFrom);
               view.dispatch(tr);
               
               // Clear suggestion
               currentSuggestion = '';
+              suggestionFrom = 0;
               
               return true;
             }
 
             // Escape to dismiss suggestion
             if (event.key === 'Escape' && currentSuggestion) {
+              event.preventDefault();
               currentSuggestion = '';
+              suggestionFrom = 0;
               view.dispatch(view.state.tr);
               return true;
             }
@@ -99,22 +104,52 @@ export const TabAutocompleteExtension = Extension.create<TabAutocompleteOptions>
             return false;
           },
 
-          handleTextInput(view) {
+          handleDOMEvents: {
+            keydown(view, event) {
+              // Also handle tab at DOM level
+              if (event.key === 'Tab' && currentSuggestion) {
+                event.preventDefault();
+                event.stopPropagation();
+                
+                const { state } = view;
+                const tr = state.tr.insertText(currentSuggestion, suggestionFrom);
+                view.dispatch(tr);
+                
+                currentSuggestion = '';
+                suggestionFrom = 0;
+                return true;
+              }
+              return false;
+            },
+          },
+
+          handleTextInput(view, from, to, text) {
             // Trigger AI completion after typing
             if (!onRequestCompletion) return false;
 
+            // Debounce: only trigger after a space or punctuation
+            if (text !== ' ' && text !== '.' && text !== ',' && text !== '!') {
+              return false;
+            }
+
             const { state } = view;
-            const { from } = state.selection;
+            const currentPos = state.selection.from;
             
             // Get context (last 100 characters before cursor)
-            const textBefore = state.doc.textBetween(Math.max(0, from - 100), from, ' ');
+            const textBefore = state.doc.textBetween(Math.max(0, currentPos - 100), currentPos, ' ');
             
-            // Request completion from AI
-            suggestionFrom = from;
-            onRequestCompletion(textBefore).then((completion) => {
-              currentSuggestion = completion;
-              view.dispatch(state.tr);
-            });
+            // Request completion from AI (with slight delay for better UX)
+            setTimeout(() => {
+              suggestionFrom = currentPos;
+              onRequestCompletion(textBefore).then((completion) => {
+                if (completion && completion.trim()) {
+                  currentSuggestion = completion;
+                  view.dispatch(view.state.tr);
+                }
+              }).catch(() => {
+                // Silently fail
+              });
+            }, 200);
 
             return false;
           },
