@@ -12,6 +12,7 @@ import { TextAlign } from '@tiptap/extension-text-align';
 import { Placeholder } from '@tiptap/extension-placeholder';
 import { CollaborationExtension, CollaboratorCursor } from '@/lib/collaboration-extension';
 import { TrackChangesExtension, TrackedEdit } from '@/lib/track-changes-v3';
+import { CommentsExtension, Comment, CommentReply } from '@/lib/comments-extension';
 
 /**
  * MODE 1: LIVE DOC EDITOR
@@ -21,6 +22,9 @@ export default function LiveDocEditor() {
   const [documentName, setDocumentName] = useState('Untitled Document');
   const [trackChangesEnabled, setTrackChangesEnabled] = useState(false);
   const [trackedEdits, setTrackedEdits] = useState<TrackedEdit[]>([]);
+  const [comments, setComments] = useState<Comment[]>([]);
+  const [showCommentSidebar, setShowCommentSidebar] = useState(false);
+  const [selectedCommentId, setSelectedCommentId] = useState<string | null>(null);
   const [collaborators] = useState<CollaboratorCursor[]>([
     // Demo collaborators - will be real-time later
     // { id: 'user-2', name: 'Sarah', color: '#ea4335', position: 50 },
@@ -58,6 +62,23 @@ export default function LiveDocEditor() {
         currentUserName: 'You',
         currentUserColor: '#4285f4',
         edits: trackedEdits,
+      }),
+      CommentsExtension.configure({
+        comments,
+        onAddComment: (comment) => {
+          setComments([...comments, comment]);
+          setShowCommentSidebar(true);
+        },
+        onResolveComment: (commentId) => {
+          setComments(comments.map(c => 
+            c.id === commentId ? { ...c, resolved: true } : c
+          ));
+        },
+        onAddReply: (commentId, reply) => {
+          setComments(comments.map(c =>
+            c.id === commentId ? { ...c, replies: [...c.replies, reply] } : c
+          ));
+        },
       }),
     ],
     content: '<p></p>',
@@ -270,7 +291,36 @@ export default function LiveDocEditor() {
         </button>
 
         {/* Comment */}
-        <button className="p-2 hover:bg-gray-200 rounded" title="Add comment (Ctrl+Alt+M)">
+        <button
+          onClick={() => {
+            const { from, to } = editor.state.selection;
+            if (from === to) {
+              alert('Please select some text to comment on');
+              return;
+            }
+            
+            const text = prompt('Enter your comment:');
+            if (!text) return;
+
+            const newComment: Comment = {
+              id: `comment-${Date.now()}`,
+              userId: 'user-1',
+              userName: 'You',
+              userColor: '#4285f4',
+              text,
+              from,
+              to,
+              timestamp: new Date(),
+              resolved: false,
+              replies: [],
+            };
+
+            setComments([...comments, newComment]);
+            setShowCommentSidebar(true);
+          }}
+          className="p-2 hover:bg-gray-200 rounded"
+          title="Add comment (Ctrl+Alt+M)"
+        >
           💬
         </button>
 
@@ -383,24 +433,135 @@ export default function LiveDocEditor() {
         </button>
       </div>
 
-      {/* Document Area */}
-      <div className="flex-1 overflow-auto">
+      {/* Document Area + Comments Sidebar */}
+      <div className="flex-1 overflow-auto flex">
         {/* Page-like white container */}
-        <div className="max-w-[8.5in] mx-auto my-6 bg-white shadow-lg">
-          <style jsx global>{`
-            .ProseMirror {
-              color: #000000 !important;
-            }
-            .ProseMirror p,
-            .ProseMirror h1,
-            .ProseMirror h2,
-            .ProseMirror h3,
-            .ProseMirror li {
-              color: #000000 !important;
-            }
-          `}</style>
-          <EditorContent editor={editor} />
+        <div className="flex-1">
+          <div className="max-w-[8.5in] mx-auto my-6 bg-white shadow-lg">
+            <style jsx global>{`
+              .ProseMirror {
+                color: #000000 !important;
+              }
+              .ProseMirror p,
+              .ProseMirror h1,
+              .ProseMirror h2,
+              .ProseMirror h3,
+              .ProseMirror li {
+                color: #000000 !important;
+              }
+            `}</style>
+            <EditorContent editor={editor} />
+          </div>
         </div>
+
+        {/* Comments Sidebar */}
+        {showCommentSidebar && (
+          <div className="w-80 bg-white border-l border-gray-200 flex flex-col">
+            <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-black">
+                💬 Comments ({comments.filter(c => !c.resolved).length})
+              </h3>
+              <button
+                onClick={() => setShowCommentSidebar(false)}
+                className="text-gray-500 hover:text-black"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-auto p-4 space-y-4">
+              {comments.filter(c => !c.resolved).length === 0 && (
+                <p className="text-sm text-gray-500 text-center py-8">
+                  No comments yet. Select text and click 💬 to add one.
+                </p>
+              )}
+
+              {comments
+                .filter(c => !c.resolved)
+                .map((comment) => (
+                  <div
+                    key={comment.id}
+                    className="p-3 bg-gray-50 rounded-lg border border-gray-200"
+                  >
+                    <div className="flex items-start gap-2">
+                      <div
+                        className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold"
+                        style={{ backgroundColor: comment.userColor }}
+                      >
+                        {comment.userName.charAt(0)}
+                      </div>
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-sm font-medium text-black">
+                            {comment.userName}
+                          </span>
+                          <span className="text-xs text-gray-500">
+                            {comment.timestamp.toLocaleTimeString()}
+                          </span>
+                        </div>
+                        <p className="text-sm text-black">{comment.text}</p>
+
+                        {/* Replies */}
+                        {comment.replies.length > 0 && (
+                          <div className="mt-2 space-y-2 pl-2 border-l-2 border-gray-300">
+                            {comment.replies.map((reply) => (
+                              <div key={reply.id} className="text-xs">
+                                <span className="font-medium text-black">
+                                  {reply.userName}:
+                                </span>{' '}
+                                <span className="text-black">{reply.text}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Actions */}
+                        <div className="flex gap-2 mt-2">
+                          <button
+                            onClick={() => {
+                              const replyText = prompt('Reply to comment:');
+                              if (!replyText) return;
+
+                              const reply: CommentReply = {
+                                id: `reply-${Date.now()}`,
+                                userId: 'user-1',
+                                userName: 'You',
+                                text: replyText,
+                                timestamp: new Date(),
+                              };
+
+                              setComments(
+                                comments.map((c) =>
+                                  c.id === comment.id
+                                    ? { ...c, replies: [...c.replies, reply] }
+                                    : c
+                                )
+                              );
+                            }}
+                            className="text-xs text-blue-600 hover:underline"
+                          >
+                            Reply
+                          </button>
+                          <button
+                            onClick={() => {
+                              setComments(
+                                comments.map((c) =>
+                                  c.id === comment.id ? { ...c, resolved: true } : c
+                                )
+                              );
+                            }}
+                            className="text-xs text-green-600 hover:underline"
+                          >
+                            Resolve
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
