@@ -125,6 +125,14 @@ export default function LiveDocEditor() {
     },
   });
 
+  // Check if current version is locked (old version) - MUST BE BEFORE useEffect
+  const currentVersion = versions.find((v) => v.id === currentVersionId);
+  const isCurrentVersionLocked = React.useMemo(() => {
+    if (!currentVersion) return false;
+    const latestVersion = versions[versions.length - 1];
+    return currentVersion.versionNumber < latestVersion.versionNumber;
+  }, [currentVersion, versions]);
+
   // Update editor editable state when mode changes OR version locks
   React.useEffect(() => {
     if (editor) {
@@ -214,13 +222,6 @@ export default function LiveDocEditor() {
     }
   };
 
-  // Check if current version is locked (old version)
-  const isCurrentVersionLocked = React.useMemo(() => {
-    if (!currentVersion) return false;
-    const latestVersion = versions[versions.length - 1];
-    return currentVersion.versionNumber < latestVersion.versionNumber;
-  }, [currentVersion, versions]);
-
   // Auto-save effect
   React.useEffect(() => {
     if (!versionSettings.autoSaveEnabled || !editor) return;
@@ -307,8 +308,6 @@ export default function LiveDocEditor() {
     return null;
   }
 
-  const currentVersion = versions.find((v) => v.id === currentVersionId);
-
   return (
     <div className="flex flex-col h-screen bg-gray-100">
       {/* Top Bar - Like Google Docs */}
@@ -342,11 +341,11 @@ export default function LiveDocEditor() {
         {/* Menu Bar */}
         <div className="flex items-center gap-4 mt-2 text-sm">
           {/* Placeholder for future modes */}
-          <button className="text-gray-400 px-3 py-1 rounded cursor-not-allowed" disabled title="Coming soon">
-            🤖 AI Mode
+          <button className="text-gray-400 px-3 py-1 rounded cursor-not-allowed opacity-50" disabled title="Coming soon">
+            🤖 AI Mode <span className="text-xs">(Coming Soon)</span>
           </button>
-          <button className="text-gray-400 px-3 py-1 rounded cursor-not-allowed" disabled title="Coming soon">
-            🔀 Diff Mode
+          <button className="text-gray-400 px-3 py-1 rounded cursor-not-allowed opacity-50" disabled title="Coming soon">
+            🔀 Diff Mode <span className="text-xs">(Coming Soon)</span>
           </button>
           
           <div className="flex-1" />
