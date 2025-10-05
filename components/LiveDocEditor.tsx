@@ -16,7 +16,9 @@ import { CommentsExtension, Comment, CommentReply } from '@/lib/comments-extensi
 import { AIInlineExtension } from '@/lib/ai-inline-extension';
 import { DocumentVersion, VersionHistorySettings } from '@/lib/version-types';
 import { TabAutocompleteExtension } from '@/lib/tab-autocomplete-extension';
+import { InlineMarkupExtension } from '@/lib/inline-markup-plugin';
 import { diffWords } from 'diff';
+import { advancedDiff, getDiffStats, type AdvancedChange } from '@/lib/advanced-diff';
 
 /**
  * MODE 1: LIVE DOC EDITOR
@@ -115,6 +117,9 @@ export default function LiveDocEditor() {
         },
       }),
       AIInlineExtension,
+      InlineMarkupExtension.configure({
+        trackedEdits,
+      }),
       TabAutocompleteExtension.configure({
         enabled: true,
         onRequestCompletion: async (context: string) => {
@@ -524,6 +529,21 @@ export default function LiveDocEditor() {
     };
   }, [editor, changesSinceLastSave, versionSettings]);
 
+  // Update inline markup when tracked edits change
+  React.useEffect(() => {
+    if (!editor) return;
+    
+    // Force re-render of decorations
+    editor.extensionManager.extensions.forEach((ext) => {
+      if (ext.name === 'inlineMarkup') {
+        (ext.options as any).trackedEdits = trackedEdits;
+      }
+    });
+    
+    // Trigger view update
+    editor.view.dispatch(editor.state.tr);
+  }, [editor, trackedEdits]);
+
   // Handle mode switching - suggestions persist across modes
   React.useEffect(() => {
     if (!editor) return;
@@ -560,121 +580,53 @@ export default function LiveDocEditor() {
 
         if (currentText === baselineText) return;
 
-        // Use diffWords for accurate word-level diff
-        const diff = diffWords(baselineText, currentText);
-        const changes: TrackedEdit[] = [];
-        let position = 0;
-        
-        // Track all removed and added text for move detection
-        const removedParts: Array<{ text: string; index: number }> = [];
-        const addedParts: Array<{ text: string; index: number; position: number }> = [];
-        
-        diff.forEach((part, index) => {
-          if (part.added) {
-            addedParts.push({ text: part.value, index, position });
-            // Insertion
-            changes.push({
-              id: `edit-insertion-${Date.now()}-${index}`,
-              userId: 'user-1',
-              userName: 'You',
-              userColor: '#ff9800', // Orange
-              type: 'insertion',
-              from: position,
-              to: position + part.value.length,
-              text: part.value,
-              timestamp: new Date(),
-            });
-            position += part.value.length;
-          } else if (part.removed) {
-            removedParts.push({ text: part.value, index });
-            // Deletion
-            changes.push({
-              id: `edit-deletion-${Date.now()}-${index}`,
-              userId: 'user-1',
-              userName: 'You',
-              userColor: '#ff9800',
-              type: 'deletion',
-              from: position,
-              to: position,
-              text: part.value,
-              timestamp: new Date(),
-            });
-            // Position doesn't advance for deletions
-          } else {
-            // Unchanged text
-            position += part.value.length;
-          }
+        // Use advanced diff engine for semantic understanding
+        const advancedChanges = advancedDiff({
+          baseline: baselineText,
+          current: currentText,
+          baselineHTML: versionStartContent,
+          currentHTML: editor.getHTML(),
         });
 
-        // Detect moves: if the same text appears in both removed and added
-        const movedIndices = new Set<number>();
-        removedParts.forEach((removed) => {
-          const matchingAdded = addedParts.find((added) => 
-            added.text.trim() === removed.text.trim() && added.text.trim().length > 10
-          );
+        // Convert to TrackedEdit format
+        const trackedChanges: TrackedEdit[] = advancedChanges.map((change) => {
+          let displayText = '';
           
-          if (matchingAdded) {
-            // Mark as moved
-            movedIndices.add(removed.index);
-            movedIndices.add(matchingAdded.index);
-            
-            // Add a move change
-            changes.push({
-              id: `edit-move-${Date.now()}-${removed.index}`,
-              userId: 'user-1',
-              userName: 'You',
-              userColor: '#ff9800',
-              type: 'insertion', // Use insertion type but show as move
-              from: matchingAdded.position,
-              to: matchingAdded.position + matchingAdded.text.length,
-              text: `📦 Moved: "${removed.text.trim().substring(0, 50)}..."`,
-              timestamp: new Date(),
-            });
+          if (change.type === 'move') {
+            displayText = `📦 Moved: "${(change.originalText || '').substring(0, 50)}..."`;
+          } else if (change.type === 'replacement') {
+            displayText = `"${(change.originalText || '').trim()}" → "${(change.newText || '').trim()}"`;
+          } else if (change.type === 'deletion') {
+            displayText = change.originalText || '';
+          } else if (change.type === 'insertion') {
+            displayText = change.newText || '';
           }
+
+          // Map advanced change type to TrackedEdit type
+          let editType: 'insertion' | 'deletion' = 
+            change.type === 'insertion' || change.type === 'move' ? 'insertion' : 'deletion';
+
+          return {
+            id: change.id,
+            userId: 'user-1',
+            userName: 'You',
+            userColor: '#ff9800', // Orange for user edits
+            type: editType,
+            from: change.from,
+            to: change.to,
+            text: displayText,
+            timestamp: new Date(),
+          };
         });
 
-        // Group consecutive deletions + insertions into replacements (skip moved items)
-        const groupedChanges: TrackedEdit[] = [];
-        for (let i = 0; i < changes.length; i++) {
-          const current = changes[i];
-          
-          // Skip if this was part of a move
-          if (current.text.includes('📦 Moved')) {
-            groupedChanges.push(current);
-            continue;
-          }
-          
-          const next = changes[i + 1];
-          
-          if (
-            current.type === 'deletion' &&
-            next &&
-            next.type === 'insertion' &&
-            !movedIndices.has(i) &&
-            !movedIndices.has(i + 1) &&
-            Math.abs(current.from - next.from) < 5
-          ) {
-            // This is a replacement
-            groupedChanges.push({
-              id: `edit-replacement-${Date.now()}-${i}`,
-              userId: 'user-1',
-              userName: 'You',
-              userColor: '#ff9800',
-              type: 'deletion', // Use deletion type but show as replacement
-              from: current.from,
-              to: next.to,
-              text: `"${current.text.trim()}" → "${next.text.trim()}"`,
-              timestamp: new Date(),
-            });
-            i++; // Skip next since we combined them
-          } else {
-            groupedChanges.push(current);
-          }
-        }
-
-        if (groupedChanges.length > 0) {
-          console.log('✏️ Changes detected:', groupedChanges);
-          setTrackedEdits(groupedChanges.slice(0, 30)); // Keep latest 30
+        if (trackedChanges.length > 0) {
+          const stats = getDiffStats(advancedChanges);
+          console.log('✏️ Advanced diff detected:', {
+            changes: trackedChanges.length,
+            stats,
+            confidence: advancedChanges.reduce((acc, c) => acc + c.confidence, 0) / advancedChanges.length,
+          });
+          setTrackedEdits(trackedChanges.slice(0, 30)); // Keep latest 30
         }
       }, 500); // 500ms debounce
     };
