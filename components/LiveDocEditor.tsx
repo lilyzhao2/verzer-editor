@@ -886,11 +886,21 @@ export default function LiveDocEditor() {
 
         <div className="w-px h-6 bg-gray-300 mx-1" />
 
-        {/* Mode Status Indicator */}
+        {/* Mode Status Indicator + Changes Sidebar Toggle */}
         {editingMode === 'suggesting' && (
-          <span className="px-3 py-1.5 text-xs font-medium bg-green-600 text-white rounded">
-            📝 Suggesting Mode Active
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="px-3 py-1.5 text-xs font-medium bg-green-600 text-white rounded">
+              📝 Suggesting Mode
+            </span>
+            {trackedEdits.length > 0 && (
+              <button
+                onClick={() => setShowCommentSidebar(!showCommentSidebar)}
+                className="px-3 py-1.5 text-xs font-medium text-green-700 bg-green-100 rounded hover:bg-green-200"
+              >
+                {trackedEdits.length} {trackedEdits.length === 1 ? 'change' : 'changes'}
+              </button>
+            )}
+          </div>
         )}
         {editingMode === 'viewing' && (
           <span className="px-3 py-1.5 text-xs font-medium bg-gray-600 text-white rounded">
@@ -1036,8 +1046,91 @@ export default function LiveDocEditor() {
           </div>
         </div>
 
-        {/* Comments Sidebar */}
-        {showCommentSidebar && (
+        {/* Track Changes Sidebar (in suggesting mode) */}
+        {showCommentSidebar && editingMode === 'suggesting' && trackedEdits.length > 0 && (
+          <div className="w-96 bg-white border-l border-gray-200 flex flex-col shadow-xl">
+            <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between bg-green-50">
+              <h3 className="text-sm font-semibold text-black flex items-center gap-2">
+                📝 Tracked Changes
+                <span className="text-xs text-gray-600">({trackedEdits.length})</span>
+              </h3>
+              <button
+                onClick={() => setShowCommentSidebar(false)}
+                className="text-gray-500 hover:text-black text-xl"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-auto p-4 space-y-3">
+              {trackedEdits.length === 0 && (
+                <p className="text-sm text-gray-500 text-center py-8">
+                  No changes yet. Start editing to see tracked changes.
+                </p>
+              )}
+
+              {trackedEdits.map((edit) => (
+                <div
+                  key={edit.id}
+                  className="p-3 bg-white border border-gray-200 rounded-lg hover:shadow-md transition-shadow"
+                >
+                  <div className="flex items-start justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <div
+                        className="w-6 h-6 rounded-full flex items-center justify-center text-white text-xs font-bold"
+                        style={{ backgroundColor: edit.userColor }}
+                      >
+                        {edit.userName.charAt(0)}
+                      </div>
+                      <span className="text-xs font-medium text-black">
+                        {edit.userName}
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => {
+                        // Mark as resolved (remove from list)
+                        setTrackedEdits(trackedEdits.filter(e => e.id !== edit.id));
+                      }}
+                      className="text-green-600 hover:bg-green-50 p-1 rounded"
+                      title="Mark as resolved"
+                    >
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                    </button>
+                  </div>
+
+                  <div className="text-xs text-gray-600 mb-2">
+                    <span className="font-semibold capitalize">{edit.type}:</span>
+                  </div>
+
+                  {edit.type === 'insertion' && (
+                    <div className="text-sm">
+                      <span className="text-green-700 bg-green-50 px-1 rounded">
+                        "{edit.text}"
+                      </span>
+                    </div>
+                  )}
+
+                  {edit.type === 'deletion' && (
+                    <div className="text-sm">
+                      <span className="text-red-700 bg-red-50 px-1 rounded line-through">
+                        "{edit.text}"
+                      </span>
+                    </div>
+                  )}
+
+                  <div className="mt-2 text-xs text-gray-500">
+                    {edit.timestamp.toLocaleTimeString()}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Comments Sidebar (when not in suggesting mode or no tracked edits) */}
+        {showCommentSidebar && (editingMode !== 'suggesting' || trackedEdits.length === 0) && (
           <div className="w-80 bg-white border-l border-gray-200 flex flex-col">
             <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
               <h3 className="text-sm font-semibold text-black">
