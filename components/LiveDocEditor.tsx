@@ -165,17 +165,92 @@ export default function LiveDocEditor() {
     };
   }, []);
 
+  const [aiThoughts, setAIThoughts] = useState<string[]>([]);
+  const [aiRewrites, setAIRewrites] = useState<string[]>([]);
+  const [showAIResults, setShowAIResults] = useState(false);
+  const [aiResultType, setAIResultType] = useState<'thoughts' | 'rewrites'>('thoughts');
+
+  const handleAddComment = () => {
+    setAIMenuVisible(false);
+    const commentText = prompt('Add comment:');
+    if (!commentText) return;
+
+    const newComment: Comment = {
+      id: `comment-${Date.now()}`,
+      userId: 'user-1',
+      userName: 'You',
+      userColor: '#4285f4',
+      text: commentText,
+      from: aiMenuSelection.from,
+      to: aiMenuSelection.to,
+      timestamp: new Date(),
+      resolved: false,
+      replies: [],
+    };
+
+    setComments([...comments, newComment]);
+    setShowCommentSidebar(true);
+  };
+
   const handleAskAI = async () => {
     setAIMenuVisible(false);
-    alert(`AI thinking about: "${aiMenuSelection.text}"\n\n(AI integration coming soon!)`);
+    setAIResultType('thoughts');
+    
+    // Simulate AI thinking (replace with real API call)
+    const mockThoughts = [
+      `This text is clear and concise. Good job!`,
+      `Consider adding more context about "${aiMenuSelection.text.split(' ')[0]}" for clarity.`,
+      `The tone is appropriate, but you could strengthen the argument with examples.`,
+    ];
+    
+    setAIThoughts(mockThoughts);
+    setShowAIResults(true);
   };
 
   const handleRewriteText = async () => {
     setAIMenuVisible(false);
-    const rewritePrompt = prompt(`How should AI rewrite this text?\n\n"${aiMenuSelection.text}"`);
-    if (!rewritePrompt) return;
+    setAIResultType('rewrites');
     
-    alert(`AI will rewrite with prompt: "${rewritePrompt}"\n\n(AI integration coming soon!)`);
+    // Simulate AI rewrites (replace with real API call)
+    const mockRewrites = [
+      aiMenuSelection.text.charAt(0).toUpperCase() + aiMenuSelection.text.slice(1) + ' - enhanced version.',
+      `An improved take: ${aiMenuSelection.text}`,
+      `Consider this alternative: ${aiMenuSelection.text.split(' ').reverse().join(' ')}`,
+    ];
+    
+    setAIRewrites(mockRewrites);
+    setShowAIResults(true);
+  };
+
+  const handleSelectAIThought = (thought: string) => {
+    const newComment: Comment = {
+      id: `comment-ai-${Date.now()}`,
+      userId: 'ai',
+      userName: 'Verzer AI',
+      userColor: '#9c27b0', // Purple for AI
+      text: thought,
+      from: aiMenuSelection.from,
+      to: aiMenuSelection.to,
+      timestamp: new Date(),
+      resolved: false,
+      replies: [],
+    };
+
+    setComments([...comments, newComment]);
+    setShowCommentSidebar(true);
+    setShowAIResults(false);
+  };
+
+  const handleSelectAIRewrite = (rewrite: string) => {
+    if (editor) {
+      // Replace selected text with chosen rewrite
+      editor.chain()
+        .focus()
+        .deleteRange({ from: aiMenuSelection.from, to: aiMenuSelection.to })
+        .insertContentAt(aiMenuSelection.from, rewrite)
+        .run();
+    }
+    setShowAIResults(false);
   };
 
   // Version History Functions
@@ -239,11 +314,11 @@ export default function LiveDocEditor() {
     return () => clearInterval(interval);
   }, [editor, versionSettings.autoSaveFrequency, versionSettings.autoSaveEnabled, currentVersionId, versions]);
 
-  // Track changes for line-based auto-save AND suggesting mode
+  // Track changes for line-based auto-save
   React.useEffect(() => {
     if (!editor) return;
 
-    const handleUpdate = ({ transaction }: any) => {
+    const handleUpdate = () => {
       setChangesSinceLastSave((prev) => prev + 1);
 
       // Auto-save if reached line threshold
@@ -251,58 +326,57 @@ export default function LiveDocEditor() {
         const currentContent = editor.getHTML();
         createNewVersion(currentContent, true);
       }
-
-      // Track edits in suggesting mode
-      if (editingMode === 'suggesting' && transaction.docChanged) {
-        transaction.steps.forEach((step: any, index: number) => {
-          if (step.slice) {
-            const { from, to } = transaction.mapping.maps[index];
-            const content = step.slice.content;
-            
-            // Track insertion
-            if (content.size > 0) {
-              const newEdit: TrackedEdit = {
-                id: `edit-${Date.now()}-${index}`,
-                userId: 'user-1',
-                userName: 'You',
-                userColor: '#ff9800', // Orange for user edits
-                type: 'insertion',
-                from,
-                to: from + content.size,
-                text: editor.state.doc.textBetween(from, from + content.size),
-                timestamp: new Date(),
-              };
-              setTrackedEdits((prev) => [...prev, newEdit]);
-            }
-            
-            // Track deletion
-            if (to > from && content.size === 0) {
-              const deletedText = editor.state.doc.textBetween(from, to);
-              if (deletedText) {
-                const newEdit: TrackedEdit = {
-                  id: `edit-${Date.now()}-${index}`,
-                  userId: 'user-1',
-                  userName: 'You',
-                  userColor: '#ff9800',
-                  type: 'deletion',
-                  from,
-                  to,
-                  text: deletedText,
-                  timestamp: new Date(),
-                };
-                setTrackedEdits((prev) => [...prev, newEdit]);
-              }
-            }
-          }
-        });
-      }
     };
 
     editor.on('update', handleUpdate);
     return () => {
       editor.off('update', handleUpdate);
     };
-  }, [editor, changesSinceLastSave, versionSettings, editingMode]);
+  }, [editor, changesSinceLastSave, versionSettings]);
+
+  // Track edits in suggesting mode with simpler approach
+  React.useEffect(() => {
+    if (!editor || editingMode !== 'suggesting') {
+      // Clear tracked edits when not in suggesting mode
+      if (trackedEdits.length > 0) {
+        setTrackedEdits([]);
+      }
+      return;
+    }
+
+    const handleTransaction = ({ transaction }: any) => {
+      if (!transaction.docChanged) return;
+
+      // Simple change tracking: mark any change at the cursor position
+      const { from, to } = transaction.selection;
+      
+      if (from !== to || transaction.steps.length > 0) {
+        // User made an edit - add visual marker
+        const newEdit: TrackedEdit = {
+          id: `edit-${Date.now()}`,
+          userId: 'user-1',
+          userName: 'You',
+          userColor: '#ff9800', // Orange
+          type: 'insertion',
+          from: Math.max(0, from - 1),
+          to: Math.min(editor.state.doc.content.size, to + 1),
+          text: 'edit',
+          timestamp: new Date(),
+        };
+        
+        setTrackedEdits((prev) => {
+          // Limit to last 20 edits for performance
+          const updated = [...prev, newEdit].slice(-20);
+          return updated;
+        });
+      }
+    };
+
+    editor.on('transaction', handleTransaction);
+    return () => {
+      editor.off('transaction', handleTransaction);
+    };
+  }, [editor, editingMode]);
 
   if (!editor) {
     return null;
@@ -978,10 +1052,17 @@ export default function LiveDocEditor() {
           onClick={(e) => e.stopPropagation()}
         >
           <button
-            onClick={handleAskAI}
+            onClick={handleAddComment}
             className="w-full px-4 py-2 text-left text-sm text-black hover:bg-gray-100 flex items-center gap-2"
           >
             <span>💬</span>
+            <span>Comment</span>
+          </button>
+          <button
+            onClick={handleAskAI}
+            className="w-full px-4 py-2 text-left text-sm text-black hover:bg-gray-100 flex items-center gap-2"
+          >
+            <span>🤔</span>
             <span>Ask AI for thoughts</span>
           </button>
           <button
@@ -991,6 +1072,60 @@ export default function LiveDocEditor() {
             <span>✨</span>
             <span>Ask AI to rewrite</span>
           </button>
+        </div>
+      )}
+
+      {/* AI Results Panel */}
+      {showAIResults && (
+        <div className="fixed right-4 top-1/2 -translate-y-1/2 w-96 bg-white border border-gray-300 rounded-lg shadow-2xl z-50">
+          <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between bg-gradient-to-r from-purple-50 to-blue-50">
+            <h3 className="text-sm font-semibold text-black flex items-center gap-2">
+              {aiResultType === 'thoughts' ? '🤔 AI Thoughts' : '✨ AI Rewrites'}
+              <span className="text-xs text-gray-500">- Pick one</span>
+            </h3>
+            <button
+              onClick={() => setShowAIResults(false)}
+              className="text-gray-500 hover:text-black text-xl"
+            >
+              ✕
+            </button>
+          </div>
+
+          <div className="p-4 space-y-3 max-h-[500px] overflow-auto">
+            {aiResultType === 'thoughts' ? (
+              aiThoughts.map((thought, index) => (
+                <div
+                  key={index}
+                  onClick={() => handleSelectAIThought(thought)}
+                  className="p-3 bg-purple-50 border border-purple-200 rounded-lg hover:bg-purple-100 cursor-pointer transition-all"
+                >
+                  <div className="flex items-start gap-2">
+                    <span className="text-lg">💡</span>
+                    <div className="flex-1">
+                      <p className="text-sm text-black">{thought}</p>
+                      <p className="text-xs text-purple-600 mt-2">Click to add as comment</p>
+                    </div>
+                  </div>
+                </div>
+              ))
+            ) : (
+              aiRewrites.map((rewrite, index) => (
+                <div
+                  key={index}
+                  onClick={() => handleSelectAIRewrite(rewrite)}
+                  className="p-3 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 cursor-pointer transition-all"
+                >
+                  <div className="flex items-start gap-2">
+                    <span className="text-lg">✨</span>
+                    <div className="flex-1">
+                      <p className="text-sm text-black">{rewrite}</p>
+                      <p className="text-xs text-blue-600 mt-2">Click to use this version</p>
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
         </div>
       )}
     </div>
