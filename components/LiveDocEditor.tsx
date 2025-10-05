@@ -16,6 +16,7 @@ import { CommentsExtension, Comment, CommentReply } from '@/lib/comments-extensi
 import { AIInlineExtension } from '@/lib/ai-inline-extension';
 import { DocumentVersion, VersionHistorySettings } from '@/lib/version-types';
 import { TabAutocompleteExtension } from '@/lib/tab-autocomplete-extension';
+import { diffWords } from 'diff';
 
 /**
  * MODE 1: LIVE DOC EDITOR
@@ -552,14 +553,13 @@ export default function LiveDocEditor() {
     }
   }, [editor, editingMode, currentVersion]);
 
-  // Track edits in suggesting mode
+  // Track edits in suggesting mode with proper diff detection
   React.useEffect(() => {
     if (!editor || editingMode !== 'suggesting') {
       return;
     }
 
     let debounceTimer: NodeJS.Timeout;
-    let editCounter = 0;
 
     const handleUpdate = () => {
       clearTimeout(debounceTimer);
@@ -571,49 +571,83 @@ export default function LiveDocEditor() {
           .parseFromString(versionStartContent, 'text/html')
           .body.textContent || '';
 
-        console.log('Comparing:', {
-          current: currentText.substring(0, 50),
-          baseline: baselineText.substring(0, 50),
-          equal: currentText === baselineText
-        });
+        if (currentText === baselineText) return;
 
-        // Detect if content has changed
-        if (currentText !== baselineText) {
-          editCounter++;
-          
-          // Simple change detection - in production use proper diff
-          const changeText = currentText.length > baselineText.length
-            ? currentText.substring(baselineText.length).trim()
-            : baselineText.substring(currentText.length).trim();
-
-          const changeType = currentText.length > baselineText.length ? 'insertion' : 'deletion';
-
-          if (changeText) {
-            const newEdit: TrackedEdit = {
-              id: `edit-${Date.now()}-${editCounter}`,
+        // Use diffWords for accurate word-level diff
+        const diff = diffWords(baselineText, currentText);
+        const changes: TrackedEdit[] = [];
+        let position = 0;
+        
+        diff.forEach((part, index) => {
+          if (part.added) {
+            // Insertion
+            changes.push({
+              id: `edit-insertion-${Date.now()}-${index}`,
               userId: 'user-1',
               userName: 'You',
               userColor: '#ff9800', // Orange
-              type: changeType,
-              from: 0,
-              to: changeText.length,
-              text: changeText.substring(0, 100), // First 100 chars
+              type: 'insertion',
+              from: position,
+              to: position + part.value.length,
+              text: part.value,
               timestamp: new Date(),
-            };
-
-            console.log('New edit detected:', newEdit);
-
-            setTrackedEdits((prev) => {
-              // Avoid duplicates
-              const lastEdit = prev[prev.length - 1];
-              if (lastEdit && lastEdit.text === newEdit.text) {
-                return prev;
-              }
-              return [...prev, newEdit].slice(-20);
             });
+            position += part.value.length;
+          } else if (part.removed) {
+            // Deletion
+            changes.push({
+              id: `edit-deletion-${Date.now()}-${index}`,
+              userId: 'user-1',
+              userName: 'You',
+              userColor: '#ff9800',
+              type: 'deletion',
+              from: position,
+              to: position,
+              text: part.value,
+              timestamp: new Date(),
+            });
+            // Position doesn't advance for deletions
+          } else {
+            // Unchanged text
+            position += part.value.length;
+          }
+        });
+
+        // Group consecutive deletions + insertions into replacements
+        const groupedChanges: TrackedEdit[] = [];
+        for (let i = 0; i < changes.length; i++) {
+          const current = changes[i];
+          const next = changes[i + 1];
+          
+          if (
+            current.type === 'deletion' &&
+            next &&
+            next.type === 'insertion' &&
+            Math.abs(current.from - next.from) < 5
+          ) {
+            // This is a replacement
+            groupedChanges.push({
+              id: `edit-replacement-${Date.now()}-${i}`,
+              userId: 'user-1',
+              userName: 'You',
+              userColor: '#ff9800',
+              type: 'deletion', // Use deletion type but show as replacement
+              from: current.from,
+              to: next.to,
+              text: `"${current.text.trim()}" → "${next.text.trim()}"`,
+              timestamp: new Date(),
+            });
+            i++; // Skip next since we combined them
+          } else {
+            groupedChanges.push(current);
           }
         }
-      }, 300); // 300ms debounce for better responsiveness
+
+        if (groupedChanges.length > 0) {
+          console.log('✏️ Changes detected:', groupedChanges);
+          setTrackedEdits(groupedChanges.slice(0, 30)); // Keep latest 30
+        }
+      }, 500); // 500ms debounce
     };
 
     editor.on('update', handleUpdate);
@@ -1218,62 +1252,82 @@ export default function LiveDocEditor() {
                 </p>
               )}
 
-              {trackedEdits.map((edit) => (
-                <div
-                  key={edit.id}
-                  className="p-3 bg-white border border-gray-200 rounded-lg hover:shadow-md transition-shadow"
-                >
-                  <div className="flex items-start justify-between mb-2">
-                    <div className="flex items-center gap-2">
-                      <div
-                        className="w-6 h-6 rounded-full flex items-center justify-center text-white text-xs font-bold"
-                        style={{ backgroundColor: edit.userColor }}
-                      >
-                        {edit.userName.charAt(0)}
+              {trackedEdits.map((edit) => {
+                // Check if this is a replacement (shown as "old" → "new")
+                const isReplacement = edit.text.includes('→');
+                const displayType = isReplacement ? 'replacement' : edit.type;
+                
+                return (
+                  <div
+                    key={edit.id}
+                    className="p-3 bg-white border border-gray-200 rounded-lg hover:shadow-md transition-shadow"
+                  >
+                    <div className="flex items-start justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <div
+                          className="w-6 h-6 rounded-full flex items-center justify-center text-white text-xs font-bold"
+                          style={{ backgroundColor: edit.userColor }}
+                        >
+                          {edit.userName.charAt(0)}
+                        </div>
+                        <span className="text-xs font-medium text-black">
+                          {edit.userName}
+                        </span>
                       </div>
-                      <span className="text-xs font-medium text-black">
-                        {edit.userName}
+                      <button
+                        onClick={() => {
+                          // Mark as resolved (remove from list)
+                          setTrackedEdits(trackedEdits.filter(e => e.id !== edit.id));
+                        }}
+                        className="text-green-600 hover:bg-green-50 p-1 rounded"
+                        title="Mark as resolved"
+                      >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                      </button>
+                    </div>
+
+                    <div className="text-xs text-gray-600 mb-2">
+                      <span
+                        className={`font-semibold px-2 py-0.5 rounded ${
+                          displayType === 'replacement'
+                            ? 'bg-blue-100 text-blue-700'
+                            : displayType === 'insertion'
+                            ? 'bg-green-100 text-green-700'
+                            : 'bg-red-100 text-red-700'
+                        }`}
+                      >
+                        {displayType === 'replacement' ? 'Replaced' : displayType === 'insertion' ? 'Added' : 'Deleted'}
                       </span>
                     </div>
-                    <button
-                      onClick={() => {
-                        // Mark as resolved (remove from list)
-                        setTrackedEdits(trackedEdits.filter(e => e.id !== edit.id));
-                      }}
-                      className="text-green-600 hover:bg-green-50 p-1 rounded"
-                      title="Mark as resolved"
-                    >
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                      </svg>
-                    </button>
-                  </div>
 
-                  <div className="text-xs text-gray-600 mb-2">
-                    <span className="font-semibold capitalize">{edit.type}:</span>
-                  </div>
+                    {isReplacement ? (
+                      <div className="text-sm">
+                        <span className="text-blue-700 bg-blue-50 px-2 py-1 rounded block">
+                          {edit.text}
+                        </span>
+                      </div>
+                    ) : edit.type === 'insertion' ? (
+                      <div className="text-sm">
+                        <span className="text-green-700 bg-green-50 px-1 rounded">
+                          "{edit.text}"
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="text-sm">
+                        <span className="text-red-700 bg-red-50 px-1 rounded line-through">
+                          "{edit.text}"
+                        </span>
+                      </div>
+                    )}
 
-                  {edit.type === 'insertion' && (
-                    <div className="text-sm">
-                      <span className="text-green-700 bg-green-50 px-1 rounded">
-                        "{edit.text}"
-                      </span>
+                    <div className="mt-2 text-xs text-gray-500">
+                      {edit.timestamp.toLocaleTimeString()}
                     </div>
-                  )}
-
-                  {edit.type === 'deletion' && (
-                    <div className="text-sm">
-                      <span className="text-red-700 bg-red-50 px-1 rounded line-through">
-                        "{edit.text}"
-                      </span>
-                    </div>
-                  )}
-
-                  <div className="mt-2 text-xs text-gray-500">
-                    {edit.timestamp.toLocaleTimeString()}
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}
