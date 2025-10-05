@@ -475,59 +475,82 @@ export default function LiveDocEditor() {
     };
   }, [editor, changesSinceLastSave, versionSettings]);
 
-  // Store version start content when entering suggesting mode
+  // Set version baseline when entering suggesting mode
   React.useEffect(() => {
-    if (editor && editingMode === 'suggesting' && !versionStartContent) {
-      setVersionStartContent(editor.getHTML());
-      setTrackedEdits([]); // Clear old edits
-    } else if (editingMode !== 'suggesting') {
-      setVersionStartContent('');
-      setTrackedEdits([]);
+    if (editor && editingMode === 'suggesting') {
+      // Capture current version's content as baseline
+      const baseline = currentVersion?.content || editor.getHTML();
+      setVersionStartContent(baseline);
+      console.log('Baseline set:', baseline.substring(0, 100));
     }
-  }, [editor, editingMode]);
+  }, [editor, editingMode, currentVersion]);
 
-  // Track edits in suggesting mode by comparing with version start
+  // Track edits in suggesting mode
   React.useEffect(() => {
-    if (!editor || editingMode !== 'suggesting' || !versionStartContent) {
+    if (!editor || editingMode !== 'suggesting') {
       return;
     }
 
     let debounceTimer: NodeJS.Timeout;
+    let editCounter = 0;
 
     const handleUpdate = () => {
-      // Debounce to avoid too many updates
       clearTimeout(debounceTimer);
       debounceTimer = setTimeout(() => {
-        const currentContent = editor.getText();
-        const startContent = editor.state.doc.textContent;
-        
-        // For now, create a simple edit record for any change
-        // In production, you'd use a proper diff algorithm
-        if (currentContent !== startContent && currentContent.trim()) {
-          const newEdit: TrackedEdit = {
-            id: `edit-${Date.now()}`,
-            userId: 'user-1',
-            userName: 'You',
-            userColor: '#ff9800', // Orange
-            type: 'insertion',
-            from: 0,
-            to: currentContent.length,
-            text: currentContent.slice(-50), // Last 50 chars as preview
-            timestamp: new Date(),
-          };
+        if (!versionStartContent) return;
+
+        const currentText = editor.getText();
+        const baselineText = new DOMParser()
+          .parseFromString(versionStartContent, 'text/html')
+          .body.textContent || '';
+
+        console.log('Comparing:', {
+          current: currentText.substring(0, 50),
+          baseline: baselineText.substring(0, 50),
+          equal: currentText === baselineText
+        });
+
+        // Detect if content has changed
+        if (currentText !== baselineText) {
+          editCounter++;
           
-          setTrackedEdits((prev) => {
-            // Only add if different from last edit
-            if (prev.length === 0 || prev[prev.length - 1].text !== newEdit.text) {
-              return [...prev, newEdit].slice(-20); // Keep last 20
-            }
-            return prev;
-          });
+          // Simple change detection - in production use proper diff
+          const changeText = currentText.length > baselineText.length
+            ? currentText.substring(baselineText.length).trim()
+            : baselineText.substring(currentText.length).trim();
+
+          const changeType = currentText.length > baselineText.length ? 'insertion' : 'deletion';
+
+          if (changeText) {
+            const newEdit: TrackedEdit = {
+              id: `edit-${Date.now()}-${editCounter}`,
+              userId: 'user-1',
+              userName: 'You',
+              userColor: '#ff9800', // Orange
+              type: changeType,
+              from: 0,
+              to: changeText.length,
+              text: changeText.substring(0, 100), // First 100 chars
+              timestamp: new Date(),
+            };
+
+            console.log('New edit detected:', newEdit);
+
+            setTrackedEdits((prev) => {
+              // Avoid duplicates
+              const lastEdit = prev[prev.length - 1];
+              if (lastEdit && lastEdit.text === newEdit.text) {
+                return prev;
+              }
+              return [...prev, newEdit].slice(-20);
+            });
+          }
         }
-      }, 500); // 500ms debounce
+      }, 300); // 300ms debounce for better responsiveness
     };
 
     editor.on('update', handleUpdate);
+    
     return () => {
       editor.off('update', handleUpdate);
       clearTimeout(debounceTimer);
