@@ -124,33 +124,14 @@ export const TabAutocompleteExtension = Extension.create<TabAutocompleteOptions>
           },
 
           handleTextInput(view, from, to, text) {
-            // Trigger AI completion after typing
-            if (!onRequestCompletion) return false;
-
-            // Debounce: only trigger after a space or punctuation
-            if (text !== ' ' && text !== '.' && text !== ',' && text !== '!') {
-              return false;
+            // Clear any existing suggestion when typing
+            if (currentSuggestion) {
+              currentSuggestion = null;
+              suggestionFrom = null;
+              view.dispatch(view.state.tr);
             }
-
-            const { state } = view;
-            const currentPos = state.selection.from;
             
-            // Get context (last 100 characters before cursor)
-            const textBefore = state.doc.textBetween(Math.max(0, currentPos - 100), currentPos, ' ');
-            
-            // Request completion from AI (with slight delay for better UX)
-            setTimeout(() => {
-              suggestionFrom = currentPos;
-              onRequestCompletion(textBefore).then((completion) => {
-                if (completion && completion.trim()) {
-                  currentSuggestion = completion;
-                  view.dispatch(view.state.tr);
-                }
-              }).catch(() => {
-                // Silently fail
-              });
-            }, 200);
-
+            // Don't auto-trigger - user must press Tab to request completion
             return false;
           },
         },

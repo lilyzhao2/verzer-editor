@@ -135,7 +135,7 @@ export default function LiveDocEditor() {
         userName: 'You',
       }),
       TabAutocompleteExtension.configure({
-        enabled: true,
+        enabled: false, // Disabled for now
         onRequestCompletion: async (context: string) => {
           // Simulate AI completion (replace with real API call)
           await new Promise(resolve => setTimeout(resolve, 300));
