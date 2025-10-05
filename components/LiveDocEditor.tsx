@@ -524,34 +524,21 @@ export default function LiveDocEditor() {
     };
   }, [editor, changesSinceLastSave, versionSettings]);
 
-  // Handle mode switching
+  // Handle mode switching - suggestions persist across modes
   React.useEffect(() => {
     if (!editor) return;
 
     if (editingMode === 'suggesting') {
-      // Entering suggesting mode
-      const baseline = currentVersion?.content || editor.getHTML();
-      setVersionStartContent(baseline);
-      setSuggestingModeContent(baseline); // Start with baseline
-      console.log('📝 Entered Suggesting Mode. Baseline set.');
-    } else if (editingMode === 'editing') {
-      // Leaving suggesting mode - restore original content if there are unaccepted suggestions
-      if (versionStartContent && trackedEdits.length > 0) {
-        const shouldRevert = window.confirm(
-          `You have ${trackedEdits.length} unaccepted suggestion(s).\n\n` +
-          'Do you want to discard them and return to the original content?'
-        );
-        
-        if (shouldRevert) {
-          editor.commands.setContent(versionStartContent);
-          setTrackedEdits([]);
-        }
+      // Entering suggesting mode - set baseline if not already set
+      if (!versionStartContent) {
+        const baseline = currentVersion?.content || editor.getHTML();
+        setVersionStartContent(baseline);
+        setSuggestingModeContent(baseline);
+        console.log('📝 Entered Suggesting Mode. Baseline set.');
       }
-      setVersionStartContent('');
-      setSuggestingModeContent('');
-      console.log('✏️ Entered Editing Mode.');
     }
-  }, [editor, editingMode, currentVersion]);
+    // Note: No cleanup when switching to editing mode - suggestions remain visible
+  }, [editor, editingMode, currentVersion, versionStartContent]);
 
   // Track edits in suggesting mode with proper diff detection
   React.useEffect(() => {
@@ -578,8 +565,13 @@ export default function LiveDocEditor() {
         const changes: TrackedEdit[] = [];
         let position = 0;
         
+        // Track all removed and added text for move detection
+        const removedParts: Array<{ text: string; index: number }> = [];
+        const addedParts: Array<{ text: string; index: number; position: number }> = [];
+        
         diff.forEach((part, index) => {
           if (part.added) {
+            addedParts.push({ text: part.value, index, position });
             // Insertion
             changes.push({
               id: `edit-insertion-${Date.now()}-${index}`,
@@ -594,6 +586,7 @@ export default function LiveDocEditor() {
             });
             position += part.value.length;
           } else if (part.removed) {
+            removedParts.push({ text: part.value, index });
             // Deletion
             changes.push({
               id: `edit-deletion-${Date.now()}-${index}`,
@@ -613,16 +606,52 @@ export default function LiveDocEditor() {
           }
         });
 
-        // Group consecutive deletions + insertions into replacements
+        // Detect moves: if the same text appears in both removed and added
+        const movedIndices = new Set<number>();
+        removedParts.forEach((removed) => {
+          const matchingAdded = addedParts.find((added) => 
+            added.text.trim() === removed.text.trim() && added.text.trim().length > 10
+          );
+          
+          if (matchingAdded) {
+            // Mark as moved
+            movedIndices.add(removed.index);
+            movedIndices.add(matchingAdded.index);
+            
+            // Add a move change
+            changes.push({
+              id: `edit-move-${Date.now()}-${removed.index}`,
+              userId: 'user-1',
+              userName: 'You',
+              userColor: '#ff9800',
+              type: 'insertion', // Use insertion type but show as move
+              from: matchingAdded.position,
+              to: matchingAdded.position + matchingAdded.text.length,
+              text: `📦 Moved: "${removed.text.trim().substring(0, 50)}..."`,
+              timestamp: new Date(),
+            });
+          }
+        });
+
+        // Group consecutive deletions + insertions into replacements (skip moved items)
         const groupedChanges: TrackedEdit[] = [];
         for (let i = 0; i < changes.length; i++) {
           const current = changes[i];
+          
+          // Skip if this was part of a move
+          if (current.text.includes('📦 Moved')) {
+            groupedChanges.push(current);
+            continue;
+          }
+          
           const next = changes[i + 1];
           
           if (
             current.type === 'deletion' &&
             next &&
             next.type === 'insertion' &&
+            !movedIndices.has(i) &&
+            !movedIndices.has(i + 1) &&
             Math.abs(current.from - next.from) < 5
           ) {
             // This is a replacement
@@ -1190,13 +1219,34 @@ export default function LiveDocEditor() {
               .ProseMirror li {
                 color: #000000 !important;
               }
+              
+              /* Inline suggestion markup styles - visible in ALL modes */
+              .suggestion-insertion {
+                background-color: #dcfce7;
+                border-bottom: 2px solid #16a34a;
+                padding: 1px 2px;
+                border-radius: 2px;
+              }
+              .suggestion-deletion {
+                background-color: #fee2e2;
+                text-decoration: line-through;
+                color: #dc2626;
+                padding: 1px 2px;
+                border-radius: 2px;
+              }
+              .suggestion-replacement {
+                background-color: #dbeafe;
+                border-bottom: 2px solid #2563eb;
+                padding: 1px 2px;
+                border-radius: 2px;
+              }
             `}</style>
             <EditorContent editor={editor} />
           </div>
         </div>
 
-        {/* Track Changes Sidebar (in suggesting mode) */}
-        {showCommentSidebar && editingMode === 'suggesting' && trackedEdits.length > 0 && (
+        {/* Track Changes Sidebar (visible in BOTH editing and suggesting modes if there are changes) */}
+        {showCommentSidebar && trackedEdits.length > 0 && (
           <div className="w-96 bg-white border-l border-gray-200 flex flex-col shadow-xl">
             <div className="px-4 py-3 border-b border-gray-200 bg-green-50">
               <div className="flex items-center justify-between mb-2">
@@ -1253,9 +1303,10 @@ export default function LiveDocEditor() {
               )}
 
               {trackedEdits.map((edit) => {
-                // Check if this is a replacement (shown as "old" → "new")
-                const isReplacement = edit.text.includes('→');
-                const displayType = isReplacement ? 'replacement' : edit.type;
+                // Check change type
+                const isMoved = edit.text.includes('📦 Moved');
+                const isReplacement = edit.text.includes('→') && !isMoved;
+                const displayType = isMoved ? 'moved' : isReplacement ? 'replacement' : edit.type;
                 
                 return (
                   <div
@@ -1291,18 +1342,26 @@ export default function LiveDocEditor() {
                     <div className="text-xs text-gray-600 mb-2">
                       <span
                         className={`font-semibold px-2 py-0.5 rounded ${
-                          displayType === 'replacement'
+                          displayType === 'moved'
+                            ? 'bg-purple-100 text-purple-700'
+                            : displayType === 'replacement'
                             ? 'bg-blue-100 text-blue-700'
                             : displayType === 'insertion'
                             ? 'bg-green-100 text-green-700'
                             : 'bg-red-100 text-red-700'
                         }`}
                       >
-                        {displayType === 'replacement' ? 'Replaced' : displayType === 'insertion' ? 'Added' : 'Deleted'}
+                        {displayType === 'moved' ? '📦 Moved' : displayType === 'replacement' ? 'Replaced' : displayType === 'insertion' ? 'Added' : 'Deleted'}
                       </span>
                     </div>
 
-                    {isReplacement ? (
+                    {isMoved ? (
+                      <div className="text-sm">
+                        <span className="text-purple-700 bg-purple-50 px-2 py-1 rounded block">
+                          {edit.text}
+                        </span>
+                      </div>
+                    ) : isReplacement ? (
                       <div className="text-sm">
                         <span className="text-blue-700 bg-blue-50 px-2 py-1 rounded block">
                           {edit.text}
