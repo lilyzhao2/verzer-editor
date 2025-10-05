@@ -11,7 +11,7 @@ interface ModeToggleProps {
 
 /**
  * Mode Toggle Component
- * Switches between Editing, Tracking, and Diff & Regenerate modes
+ * Switches between different views (no confirmation needed)
  */
 export default function ModeToggle({
   currentMode,
@@ -28,7 +28,7 @@ export default function ModeToggle({
             : 'text-gray-700 hover:bg-gray-100'
         }`}
       >
-        ✏️ Editing
+        📄 Clean View
       </button>
 
       <button
@@ -39,7 +39,7 @@ export default function ModeToggle({
             : 'text-gray-700 hover:bg-gray-100'
         }`}
       >
-        📝 Tracking
+        📝 Track Changes
         {hasPendingChanges && (
           <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full"></span>
         )}
@@ -53,7 +53,7 @@ export default function ModeToggle({
             : 'text-gray-700 hover:bg-gray-100'
         }`}
       >
-        🔄 Diff & Regenerate
+        🔄 Diff View
       </button>
     </div>
   );

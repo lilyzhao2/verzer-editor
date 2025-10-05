@@ -86,9 +86,13 @@ export default function DocumentEditorV2() {
 
       // Set new timeout to save after 1 second of no typing
       autoSaveTimeoutRef.current = setTimeout(() => {
+        // Only mark as edited if content actually changed from original version
+        const originalContent = currentVersion.aiEditedContent || currentVersion.content;
+        const hasChanged = state.workingContent !== originalContent;
+        
         if (state.workingContent !== currentVersion.content) {
-          // Update version and mark as edited
-          updateVersion(currentVersion.id, state.workingContent, true);
+          // Update version, mark as edited only if truly changed
+          updateVersion(currentVersion.id, state.workingContent, hasChanged);
         }
       }, 1000);
     }
@@ -98,7 +102,7 @@ export default function DocumentEditorV2() {
         clearTimeout(autoSaveTimeoutRef.current);
       }
     };
-  }, [state.workingContent, state.documentMode, currentVersion]);
+  }, [state.workingContent, state.documentMode, currentVersion, updateVersion]);
 
   const hasPendingChanges = currentVersion?.versionState === 'ai-created';
 

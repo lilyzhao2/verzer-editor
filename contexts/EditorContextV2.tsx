@@ -206,39 +206,19 @@ export function EditorProviderV2({ children }: { children: React.ReactNode }) {
     }));
   }, []);
 
-  // Set document mode
+  // Set document mode (just a view switch, no confirmation)
   const setDocumentMode = useCallback((mode: DocumentMode) => {
-    // If trying to chat in tracking mode, show confirmation
-    if (state.documentMode === 'tracking' && mode === 'editing') {
-      const confirmAccept = window.confirm(
-        'Switching to Editing mode will accept all pending changes. Continue?'
-      );
-      if (!confirmAccept) return;
-      
-      // Accept all changes
-      acceptAllChanges();
-    }
-    
     setState((prev) => ({
       ...prev,
       documentMode: mode,
     }));
-  }, [state.documentMode]);
+  }, []);
 
   // Send chat message
   const sendChatMessage = useCallback(
     async (prompt: string) => {
       const currentVersion = getCurrentVersion();
       if (!currentVersion) return;
-
-      // If in tracking mode, must accept all changes first
-      if (state.documentMode === 'tracking') {
-        const confirmAccept = window.confirm(
-          'This will accept all changes. Continue?'
-        );
-        if (!confirmAccept) return;
-        acceptAllChanges();
-      }
 
       try {
         // Add user message to chat
