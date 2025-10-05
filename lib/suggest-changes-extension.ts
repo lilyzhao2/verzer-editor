@@ -25,6 +25,7 @@ export const SuggestChangesExtension = Extension.create<SuggestChangesOptions>({
   },
 
   addProseMirrorPlugins() {
+    const extension = this;
     const { enabled, userId, userName } = this.options;
 
     return [
@@ -33,7 +34,7 @@ export const SuggestChangesExtension = Extension.create<SuggestChangesOptions>({
         
         appendTransaction: (transactions, oldState, newState) => {
           // Check the CURRENT enabled state from options
-          const currentEnabled = (extensionThis.options as any).enabled;
+          const currentEnabled = extension.options.enabled;
           console.log('🔍 Checking enabled state:', currentEnabled, '(initial enabled was:', enabled, ')');
           
           if (!currentEnabled) {
