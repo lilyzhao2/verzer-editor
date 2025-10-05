@@ -46,7 +46,7 @@ export default function LiveDocEditor() {
     editorProps: {
       attributes: {
         class: 'focus:outline-none',
-        style: 'min-height: 11in; padding: 1in 1in; font-family: Arial, sans-serif; font-size: 11pt; line-height: 1.5;',
+        style: 'min-height: 11in; padding: 1in 1in; font-family: Arial, sans-serif; font-size: 11pt; line-height: 1.5; color: #000000;',
       },
     },
   });
@@ -353,6 +353,18 @@ export default function LiveDocEditor() {
       <div className="flex-1 overflow-auto">
         {/* Page-like white container */}
         <div className="max-w-[8.5in] mx-auto my-6 bg-white shadow-lg">
+          <style jsx global>{`
+            .ProseMirror {
+              color: #000000 !important;
+            }
+            .ProseMirror p,
+            .ProseMirror h1,
+            .ProseMirror h2,
+            .ProseMirror h3,
+            .ProseMirror li {
+              color: #000000 !important;
+            }
+          `}</style>
           <EditorContent editor={editor} />
         </div>
       </div>
