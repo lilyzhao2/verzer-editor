@@ -65,36 +65,36 @@ export default function LiveDocEditor() {
             type="text"
             value={documentName}
             onChange={(e) => setDocumentName(e.target.value)}
-            className="text-lg text-gray-900 bg-transparent border-none focus:outline-none focus:border-b focus:border-blue-500 px-1 min-w-[200px]"
+            className="text-lg text-black bg-transparent border-none focus:outline-none focus:border-b focus:border-blue-500 px-1 min-w-[200px]"
             placeholder="Untitled Document"
           />
           
           {/* Star Icon */}
-          <button className="text-gray-400 hover:text-gray-600" title="Star">
+          <button className="text-black hover:text-gray-600" title="Star">
             ☆
           </button>
           
           {/* Move to folder */}
-          <button className="text-gray-400 hover:text-gray-600" title="Move">
+          <button className="text-black hover:text-gray-600" title="Move">
             📁
           </button>
           
           {/* Cloud icon */}
-          <button className="text-gray-400 hover:text-gray-600" title="Saved">
+          <button className="text-black hover:text-gray-600" title="Saved">
             ☁️
           </button>
         </div>
         
         {/* Menu Bar */}
         <div className="flex items-center gap-4 mt-2 text-sm">
-          <button className="text-gray-700 hover:bg-gray-100 px-3 py-1 rounded">File</button>
-          <button className="text-gray-700 hover:bg-gray-100 px-3 py-1 rounded">Edit</button>
-          <button className="text-gray-700 hover:bg-gray-100 px-3 py-1 rounded">View</button>
-          <button className="text-gray-700 hover:bg-gray-100 px-3 py-1 rounded">Insert</button>
-          <button className="text-gray-700 hover:bg-gray-100 px-3 py-1 rounded">Format</button>
-          <button className="text-gray-700 hover:bg-gray-100 px-3 py-1 rounded">Tools</button>
-          <button className="text-gray-700 hover:bg-gray-100 px-3 py-1 rounded">Extensions</button>
-          <button className="text-gray-700 hover:bg-gray-100 px-3 py-1 rounded">Help</button>
+          <button className="text-black hover:bg-gray-100 px-3 py-1 rounded">File</button>
+          <button className="text-black hover:bg-gray-100 px-3 py-1 rounded">Edit</button>
+          <button className="text-black hover:bg-gray-100 px-3 py-1 rounded">View</button>
+          <button className="text-black hover:bg-gray-100 px-3 py-1 rounded">Insert</button>
+          <button className="text-black hover:bg-gray-100 px-3 py-1 rounded">Format</button>
+          <button className="text-black hover:bg-gray-100 px-3 py-1 rounded">Tools</button>
+          <button className="text-black hover:bg-gray-100 px-3 py-1 rounded">Extensions</button>
+          <button className="text-black hover:bg-gray-100 px-3 py-1 rounded">Help</button>
           
           <div className="flex-1" />
           
@@ -111,7 +111,7 @@ export default function LiveDocEditor() {
       </div>
 
       {/* Toolbar - Like Google Docs */}
-      <div className="bg-gray-50 border-b border-gray-300 px-6 py-2 flex items-center gap-1">
+      <div className="bg-gray-50 border-b border-gray-300 px-6 py-2 flex items-center gap-1 text-black">
         {/* Undo/Redo */}
         <button
           onClick={() => editor.chain().focus().undo().run()}
@@ -119,7 +119,7 @@ export default function LiveDocEditor() {
           className="p-2 hover:bg-gray-200 rounded disabled:opacity-30 disabled:hover:bg-transparent"
           title="Undo (Ctrl+Z)"
         >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="w-5 h-5 text-black" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
           </svg>
         </button>
@@ -129,7 +129,7 @@ export default function LiveDocEditor() {
           className="p-2 hover:bg-gray-200 rounded disabled:opacity-30 disabled:hover:bg-transparent"
           title="Redo (Ctrl+Y)"
         >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="w-5 h-5 text-black" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 10h-10a8 8 0 00-8 8v2m18-10l-6 6m6-6l-6-6" />
           </svg>
         </button>
@@ -138,14 +138,14 @@ export default function LiveDocEditor() {
 
         {/* Print */}
         <button className="p-2 hover:bg-gray-200 rounded" title="Print (Ctrl+P)">
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="w-5 h-5 text-black" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
           </svg>
         </button>
 
         {/* Spelling */}
         <button className="p-2 hover:bg-gray-200 rounded" title="Spelling and grammar check">
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="w-5 h-5 text-black" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
         </button>
@@ -153,7 +153,7 @@ export default function LiveDocEditor() {
         <div className="w-px h-6 bg-gray-300 mx-1" />
 
         {/* Zoom */}
-        <select className="text-sm border-none bg-transparent px-2 py-1 hover:bg-gray-200 rounded">
+        <select className="text-sm border-none bg-transparent px-2 py-1 hover:bg-gray-200 rounded text-black">
           <option>100%</option>
           <option>90%</option>
           <option>75%</option>
@@ -164,7 +164,7 @@ export default function LiveDocEditor() {
 
         {/* Style Dropdown */}
         <select
-          className="text-sm border-none bg-transparent px-3 py-1 hover:bg-gray-200 rounded min-w-[120px]"
+          className="text-sm border-none bg-transparent px-3 py-1 hover:bg-gray-200 rounded min-w-[120px] text-black"
           onChange={(e) => {
             const level = e.target.value;
             if (level === 'p') {
@@ -181,7 +181,7 @@ export default function LiveDocEditor() {
         </select>
 
         {/* Font Family */}
-        <select className="text-sm border-none bg-transparent px-3 py-1 hover:bg-gray-200 rounded min-w-[100px]">
+        <select className="text-sm border-none bg-transparent px-3 py-1 hover:bg-gray-200 rounded min-w-[100px] text-black">
           <option>Arial</option>
           <option>Times New Roman</option>
           <option>Calibri</option>
@@ -189,7 +189,7 @@ export default function LiveDocEditor() {
         </select>
 
         {/* Font Size */}
-        <select className="text-sm border-none bg-transparent px-2 py-1 hover:bg-gray-200 rounded">
+        <select className="text-sm border-none bg-transparent px-2 py-1 hover:bg-gray-200 rounded text-black">
           <option>11</option>
           <option>10</option>
           <option>12</option>
@@ -270,7 +270,7 @@ export default function LiveDocEditor() {
           }`}
           title="Align left (Ctrl+Shift+L)"
         >
-          <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+          <svg className="w-5 h-5 text-black" fill="currentColor" viewBox="0 0 20 20">
             <path fillRule="evenodd" d="M3 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h6a1 1 0 110 2H4a1 1 0 01-1-1z" />
           </svg>
         </button>
@@ -283,7 +283,7 @@ export default function LiveDocEditor() {
           }`}
           title="Align center (Ctrl+Shift+E)"
         >
-          <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+          <svg className="w-5 h-5 text-black" fill="currentColor" viewBox="0 0 20 20">
             <path fillRule="evenodd" d="M3 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm2 4a1 1 0 011-1h8a1 1 0 110 2H6a1 1 0 01-1-1zm3 4a1 1 0 011-1h2a1 1 0 110 2H9a1 1 0 01-1-1z" />
           </svg>
         </button>
@@ -296,7 +296,7 @@ export default function LiveDocEditor() {
           }`}
           title="Align right (Ctrl+Shift+R)"
         >
-          <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+          <svg className="w-5 h-5 text-black" fill="currentColor" viewBox="0 0 20 20">
             <path fillRule="evenodd" d="M3 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm6 4a1 1 0 011-1h6a1 1 0 110 2h-6a1 1 0 01-1-1z" />
           </svg>
         </button>
@@ -309,7 +309,7 @@ export default function LiveDocEditor() {
           }`}
           title="Justify (Ctrl+Shift+J)"
         >
-          <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+          <svg className="w-5 h-5 text-black" fill="currentColor" viewBox="0 0 20 20">
             <path fillRule="evenodd" d="M3 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" />
           </svg>
         </button>
