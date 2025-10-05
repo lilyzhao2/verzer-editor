@@ -195,6 +195,7 @@ export default function LiveDocEditor() {
   const [zoomLevel, setZoomLevel] = useState(100);
   const [formatPainterActive, setFormatPainterActive] = useState(false);
   const [copiedFormat, setCopiedFormat] = useState<any>(null);
+  const [versionStartContent, setVersionStartContent] = useState<string>('');
 
   const handleAddComment = () => {
     setAIMenuVisible(false);
@@ -474,49 +475,64 @@ export default function LiveDocEditor() {
     };
   }, [editor, changesSinceLastSave, versionSettings]);
 
-  // Track edits in suggesting mode with simpler approach
+  // Store version start content when entering suggesting mode
   React.useEffect(() => {
-    if (!editor || editingMode !== 'suggesting') {
-      // Clear tracked edits when not in suggesting mode
-      if (trackedEdits.length > 0) {
-        setTrackedEdits([]);
-      }
+    if (editor && editingMode === 'suggesting' && !versionStartContent) {
+      setVersionStartContent(editor.getHTML());
+      setTrackedEdits([]); // Clear old edits
+    } else if (editingMode !== 'suggesting') {
+      setVersionStartContent('');
+      setTrackedEdits([]);
+    }
+  }, [editor, editingMode]);
+
+  // Track edits in suggesting mode by comparing with version start
+  React.useEffect(() => {
+    if (!editor || editingMode !== 'suggesting' || !versionStartContent) {
       return;
     }
 
-    const handleTransaction = ({ transaction }: any) => {
-      if (!transaction.docChanged) return;
+    let debounceTimer: NodeJS.Timeout;
 
-      // Simple change tracking: mark any change at the cursor position
-      const { from, to } = transaction.selection;
-      
-      if (from !== to || transaction.steps.length > 0) {
-        // User made an edit - add visual marker
-        const newEdit: TrackedEdit = {
-          id: `edit-${Date.now()}`,
-          userId: 'user-1',
-          userName: 'You',
-          userColor: '#ff9800', // Orange
-          type: 'insertion',
-          from: Math.max(0, from - 1),
-          to: Math.min(editor.state.doc.content.size, to + 1),
-          text: 'edit',
-          timestamp: new Date(),
-        };
+    const handleUpdate = () => {
+      // Debounce to avoid too many updates
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        const currentContent = editor.getText();
+        const startContent = editor.state.doc.textContent;
         
-        setTrackedEdits((prev) => {
-          // Limit to last 20 edits for performance
-          const updated = [...prev, newEdit].slice(-20);
-          return updated;
-        });
-      }
+        // For now, create a simple edit record for any change
+        // In production, you'd use a proper diff algorithm
+        if (currentContent !== startContent && currentContent.trim()) {
+          const newEdit: TrackedEdit = {
+            id: `edit-${Date.now()}`,
+            userId: 'user-1',
+            userName: 'You',
+            userColor: '#ff9800', // Orange
+            type: 'insertion',
+            from: 0,
+            to: currentContent.length,
+            text: currentContent.slice(-50), // Last 50 chars as preview
+            timestamp: new Date(),
+          };
+          
+          setTrackedEdits((prev) => {
+            // Only add if different from last edit
+            if (prev.length === 0 || prev[prev.length - 1].text !== newEdit.text) {
+              return [...prev, newEdit].slice(-20); // Keep last 20
+            }
+            return prev;
+          });
+        }
+      }, 500); // 500ms debounce
     };
 
-    editor.on('transaction', handleTransaction);
+    editor.on('update', handleUpdate);
     return () => {
-      editor.off('transaction', handleTransaction);
+      editor.off('update', handleUpdate);
+      clearTimeout(debounceTimer);
     };
-  }, [editor, editingMode]);
+  }, [editor, editingMode, versionStartContent]);
 
   if (!editor) {
     return null;
