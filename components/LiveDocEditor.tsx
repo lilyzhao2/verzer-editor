@@ -15,6 +15,7 @@ import { TrackChangesExtension, TrackedEdit } from '@/lib/track-changes-v3';
 import { CommentsExtension, Comment, CommentReply } from '@/lib/comments-extension';
 import { AIInlineExtension } from '@/lib/ai-inline-extension';
 import { DocumentVersion, VersionHistorySettings } from '@/lib/version-types';
+import { TabAutocompleteExtension } from '@/lib/tab-autocomplete-extension';
 
 /**
  * MODE 1: LIVE DOC EDITOR
@@ -113,6 +114,24 @@ export default function LiveDocEditor() {
         },
       }),
       AIInlineExtension,
+      TabAutocompleteExtension.configure({
+        enabled: true,
+        onRequestCompletion: async (context: string) => {
+          // Simulate AI completion (replace with real API call)
+          await new Promise(resolve => setTimeout(resolve, 300));
+          
+          // Mock completions based on context
+          const lastWord = context.trim().split(' ').pop() || '';
+          const completions: Record<string, string> = {
+            'The': ' quick brown fox jumps over the lazy dog.',
+            'Hello': ', how are you doing today?',
+            'I': ' think this is a great idea to implement.',
+            'This': ' document will help us achieve our goals.',
+          };
+          
+          return completions[lastWord] || ' is an interesting topic to explore further.';
+        },
+      }),
     ],
     content: '<p></p>',
     immediatelyRender: false,
@@ -169,18 +188,26 @@ export default function LiveDocEditor() {
   const [aiRewrites, setAIRewrites] = useState<string[]>([]);
   const [showAIResults, setShowAIResults] = useState(false);
   const [aiResultType, setAIResultType] = useState<'thoughts' | 'rewrites'>('thoughts');
+  const [showCommentInput, setShowCommentInput] = useState(false);
+  const [showRewriteInput, setShowRewriteInput] = useState(false);
+  const [commentInputValue, setCommentInputValue] = useState('');
+  const [rewritePromptValue, setRewritePromptValue] = useState('');
 
   const handleAddComment = () => {
     setAIMenuVisible(false);
-    const commentText = prompt('Add comment:');
-    if (!commentText) return;
+    setShowCommentInput(true);
+    setCommentInputValue('');
+  };
+
+  const submitComment = () => {
+    if (!commentInputValue.trim()) return;
 
     const newComment: Comment = {
       id: `comment-${Date.now()}`,
       userId: 'user-1',
       userName: 'You',
       userColor: '#4285f4',
-      text: commentText,
+      text: commentInputValue,
       from: aiMenuSelection.from,
       to: aiMenuSelection.to,
       timestamp: new Date(),
@@ -190,6 +217,8 @@ export default function LiveDocEditor() {
 
     setComments([...comments, newComment]);
     setShowCommentSidebar(true);
+    setShowCommentInput(false);
+    setCommentInputValue('');
   };
 
   const handleAskAI = async () => {
@@ -209,19 +238,16 @@ export default function LiveDocEditor() {
 
   const handleRewriteText = async () => {
     setAIMenuVisible(false);
-    
-    // Ask for custom prompt
-    const customPrompt = prompt(
-      `How should AI rewrite this text?\n\nSelected: "${aiMenuSelection.text}"\n\nEnter your rewrite instructions (or leave blank for general improvements):`
-    );
-    
-    // User cancelled
-    if (customPrompt === null) return;
-    
+    setShowRewriteInput(true);
+    setRewritePromptValue('');
+  };
+
+  const submitRewritePrompt = () => {
     setAIResultType('rewrites');
     
     // Simulate AI rewrites with custom prompt (replace with real API call)
-    const mockRewrites = customPrompt.trim()
+    const customPrompt = rewritePromptValue.trim();
+    const mockRewrites = customPrompt
       ? [
           `${aiMenuSelection.text} (rewritten with: ${customPrompt})`,
           `${aiMenuSelection.text.toUpperCase()} - styled per your request`,
@@ -235,6 +261,8 @@ export default function LiveDocEditor() {
     
     setAIRewrites(mockRewrites);
     setShowAIResults(true);
+    setShowRewriteInput(false);
+    setRewritePromptValue('');
   };
 
   const handleSelectAIThought = (thought: string) => {
@@ -1087,6 +1115,110 @@ export default function LiveDocEditor() {
             <span>✨</span>
             <span>Ask AI to rewrite</span>
           </button>
+        </div>
+      )}
+
+      {/* Comment Input Panel */}
+      {showCommentInput && (
+        <div className="fixed right-4 top-1/2 -translate-y-1/2 w-96 bg-white border border-gray-300 rounded-lg shadow-2xl z-50">
+          <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between bg-blue-50">
+            <h3 className="text-sm font-semibold text-black flex items-center gap-2">
+              💬 Add Comment
+            </h3>
+            <button
+              onClick={() => setShowCommentInput(false)}
+              className="text-gray-500 hover:text-black text-xl"
+            >
+              ✕
+            </button>
+          </div>
+
+          <div className="p-4">
+            <p className="text-xs text-gray-600 mb-2">
+              Selected: <span className="font-medium text-black">"{aiMenuSelection.text}"</span>
+            </p>
+            <textarea
+              value={commentInputValue}
+              onChange={(e) => setCommentInputValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && e.metaKey) {
+                  submitComment();
+                }
+              }}
+              placeholder="Type your comment..."
+              className="w-full px-3 py-2 text-sm text-black border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 min-h-[100px]"
+              autoFocus
+            />
+            <div className="flex items-center justify-between mt-3">
+              <span className="text-xs text-gray-500">Cmd+Enter to submit</span>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setShowCommentInput(false)}
+                  className="px-3 py-1.5 text-xs font-medium text-gray-700 bg-gray-100 rounded hover:bg-gray-200"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={submitComment}
+                  className="px-3 py-1.5 text-xs font-medium text-white bg-blue-600 rounded hover:bg-blue-700"
+                >
+                  Add Comment
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Rewrite Prompt Input Panel */}
+      {showRewriteInput && (
+        <div className="fixed right-4 top-1/2 -translate-y-1/2 w-96 bg-white border border-gray-300 rounded-lg shadow-2xl z-50">
+          <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between bg-gradient-to-r from-purple-50 to-blue-50">
+            <h3 className="text-sm font-semibold text-black flex items-center gap-2">
+              ✨ AI Rewrite Instructions
+            </h3>
+            <button
+              onClick={() => setShowRewriteInput(false)}
+              className="text-gray-500 hover:text-black text-xl"
+            >
+              ✕
+            </button>
+          </div>
+
+          <div className="p-4">
+            <p className="text-xs text-gray-600 mb-2">
+              Selected: <span className="font-medium text-black">"{aiMenuSelection.text}"</span>
+            </p>
+            <textarea
+              value={rewritePromptValue}
+              onChange={(e) => setRewritePromptValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && e.metaKey) {
+                  submitRewritePrompt();
+                }
+              }}
+              placeholder="How should AI rewrite this? (leave blank for general improvements)"
+              className="w-full px-3 py-2 text-sm text-black border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 min-h-[100px]"
+              autoFocus
+            />
+            <div className="flex items-center justify-between mt-3">
+              <span className="text-xs text-gray-500">Cmd+Enter to generate</span>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setShowRewriteInput(false)}
+                  className="px-3 py-1.5 text-xs font-medium text-gray-700 bg-gray-100 rounded hover:bg-gray-200"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={submitRewritePrompt}
+                  className="px-3 py-1.5 text-xs font-medium text-white bg-gradient-to-r from-purple-600 to-blue-600 rounded hover:opacity-90"
+                >
+                  Generate Options
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
