@@ -71,8 +71,12 @@ export default function LiveDocEditor() {
   // Track Changes is auto-enabled in Suggesting mode
   const trackChangesEnabled = editingMode === 'suggesting';
   const editorEditable = editingMode !== 'viewing';
+  const isSuggestingMode = editingMode === 'suggesting';
 
   const editor = useEditor({
+    editorProps: {
+      editable: () => editorEditable,
+    },
     extensions: [
       StarterKit.configure({
         heading: {
@@ -126,7 +130,7 @@ export default function LiveDocEditor() {
       }),
       AIInlineExtension,
       SuggestChangesExtension.configure({
-        enabled: editingMode === 'suggesting',
+        enabled: isSuggestingMode,
         userId: 'user-1',
         userName: 'You',
       }),
@@ -543,21 +547,25 @@ export default function LiveDocEditor() {
   React.useEffect(() => {
     if (!editor) return;
     
+    const shouldEnable = editingMode === 'suggesting';
     console.log('🔄 Mode changed to:', editingMode);
+    console.log('🔄 Setting suggest changes to:', shouldEnable);
     
     let found = false;
     editor.extensionManager.extensions.forEach((ext) => {
-      console.log('Extension:', ext.name);
       if (ext.name === 'suggestChanges') {
-        (ext.options as any).enabled = editingMode === 'suggesting';
+        (ext.options as any).enabled = shouldEnable;
         found = true;
-        console.log('✅ Suggest changes enabled:', editingMode === 'suggesting');
+        console.log('✅ Suggest changes enabled:', shouldEnable);
       }
     });
     
     if (!found) {
       console.error('❌ SuggestChanges extension not found!');
     }
+    
+    // Force editor update
+    editor.view.updateState(editor.view.state);
   }, [editor, editingMode]);
 
   // Handle mode switching - suggestions persist across modes
