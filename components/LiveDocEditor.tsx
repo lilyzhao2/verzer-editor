@@ -543,11 +543,21 @@ export default function LiveDocEditor() {
   React.useEffect(() => {
     if (!editor) return;
     
+    console.log('🔄 Mode changed to:', editingMode);
+    
+    let found = false;
     editor.extensionManager.extensions.forEach((ext) => {
+      console.log('Extension:', ext.name);
       if (ext.name === 'suggestChanges') {
         (ext.options as any).enabled = editingMode === 'suggesting';
+        found = true;
+        console.log('✅ Suggest changes enabled:', editingMode === 'suggesting');
       }
     });
+    
+    if (!found) {
+      console.error('❌ SuggestChanges extension not found!');
+    }
   }, [editor, editingMode]);
 
   // Handle mode switching - suggestions persist across modes

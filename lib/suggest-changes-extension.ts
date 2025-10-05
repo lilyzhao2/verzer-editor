@@ -32,39 +32,53 @@ export const SuggestChangesExtension = Extension.create<SuggestChangesOptions>({
         key: new PluginKey('suggestChanges'),
         
         appendTransaction: (transactions, oldState, newState) => {
-          if (!enabled) return null;
+          if (!enabled) {
+            console.log('❌ Suggest changes disabled');
+            return null;
+          }
 
           // Only process user input transactions
-          const userTransaction = transactions.find(tr => tr.docChanged && !tr.getMeta('paste'));
-          if (!userTransaction) return null;
+          const userTransaction = transactions.find(tr => tr.docChanged && !tr.getMeta('preventSuggestChanges'));
+          if (!userTransaction) {
+            console.log('⚠️ No user transaction found');
+            return null;
+          }
 
           const tr = newState.tr;
+          tr.setMeta('preventSuggestChanges', true); // Prevent infinite loop
           let modified = false;
 
+          console.log('🔍 Processing transaction...');
+
+          // Simple approach: Just mark all new text with insertion mark
           userTransaction.steps.forEach((step, index) => {
-            const stepMap = userTransaction.mapping.maps[index];
             const stepJSON: any = step.toJSON();
+            console.log('Step:', stepJSON);
 
-            // Handle insertions
-            if (stepJSON.stepType === 'replace' || stepJSON.stepType === 'replaceAround') {
-              stepMap.forEach((oldStart, oldEnd, newStart, newEnd) => {
-                // Text was inserted (new range is larger)
-                if (newEnd > newStart && newStart >= 0) {
-                  const insertedLength = newEnd - newStart;
-                  
-                  if (insertedLength > 0) {
-                    const from = newStart;
-                    const to = newEnd;
+            if (stepJSON.stepType === 'replace') {
+              const from = stepJSON.from;
+              const to = stepJSON.to;
+              const slice = stepJSON.slice;
 
-                    // Check if this range already has insertion mark
-                    const hasInsertionMark = newState.doc.rangeHasMark(from, to, newState.schema.marks.insertion);
+              // Check if text was inserted
+              if (slice && slice.content && slice.content.length > 0) {
+                const content = slice.content[0];
+                if (content && content.content) {
+                  let insertedText = '';
+                  content.content.forEach((node: any) => {
+                    if (node.text) insertedText += node.text;
+                  });
+
+                  if (insertedText) {
+                    console.log('✅ Detected insertion:', insertedText);
                     
-                    if (!hasInsertionMark) {
-                      // Apply insertion mark to new content
+                    // Mark the newly inserted text
+                    const insertionMark = newState.schema.marks.insertion;
+                    if (insertionMark) {
                       tr.addMark(
                         from,
-                        to,
-                        newState.schema.marks.insertion.create({
+                        from + insertedText.length,
+                        insertionMark.create({
                           id: `insert-${Date.now()}-${index}`,
                           userId,
                           userName,
@@ -75,35 +89,11 @@ export const SuggestChangesExtension = Extension.create<SuggestChangesOptions>({
                     }
                   }
                 }
-
-                // Text was deleted (old range exists, new range is smaller/empty)
-                if (oldEnd > oldStart && newEnd === newStart) {
-                  // Instead of deleting, mark as deleted
-                  const deletedContent = oldState.doc.slice(oldStart, oldEnd);
-                  
-                  // Insert the deleted content back with deletion mark
-                  tr.insert(
-                    newStart,
-                    deletedContent.content
-                  );
-                  
-                  // Mark it as deleted
-                  tr.addMark(
-                    newStart,
-                    newStart + (oldEnd - oldStart),
-                    newState.schema.marks.deletion.create({
-                      id: `delete-${Date.now()}-${index}`,
-                      userId,
-                      userName,
-                      timestamp: Date.now(),
-                    })
-                  );
-                  modified = true;
-                }
-              });
+              }
             }
           });
 
+          console.log('Modified:', modified);
           return modified ? tr : null;
         },
       }),
