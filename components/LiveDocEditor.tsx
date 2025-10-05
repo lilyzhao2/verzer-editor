@@ -17,6 +17,7 @@ import { AIInlineExtension } from '@/lib/ai-inline-extension';
 import { DocumentVersion, VersionHistorySettings } from '@/lib/version-types';
 import { TabAutocompleteExtension } from '@/lib/tab-autocomplete-extension';
 import { InlineMarkupExtension } from '@/lib/inline-markup-plugin';
+import { TrackChangesPlugin, type TrackedChange as PluginTrackedChange } from '@/lib/track-changes-plugin';
 import { diffWords } from 'diff';
 import { advancedDiff, getDiffStats, type AdvancedChange } from '@/lib/advanced-diff';
 
@@ -124,8 +125,26 @@ export default function LiveDocEditor() {
         },
       }),
       AIInlineExtension,
-      InlineMarkupExtension.configure({
-        trackedEdits,
+      TrackChangesPlugin.configure({
+        enabled: editingMode === 'suggesting',
+        userId: 'user-1',
+        userName: 'You',
+        userColor: '#ff9800',
+        onChangesUpdate: (changes) => {
+          // Convert to TrackedEdit format for sidebar
+          const edits: TrackedEdit[] = changes.map(c => ({
+            id: c.id,
+            userId: c.userId,
+            userName: c.userName,
+            userColor: c.userColor,
+            type: c.type,
+            from: c.from,
+            to: c.to,
+            text: c.text,
+            timestamp: new Date(c.timestamp),
+          }));
+          setTrackedEdits(edits);
+        },
       }),
       TabAutocompleteExtension.configure({
         enabled: true,
@@ -536,20 +555,19 @@ export default function LiveDocEditor() {
     };
   }, [editor, changesSinceLastSave, versionSettings]);
 
-  // Update inline markup when tracked edits change
+  // Update plugin enabled state when mode changes
   React.useEffect(() => {
     if (!editor) return;
     
-    // Force re-render of decorations
     editor.extensionManager.extensions.forEach((ext) => {
-      if (ext.name === 'inlineMarkup') {
-        (ext.options as any).trackedEdits = trackedEdits;
+      if (ext.name === 'trackChangesPlugin') {
+        (ext.options as any).enabled = editingMode === 'suggesting';
       }
     });
     
-    // Trigger view update
+    // Trigger view update to re-render decorations
     editor.view.dispatch(editor.state.tr);
-  }, [editor, trackedEdits]);
+  }, [editor, editingMode]);
 
   // Handle mode switching - suggestions persist across modes
   React.useEffect(() => {
@@ -567,84 +585,8 @@ export default function LiveDocEditor() {
     // Note: No cleanup when switching to editing mode - suggestions remain visible
   }, [editor, editingMode, currentVersion, versionStartContent]);
 
-  // Track edits in suggesting mode with proper diff detection
-  React.useEffect(() => {
-    if (!editor || editingMode !== 'suggesting') {
-      return;
-    }
-
-    let debounceTimer: NodeJS.Timeout;
-
-    const handleUpdate = () => {
-      clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(() => {
-        if (!versionStartContent) return;
-
-        const currentText = editor.getText();
-        const baselineText = new DOMParser()
-          .parseFromString(versionStartContent, 'text/html')
-          .body.textContent || '';
-
-        if (currentText === baselineText) return;
-
-        // Use advanced diff engine for semantic understanding
-        const advancedChanges = advancedDiff({
-          baseline: baselineText,
-          current: currentText,
-          baselineHTML: versionStartContent,
-          currentHTML: editor.getHTML(),
-        });
-
-        // Convert to TrackedEdit format
-        const trackedChanges: TrackedEdit[] = advancedChanges.map((change) => {
-          let displayText = '';
-          
-          if (change.type === 'move') {
-            displayText = `📦 Moved: "${(change.originalText || '').substring(0, 50)}..."`;
-          } else if (change.type === 'replacement') {
-            displayText = `"${(change.originalText || '').trim()}" → "${(change.newText || '').trim()}"`;
-          } else if (change.type === 'deletion') {
-            displayText = change.originalText || '';
-          } else if (change.type === 'insertion') {
-            displayText = change.newText || '';
-          }
-
-          // Map advanced change type to TrackedEdit type
-          let editType: 'insertion' | 'deletion' = 
-            change.type === 'insertion' || change.type === 'move' ? 'insertion' : 'deletion';
-
-          return {
-            id: change.id,
-            userId: 'user-1',
-            userName: 'You',
-            userColor: '#ff9800', // Orange for user edits
-            type: editType,
-            from: change.from,
-            to: change.to,
-            text: displayText,
-            timestamp: new Date(),
-          };
-        });
-
-        if (trackedChanges.length > 0) {
-          const stats = getDiffStats(advancedChanges);
-          console.log('✏️ Advanced diff detected:', {
-            changes: trackedChanges.length,
-            stats,
-            confidence: advancedChanges.reduce((acc, c) => acc + c.confidence, 0) / advancedChanges.length,
-          });
-          setTrackedEdits(trackedChanges.slice(0, 30)); // Keep latest 30
-        }
-      }, 500); // 500ms debounce
-    };
-
-    editor.on('update', handleUpdate);
-    
-    return () => {
-      editor.off('update', handleUpdate);
-      clearTimeout(debounceTimer);
-    };
-  }, [editor, editingMode, versionStartContent]);
+  // NOTE: Track changes now handled by TrackChangesPlugin directly
+  // This intercepts transactions and marks changes inline in real-time
 
   if (!editor) {
     return null;
