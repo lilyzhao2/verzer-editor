@@ -27,17 +27,35 @@ export const SuggestChangesExtension = Extension.create<SuggestChangesOptions>({
   addProseMirrorPlugins() {
     const extension = this;
     const { enabled, userId, userName } = this.options;
+    
+    // Create a shared state object that can be mutated
+    const pluginState = { enabled, userId, userName };
 
     return [
       new Plugin({
         key: new PluginKey('suggestChanges'),
         
+        state: {
+          init() {
+            return pluginState;
+          },
+          apply(tr, value) {
+            // Update from meta if provided
+            const meta = tr.getMeta('suggestChangesConfig');
+            if (meta) {
+              Object.assign(pluginState, meta);
+              console.log('📝 Plugin state updated:', pluginState);
+            }
+            return pluginState;
+          },
+        },
+        
         appendTransaction: (transactions, oldState, newState) => {
-          // Check the CURRENT enabled state from options
-          const currentEnabled = extension.options.enabled;
-          console.log('🔍 Checking enabled state:', currentEnabled, '(initial enabled was:', enabled, ')');
+          // Get state from the plugin
+          const state = this.getState(newState);
+          console.log('🔍 Checking enabled state:', state?.enabled, '(initial enabled was:', enabled, ')');
           
-          if (!currentEnabled) {
+          if (!state?.enabled) {
             console.log('❌ Suggest changes disabled');
             return null;
           }

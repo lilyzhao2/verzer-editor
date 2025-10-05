@@ -551,21 +551,16 @@ export default function LiveDocEditor() {
     console.log('🔄 Mode changed to:', editingMode);
     console.log('🔄 Setting suggest changes to:', shouldEnable);
     
-    let found = false;
-    editor.extensionManager.extensions.forEach((ext) => {
-      if (ext.name === 'suggestChanges') {
-        (ext.options as any).enabled = shouldEnable;
-        found = true;
-        console.log('✅ Suggest changes enabled:', shouldEnable);
-      }
+    // Send config update through transaction meta
+    const tr = editor.state.tr;
+    tr.setMeta('suggestChangesConfig', {
+      enabled: shouldEnable,
+      userId: 'user-1',
+      userName: 'You',
     });
+    editor.view.dispatch(tr);
     
-    if (!found) {
-      console.error('❌ SuggestChanges extension not found!');
-    }
-    
-    // Force editor update
-    editor.view.updateState(editor.view.state);
+    console.log('✅ Dispatched config update');
   }, [editor, editingMode]);
 
   // Handle mode switching - suggestions persist across modes
