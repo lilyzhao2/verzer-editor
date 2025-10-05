@@ -18,9 +18,11 @@ import { CommentsExtension, Comment, CommentReply } from '@/lib/comments-extensi
  * MODE 1: LIVE DOC EDITOR
  * Google Docs-style collaborative editor with AI assistance
  */
+type EditingMode = 'editing' | 'suggesting' | 'viewing';
+
 export default function LiveDocEditor() {
   const [documentName, setDocumentName] = useState('Untitled Document');
-  const [trackChangesEnabled, setTrackChangesEnabled] = useState(false);
+  const [editingMode, setEditingMode] = useState<EditingMode>('editing');
   const [trackedEdits, setTrackedEdits] = useState<TrackedEdit[]>([]);
   const [comments, setComments] = useState<Comment[]>([]);
   const [showCommentSidebar, setShowCommentSidebar] = useState(false);
@@ -29,6 +31,10 @@ export default function LiveDocEditor() {
     // Demo collaborators - will be real-time later
     // { id: 'user-2', name: 'Sarah', color: '#ea4335', position: 50 },
   ]);
+
+  // Track Changes is auto-enabled in Suggesting mode
+  const trackChangesEnabled = editingMode === 'suggesting';
+  const editorEditable = editingMode !== 'viewing';
 
   const editor = useEditor({
     extensions: [
@@ -83,6 +89,7 @@ export default function LiveDocEditor() {
     ],
     content: '<p></p>',
     immediatelyRender: false,
+    editable: editorEditable,
     editorProps: {
       attributes: {
         class: 'focus:outline-none',
@@ -137,6 +144,25 @@ export default function LiveDocEditor() {
           <button className="text-black hover:bg-gray-100 px-3 py-1 rounded">Help</button>
           
           <div className="flex-1" />
+          
+          {/* Mode Selector - Google Docs Style */}
+          <div className="relative">
+            <select
+              value={editingMode}
+              onChange={(e) => setEditingMode(e.target.value as EditingMode)}
+              className="px-3 py-1.5 pr-8 text-sm text-black bg-white border border-gray-300 rounded hover:bg-gray-50 cursor-pointer appearance-none"
+              style={{
+                backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3E%3C/svg%3E")`,
+                backgroundPosition: 'right 0.5rem center',
+                backgroundRepeat: 'no-repeat',
+                backgroundSize: '1.5em 1.5em',
+              }}
+            >
+              <option value="editing">✏️ Editing</option>
+              <option value="suggesting">📝 Suggesting</option>
+              <option value="viewing">👁️ Viewing</option>
+            </select>
+          </div>
           
           {/* Share Button */}
           <button className="px-6 py-2 text-sm font-medium text-white bg-blue-600 rounded-full hover:bg-blue-700">
@@ -331,18 +357,17 @@ export default function LiveDocEditor() {
 
         <div className="w-px h-6 bg-gray-300 mx-1" />
 
-        {/* Track Changes Toggle */}
-        <button
-          onClick={() => setTrackChangesEnabled(!trackChangesEnabled)}
-          className={`px-3 py-1.5 text-xs font-medium rounded ${
-            trackChangesEnabled
-              ? 'bg-green-600 text-white'
-              : 'bg-gray-200 text-black hover:bg-gray-300'
-          }`}
-          title="Track Changes"
-        >
-          📝 Track Changes {trackChangesEnabled && '✓'}
-        </button>
+        {/* Mode Status Indicator */}
+        {editingMode === 'suggesting' && (
+          <span className="px-3 py-1.5 text-xs font-medium bg-green-600 text-white rounded">
+            📝 Suggesting Mode Active
+          </span>
+        )}
+        {editingMode === 'viewing' && (
+          <span className="px-3 py-1.5 text-xs font-medium bg-gray-600 text-white rounded">
+            👁️ Read-Only Mode
+          </span>
+        )}
 
         <div className="w-px h-6 bg-gray-300 mx-1" />
 
