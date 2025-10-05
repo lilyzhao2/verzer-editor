@@ -32,7 +32,11 @@ export const SuggestChangesExtension = Extension.create<SuggestChangesOptions>({
         key: new PluginKey('suggestChanges'),
         
         appendTransaction: (transactions, oldState, newState) => {
-          if (!enabled) {
+          // Check the CURRENT enabled state from options
+          const currentEnabled = (extensionThis.options as any).enabled;
+          console.log('🔍 Checking enabled state:', currentEnabled, '(initial enabled was:', enabled, ')');
+          
+          if (!currentEnabled) {
             console.log('❌ Suggest changes disabled');
             return null;
           }
