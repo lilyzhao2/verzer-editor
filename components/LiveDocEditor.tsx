@@ -394,6 +394,53 @@ export default function LiveDocEditor() {
     setZoomLevel(100);
   };
 
+  // Wipe everything - reset to fresh state
+  const handleWipeEverything = () => {
+    const confirmed = window.confirm(
+      '⚠️ WARNING: This will delete EVERYTHING!\n\n' +
+      '• All versions\n' +
+      '• All comments\n' +
+      '• All tracked changes\n' +
+      '• All document content\n\n' +
+      'This action cannot be undone. Continue?'
+    );
+
+    if (!confirmed) return;
+
+    // Reset editor content
+    if (editor) {
+      editor.commands.setContent('<p></p>');
+    }
+
+    // Reset all state
+    setDocumentName('Untitled Document');
+    setVersions([{
+      id: 'v0',
+      versionNumber: 0,
+      content: '<p></p>',
+      timestamp: new Date(),
+      createdBy: 'You',
+      autoSaved: false,
+    }]);
+    setCurrentVersionId('v0');
+    setComments([]);
+    setTrackedEdits([]);
+    setVersionStartContent('');
+    setEditingMode('editing');
+    setShowCommentSidebar(false);
+    setShowVersionHistory(false);
+    setZoomLevel(100);
+
+    // Clear localStorage if you're using it
+    try {
+      localStorage.removeItem('verzer-live-doc-state');
+    } catch (e) {
+      // Ignore
+    }
+
+    alert('✓ Everything has been wiped. Starting fresh!');
+  };
+
   // Version History Functions
   const createNewVersion = (content: string, autoSaved: boolean = false) => {
     const newVersion: DocumentVersion = {
@@ -646,6 +693,15 @@ export default function LiveDocEditor() {
               title="Save new version"
             >
               💾 Save Version
+            </button>
+
+            {/* Wipe Everything Button */}
+            <button
+              onClick={handleWipeEverything}
+              className="px-3 py-1.5 text-xs font-medium text-white bg-red-600 rounded hover:bg-red-700"
+              title="Wipe everything (reset to blank)"
+            >
+              🗑️ Wipe All
             </button>
           </div>
           
