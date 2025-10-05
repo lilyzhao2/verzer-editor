@@ -74,44 +74,66 @@ export const SuggestChangesExtension = Extension.create<SuggestChangesOptions>({
 
           console.log('🔍 Processing transaction...');
 
-          // Simple approach: Just mark all new text with insertion mark
+          // Process each step
           userTransaction.steps.forEach((step, index) => {
             const stepJSON: any = step.toJSON();
-            console.log('Step:', stepJSON);
+            console.log('📦 Full step:', JSON.stringify(stepJSON, null, 2));
 
             if (stepJSON.stepType === 'replace') {
               const from = stepJSON.from;
               const to = stepJSON.to;
-              const slice = stepJSON.slice;
+              
+              console.log('📍 Position:', { from, to });
+              console.log('📄 Slice:', stepJSON.slice);
 
-              // Check if text was inserted
-              if (slice && slice.content && slice.content.length > 0) {
-                const content = slice.content[0];
-                if (content && content.content) {
-                  let insertedText = '';
-                  content.content.forEach((node: any) => {
-                    if (node.text) insertedText += node.text;
-                  });
-
-                  if (insertedText) {
-                    console.log('✅ Detected insertion:', insertedText);
-                    
-                    // Mark the newly inserted text
-                    const insertionMark = newState.schema.marks.insertion;
-                    if (insertionMark) {
-                      tr.addMark(
-                        from,
-                        from + insertedText.length,
-                        insertionMark.create({
-                          id: `insert-${Date.now()}-${index}`,
-                          userId,
-                          userName,
-                          timestamp: Date.now(),
-                        })
-                      );
-                      modified = true;
-                    }
+              // Get the inserted text from the new state
+              if (from < to) {
+                // Text was replaced/deleted
+                const insertedText = newState.doc.textBetween(from, to);
+                console.log('🔄 Replaced text:', insertedText);
+              } else if (stepJSON.slice && stepJSON.slice.content) {
+                // Text was inserted
+                let insertedText = '';
+                const content = stepJSON.slice.content;
+                
+                console.log('📝 Content array:', content);
+                
+                // Parse the content structure
+                content.forEach((item: any) => {
+                  if (item.type === 'text') {
+                    insertedText += item.text;
+                  } else if (item.content) {
+                    item.content.forEach((node: any) => {
+                      if (node.type === 'text') {
+                        insertedText += node.text;
+                      }
+                    });
                   }
+                });
+
+                if (insertedText) {
+                  console.log('✅ Detected insertion:', insertedText, 'at position', from);
+                  
+                  // Mark the newly inserted text
+                  const insertionMark = newState.schema.marks.insertion;
+                  if (insertionMark) {
+                    tr.addMark(
+                      from,
+                      from + insertedText.length,
+                      insertionMark.create({
+                        id: `insert-${Date.now()}-${index}`,
+                        userId: state.userId,
+                        userName: state.userName,
+                        timestamp: Date.now(),
+                      })
+                    );
+                    modified = true;
+                    console.log('✨ Applied insertion mark from', from, 'to', from + insertedText.length);
+                  } else {
+                    console.error('❌ Insertion mark not found in schema!');
+                  }
+                } else {
+                  console.log('⚠️ No text found in insertion');
                 }
               }
             }
