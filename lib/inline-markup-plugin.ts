@@ -12,6 +12,29 @@ export interface InlineMarkupOptions {
   trackedEdits: TrackedEdit[];
 }
 
+/**
+ * Find text in document and return positions
+ */
+function findTextPositions(doc: any, searchText: string): Array<{ from: number; to: number }> {
+  const positions: Array<{ from: number; to: number }> = [];
+  const docText = doc.textContent;
+  
+  let index = 0;
+  while (index < docText.length) {
+    const found = docText.indexOf(searchText, index);
+    if (found === -1) break;
+    
+    positions.push({
+      from: found + 1, // +1 because ProseMirror positions start at 1
+      to: found + searchText.length + 1,
+    });
+    
+    index = found + searchText.length;
+  }
+  
+  return positions;
+}
+
 export const InlineMarkupExtension = Extension.create<InlineMarkupOptions>({
   name: 'inlineMarkup',
 
@@ -33,76 +56,93 @@ export const InlineMarkupExtension = Extension.create<InlineMarkupOptions>({
             const decorations: Decoration[] = [];
             const { trackedEdits } = extensionThis.options;
 
+            if (!trackedEdits || trackedEdits.length === 0) {
+              return DecorationSet.empty;
+            }
+
             trackedEdits.forEach((edit) => {
               try {
-                const from = Math.max(0, edit.from);
-                const to = Math.min(state.doc.content.size, edit.to);
-
-                if (from >= to || from < 0 || to > state.doc.content.size) {
-                  return; // Invalid position
-                }
-
                 // Check if this is a move or replacement
                 const isMoved = edit.text.includes('📦 Moved');
                 const isReplacement = edit.text.includes('→') && !isMoved;
 
-                if (edit.type === 'insertion') {
-                  if (isMoved) {
-                    // Purple for moved text
-                    decorations.push(
-                      Decoration.inline(from, to, {
-                        class: 'suggestion-move',
-                        style: 'background-color: #e9d5ff; border-bottom: 2px solid #a855f7; padding: 1px 2px; border-radius: 2px;',
-                      })
-                    );
-                  } else {
-                    // Green for insertions
-                    decorations.push(
-                      Decoration.inline(from, to, {
-                        class: 'suggestion-insertion',
-                        style: 'background-color: #dcfce7; border-bottom: 2px solid #16a34a; padding: 1px 2px; border-radius: 2px;',
-                      })
-                    );
-                  }
-                } else if (edit.type === 'deletion') {
-                  if (isReplacement) {
-                    // Blue for replacements - show both old and new
-                    const [oldText, newText] = edit.text.split('→').map(s => s.trim().replace(/"/g, ''));
+                if (edit.type === 'insertion' && !isMoved) {
+                  // Green for insertions - find the text in document
+                  const positions = findTextPositions(state.doc, edit.text.trim());
+                  
+                  positions.forEach(pos => {
+                    if (pos.from > 0 && pos.to <= state.doc.content.size) {
+                      decorations.push(
+                        Decoration.inline(pos.from, pos.to, {
+                          class: 'suggestion-insertion',
+                          style: 'background-color: #dcfce7; border-bottom: 2px solid #16a34a; padding: 1px 2px; border-radius: 2px;',
+                        })
+                      );
+                    }
+                  });
+                } else if (edit.type === 'deletion' && !isReplacement) {
+                  // Red for deletions - show as widget where deletion occurred
+                  // Find the position by looking for surrounding text
+                  const widget = document.createElement('span');
+                  widget.className = 'suggestion-deletion';
+                  widget.textContent = edit.text;
+                  widget.style.cssText = `
+                    background-color: #fee2e2;
+                    text-decoration: line-through;
+                    color: #dc2626;
+                    padding: 1px 4px;
+                    border-radius: 2px;
+                    border: 1px solid #fca5a5;
+                    margin: 0 2px;
+                    display: inline-block;
+                  `;
+                  
+                  // Place at the start of document for now (we'd need better position tracking)
+                  const position = Math.max(1, Math.min(edit.from + 1, state.doc.content.size - 1));
+                  
+                  decorations.push(
+                    Decoration.widget(position, widget, {
+                      side: 0,
+                    })
+                  );
+                } else if (isReplacement) {
+                  // Blue for replacements
+                  const parts = edit.text.split('→');
+                  if (parts.length === 2) {
+                    const oldText = parts[0].trim().replace(/"/g, '');
+                    const newText = parts[1].trim().replace(/"/g, '');
                     
-                    // Create a widget to show the replacement
-                    const widget = document.createElement('span');
-                    widget.className = 'suggestion-replacement';
-                    widget.style.cssText = 'background-color: #dbeafe; border: 1px solid #2563eb; padding: 2px 4px; border-radius: 3px; margin: 0 2px;';
-                    widget.innerHTML = `
-                      <span style="text-decoration: line-through; color: #dc2626;">${oldText}</span>
-                      <span style="color: #2563eb; font-weight: 500;"> → ${newText}</span>
-                    `;
+                    // Find new text in document and mark it
+                    const positions = findTextPositions(state.doc, newText);
                     
-                    decorations.push(
-                      Decoration.widget(from, widget, {
-                        side: 1,
-                      })
-                    );
-                  } else {
-                    // Red for deletions - show as widget since text is deleted
-                    const widget = document.createElement('span');
-                    widget.className = 'suggestion-deletion';
-                    widget.textContent = edit.text;
-                    widget.style.cssText = `
-                      background-color: #fee2e2;
-                      text-decoration: line-through;
-                      color: #dc2626;
-                      padding: 1px 4px;
-                      border-radius: 2px;
-                      border: 1px solid #fca5a5;
-                      margin: 0 2px;
-                    `;
-                    
-                    decorations.push(
-                      Decoration.widget(from, widget, {
-                        side: -1,
-                      })
-                    );
+                    positions.forEach(pos => {
+                      if (pos.from > 0 && pos.to <= state.doc.content.size) {
+                        // Create inline widget for replacement
+                        const widget = document.createElement('span');
+                        widget.className = 'suggestion-replacement';
+                        widget.style.cssText = 'background-color: #dbeafe; border: 1px solid #2563eb; padding: 2px 4px; border-radius: 3px; margin: 0 2px; display: inline-block;';
+                        widget.innerHTML = `
+                          <span style="text-decoration: line-through; color: #dc2626;">${oldText}</span>
+                          <span style="color: #2563eb; font-weight: 500;"> → </span>
+                          <span style="color: #2563eb; font-weight: 500;">${newText}</span>
+                        `;
+                        
+                        // Add widget before the new text
+                        decorations.push(
+                          Decoration.widget(pos.from, widget, {
+                            side: -1,
+                          })
+                        );
+                        
+                        // Mark the new text too
+                        decorations.push(
+                          Decoration.inline(pos.from, pos.to, {
+                            class: 'suggestion-replacement-text',
+                            style: 'background-color: #dbeafe; border-bottom: 2px solid #2563eb;',
+                          })
+                        );
+                      }
+                    });
                   }
                 }
               } catch (error) {

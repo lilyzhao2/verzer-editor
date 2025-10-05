@@ -259,6 +259,7 @@ export function advancedDiff(context: DiffContext): AdvancedChange[] {
   });
   
   // 4. Group consecutive deletions + insertions into replacements
+  // BUT only if they're actually related (not just sequential)
   const finalChanges: AdvancedChange[] = [];
   for (let i = 0; i < changes.length; i++) {
     const current = changes[i];
@@ -268,30 +269,40 @@ export function advancedDiff(context: DiffContext): AdvancedChange[] {
       current.type === 'deletion' &&
       next &&
       next.type === 'insertion' &&
-      Math.abs(current.from - next.from) < 10
+      Math.abs(current.from - next.from) < 5 // Must be very close
     ) {
-      const classification = classifyChange(
-        current.originalText || '',
-        next.newText || ''
-      );
+      const currentText = (current.originalText || '').trim();
+      const nextText = (next.newText || '').trim();
       
-      finalChanges.push({
-        id: `replace-${changeId++}`,
-        type: 'replacement',
-        from: current.from,
-        to: next.to,
-        originalText: current.originalText,
-        newText: next.newText,
-        confidence: 0.9,
-        metadata: {
-          ...classification,
-          affectedSentences: Math.max(
-            current.metadata.affectedSentences,
-            next.metadata.affectedSentences
-          ),
-        },
-      });
-      i++; // Skip next
+      // Only group as replacement if texts are somewhat similar (>40% similar)
+      // or if they're both short (< 20 chars each)
+      const similarity = calculateSimilarity(currentText, nextText);
+      const bothShort = currentText.length < 20 && nextText.length < 20;
+      
+      if (similarity > 0.4 || bothShort) {
+        const classification = classifyChange(currentText, nextText);
+        
+        finalChanges.push({
+          id: `replace-${changeId++}`,
+          type: 'replacement',
+          from: current.from,
+          to: next.to,
+          originalText: current.originalText,
+          newText: next.newText,
+          confidence: 0.9,
+          metadata: {
+            ...classification,
+            affectedSentences: Math.max(
+              current.metadata.affectedSentences,
+              next.metadata.affectedSentences
+            ),
+          },
+        });
+        i++; // Skip next
+      } else {
+        // Not similar enough, keep as separate deletion and insertion
+        finalChanges.push(current);
+      }
     } else {
       finalChanges.push(current);
     }

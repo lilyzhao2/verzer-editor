@@ -32,6 +32,13 @@ export default function LiveDocEditor() {
   const [trackedEdits, setTrackedEdits] = useState<TrackedEdit[]>([]);
   const [comments, setComments] = useState<Comment[]>([]);
   const [showCommentSidebar, setShowCommentSidebar] = useState(false);
+  
+  // Auto-open sidebar when suggestions exist in suggesting mode
+  React.useEffect(() => {
+    if (editingMode === 'suggesting' && trackedEdits.length > 0) {
+      setShowCommentSidebar(true);
+    }
+  }, [editingMode, trackedEdits.length]);
   const [selectedCommentId, setSelectedCommentId] = useState<string | null>(null);
   const [aiMenuVisible, setAIMenuVisible] = useState(false);
   const [aiMenuPosition, setAIMenuPosition] = useState({ x: 0, y: 0 });
