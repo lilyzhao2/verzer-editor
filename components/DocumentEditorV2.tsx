@@ -38,6 +38,9 @@ export default function DocumentEditorV2() {
   const currentVersion = getCurrentVersion();
   const previousVersion = getPreviousVersion();
 
+  // Check if current version is locked (AI-generated, not yet reviewed)
+  const isLocked = currentVersion?.versionState === 'ai-created';
+
   // Tiptap editor for Editing mode
   const editor = useTiptapEditor({
     extensions: [
@@ -57,6 +60,7 @@ export default function DocumentEditorV2() {
     ],
     content: state.workingContent,
     immediatelyRender: false,
+    editable: !isLocked, // Lock editor if AI-generated
     editorProps: {
       attributes: {
         class: 'prose prose-lg max-w-none focus:outline-none min-h-[500px] px-8 py-6',
@@ -166,6 +170,34 @@ export default function DocumentEditorV2() {
       <div className="flex-1 overflow-hidden">
         {state.documentMode === 'editing' && (
           <div className="h-full overflow-auto bg-white">
+            {/* Locked Banner */}
+            {isLocked && (
+              <div className="bg-yellow-50 border-b border-yellow-200 px-6 py-3 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <span className="text-yellow-800 text-sm font-medium">
+                    🔒 AI-generated version (read-only)
+                  </span>
+                  <span className="text-xs text-yellow-600">
+                    Review changes or edit this version to unlock
+                  </span>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setDocumentMode('diff-regenerate')}
+                    className="px-3 py-1.5 text-xs font-medium text-yellow-700 bg-yellow-100 rounded hover:bg-yellow-200"
+                  >
+                    🔄 See Diff / Regenerate
+                  </button>
+                  <button
+                    onClick={() => setDocumentMode('tracking')}
+                    className="px-3 py-1.5 text-xs font-medium text-white bg-purple-600 rounded hover:bg-purple-700"
+                  >
+                    ✏️ Edit This Version
+                  </button>
+                </div>
+              </div>
+            )}
+            
             <div className="max-w-4xl mx-auto">
               <EditorContent editor={editor} />
             </div>

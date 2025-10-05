@@ -14,8 +14,17 @@ export default function ChatSidebar() {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
+  // Check if chat is blocked
+  const isBlocked = state.documentMode === 'tracking';
+
   const handleSend = async () => {
     if (!input.trim() || isLoading) return;
+
+    // Block if in tracking mode
+    if (isBlocked) {
+      alert('Please Accept All or Reject changes in Track Changes before chatting with AI.');
+      return;
+    }
 
     setIsLoading(true);
     try {
@@ -97,7 +106,7 @@ export default function ChatSidebar() {
           />
           <button
             onClick={handleSend}
-            disabled={!input.trim() || isLoading}
+            disabled={!input.trim() || isLoading || isBlocked}
             className="w-full px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isLoading ? 'Sending...' : 'Send'}
@@ -105,9 +114,9 @@ export default function ChatSidebar() {
         </div>
         
         {/* Warning if in tracking mode */}
-        {state.documentMode === 'tracking' && (
-          <p className="text-xs text-orange-600 mt-2">
-            ⚠️ Sending will accept all changes
+        {isBlocked && (
+          <p className="text-xs text-red-600 mt-2 font-medium">
+            🚫 Chat blocked - Accept or Reject changes first
           </p>
         )}
       </div>

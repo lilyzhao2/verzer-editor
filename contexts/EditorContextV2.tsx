@@ -284,20 +284,24 @@ export function EditorProviderV2({ children }: { children: React.ReactNode }) {
     [state.workingContent, state.documentName, state.versions, state.documentMode, getCurrentVersion, createVersion]
   );
 
-  // Accept all changes
+  // Accept all changes (unlocks version and allows AI chat)
   const acceptAllChanges = useCallback(() => {
     const currentVersion = getCurrentVersion();
     if (!currentVersion) return;
 
-    // Finalize current version
+    // Finalize current version and switch back to editing
     setState((prev) => ({
       ...prev,
       versions: prev.versions.map((v) =>
         v.id === currentVersion.id
-          ? { ...v, versionState: 'reviewed' as VersionState }
+          ? { 
+              ...v, 
+              versionState: 'reviewed' as VersionState,
+              hasUserEdits: v.content !== v.aiEditedContent // Mark as edited if content changed
+            }
           : v
       ),
-      documentMode: 'editing',
+      documentMode: 'editing', // Switch back to clean view
       stagedChanges: [],
     }));
   }, [getCurrentVersion]);
