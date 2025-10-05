@@ -192,6 +192,9 @@ export default function LiveDocEditor() {
   const [showRewriteInput, setShowRewriteInput] = useState(false);
   const [commentInputValue, setCommentInputValue] = useState('');
   const [rewritePromptValue, setRewritePromptValue] = useState('');
+  const [zoomLevel, setZoomLevel] = useState(100);
+  const [formatPainterActive, setFormatPainterActive] = useState(false);
+  const [copiedFormat, setCopiedFormat] = useState<any>(null);
 
   const handleAddComment = () => {
     setAIMenuVisible(false);
@@ -294,6 +297,100 @@ export default function LiveDocEditor() {
         .run();
     }
     setShowAIResults(false);
+  };
+
+  // Navigation functions
+  const goToPreviousVersion = () => {
+    const currentIndex = versions.findIndex(v => v.id === currentVersionId);
+    if (currentIndex > 0) {
+      loadVersion(versions[currentIndex - 1].id);
+    }
+  };
+
+  const goToNextVersion = () => {
+    const currentIndex = versions.findIndex(v => v.id === currentVersionId);
+    if (currentIndex < versions.length - 1) {
+      loadVersion(versions[currentIndex + 1].id);
+    }
+  };
+
+  // Print function
+  const handlePrint = () => {
+    window.print();
+  };
+
+  // Manual save function
+  const handleManualSave = () => {
+    if (editor) {
+      const content = editor.getHTML();
+      createNewVersion(content, false);
+      alert('✓ Version saved!');
+    }
+  };
+
+  // Format painter
+  const handleFormatPainter = () => {
+    if (!editor) return;
+
+    if (!formatPainterActive) {
+      // Copy format from current selection
+      const { from, to } = editor.state.selection;
+      if (from === to) {
+        alert('Please select text to copy formatting from');
+        return;
+      }
+
+      const marks = editor.state.doc.resolve(from).marks();
+      const attrs = editor.getAttributes('textStyle');
+      
+      setCopiedFormat({ marks, attrs });
+      setFormatPainterActive(true);
+    } else {
+      // Cancel format painter
+      setFormatPainterActive(false);
+      setCopiedFormat(null);
+    }
+  };
+
+  // Apply copied format
+  React.useEffect(() => {
+    if (!editor || !formatPainterActive || !copiedFormat) return;
+
+    const handleClick = () => {
+      const { from, to } = editor.state.selection;
+      if (from === to) return;
+
+      // Apply copied formatting
+      if (copiedFormat.attrs) {
+        Object.entries(copiedFormat.attrs).forEach(([key, value]) => {
+          if (value) {
+            editor.chain().focus().setMark('textStyle', { [key]: value }).run();
+          }
+        });
+      }
+
+      setFormatPainterActive(false);
+      setCopiedFormat(null);
+    };
+
+    // Listen for selection change
+    editor.on('selectionUpdate', handleClick);
+    return () => {
+      editor.off('selectionUpdate', handleClick);
+    };
+  }, [editor, formatPainterActive, copiedFormat]);
+
+  // Zoom functions
+  const handleZoomIn = () => {
+    setZoomLevel(prev => Math.min(prev + 10, 200));
+  };
+
+  const handleZoomOut = () => {
+    setZoomLevel(prev => Math.max(prev - 10, 50));
+  };
+
+  const handleResetZoom = () => {
+    setZoomLevel(100);
   };
 
   // Version History Functions
@@ -571,28 +668,92 @@ export default function LiveDocEditor() {
         <div className="w-px h-6 bg-gray-300 mx-1" />
 
         {/* Print */}
-        <button className="p-2 hover:bg-gray-200 rounded" title="Print (Ctrl+P)">
+        <button
+          onClick={handlePrint}
+          className="p-2 hover:bg-gray-200 rounded"
+          title="Print (Ctrl+P)"
+        >
           <svg className="w-5 h-5 text-black" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
           </svg>
         </button>
 
-        {/* Spelling */}
-        <button className="p-2 hover:bg-gray-200 rounded" title="Spelling and grammar check">
+        {/* Manual Save (Checkmark) */}
+        <button
+          onClick={handleManualSave}
+          className="p-2 hover:bg-gray-200 rounded"
+          title="Save new version"
+        >
           <svg className="w-5 h-5 text-black" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
         </button>
 
+        {/* Format Painter */}
+        <button
+          onClick={handleFormatPainter}
+          className={`p-2 hover:bg-gray-200 rounded ${formatPainterActive ? 'bg-blue-200' : ''}`}
+          title="Format painter (copy formatting)"
+        >
+          <svg className="w-5 h-5 text-black" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
+          </svg>
+        </button>
+
         <div className="w-px h-6 bg-gray-300 mx-1" />
 
-        {/* Zoom */}
-        <select className="text-sm border-none bg-transparent px-2 py-1 hover:bg-gray-200 rounded text-black">
-          <option>100%</option>
-          <option>90%</option>
-          <option>75%</option>
-          <option>50%</option>
+        {/* Version Navigation */}
+        <button
+          onClick={goToPreviousVersion}
+          disabled={versions.findIndex(v => v.id === currentVersionId) === 0}
+          className="p-2 hover:bg-gray-200 rounded disabled:opacity-30 disabled:hover:bg-transparent"
+          title="Previous version"
+        >
+          <svg className="w-5 h-5 text-black" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          </svg>
+        </button>
+        <button
+          onClick={goToNextVersion}
+          disabled={versions.findIndex(v => v.id === currentVersionId) === versions.length - 1}
+          className="p-2 hover:bg-gray-200 rounded disabled:opacity-30 disabled:hover:bg-transparent"
+          title="Next version"
+        >
+          <svg className="w-5 h-5 text-black" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+        </button>
+
+        <div className="w-px h-6 bg-gray-300 mx-1" />
+
+        {/* Zoom Controls */}
+        <button
+          onClick={handleZoomOut}
+          className="p-2 hover:bg-gray-200 rounded"
+          title="Zoom out"
+        >
+          <span className="text-black font-bold">−</span>
+        </button>
+        <select
+          value={zoomLevel}
+          onChange={(e) => setZoomLevel(parseInt(e.target.value))}
+          className="text-sm border-none bg-transparent px-2 py-1 hover:bg-gray-200 rounded text-black"
+        >
+          <option value="50">50%</option>
+          <option value="75">75%</option>
+          <option value="90">90%</option>
+          <option value="100">100%</option>
+          <option value="125">125%</option>
+          <option value="150">150%</option>
+          <option value="200">200%</option>
         </select>
+        <button
+          onClick={handleZoomIn}
+          className="p-2 hover:bg-gray-200 rounded"
+          title="Zoom in"
+        >
+          <span className="text-black font-bold">+</span>
+        </button>
 
         <div className="w-px h-6 bg-gray-300 mx-1" />
 
@@ -855,7 +1016,10 @@ export default function LiveDocEditor() {
             </div>
           )}
 
-          <div className="max-w-[8.5in] mx-auto my-6 bg-white shadow-lg">
+          <div
+            className="max-w-[8.5in] mx-auto my-6 bg-white shadow-lg transition-transform duration-200"
+            style={{ transform: `scale(${zoomLevel / 100})`, transformOrigin: 'top center' }}
+          >
             <style jsx global>{`
               .ProseMirror {
                 color: #000000 !important;
