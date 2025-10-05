@@ -86,14 +86,16 @@ export const SuggestChangesExtension = Extension.create<SuggestChangesOptions>({
               console.log('📍 Position:', { from, to });
               console.log('📄 Slice:', stepJSON.slice);
 
-              // Handle deletions
-              if (from < to && (!stepJSON.slice || !stepJSON.slice.content || stepJSON.slice.content.length === 0)) {
-                // Text was deleted (from < to, but no new content)
+              // Check if this is a deletion (from < to, and either no slice or empty slice)
+              const isDeletion = from < to && (!stepJSON.slice || !stepJSON.slice.content);
+              
+              if (isDeletion) {
+                // Text was deleted
                 const deletedText = oldState.doc.textBetween(from, to);
                 console.log('🗑️ Deletion detected:', deletedText);
                 
                 if (deletedText && deletedText.trim()) {
-                  // Get the deleted slice
+                  // Get the deleted slice with all formatting
                   const deletedSlice = oldState.doc.slice(from, to);
                   
                   // Re-insert the deleted content
@@ -118,7 +120,7 @@ export const SuggestChangesExtension = Extension.create<SuggestChangesOptions>({
                 }
               }
               // Handle insertions
-              else if (stepJSON.slice && stepJSON.slice.content) {
+              else if (stepJSON.slice && stepJSON.slice.content && stepJSON.slice.content.length > 0) {
                 // Text was inserted
                 let insertedText = '';
                 const content = stepJSON.slice.content;
