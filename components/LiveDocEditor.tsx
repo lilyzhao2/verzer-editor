@@ -196,6 +196,7 @@ export default function LiveDocEditor() {
   const [formatPainterActive, setFormatPainterActive] = useState(false);
   const [copiedFormat, setCopiedFormat] = useState<any>(null);
   const [versionStartContent, setVersionStartContent] = useState<string>('');
+  const [suggestingModeContent, setSuggestingModeContent] = useState<string>(''); // Tracks changes during suggesting
 
   const handleAddComment = () => {
     setAIMenuVisible(false);
@@ -522,13 +523,32 @@ export default function LiveDocEditor() {
     };
   }, [editor, changesSinceLastSave, versionSettings]);
 
-  // Set version baseline when entering suggesting mode
+  // Handle mode switching
   React.useEffect(() => {
-    if (editor && editingMode === 'suggesting') {
-      // Capture current version's content as baseline
+    if (!editor) return;
+
+    if (editingMode === 'suggesting') {
+      // Entering suggesting mode
       const baseline = currentVersion?.content || editor.getHTML();
       setVersionStartContent(baseline);
-      console.log('Baseline set:', baseline.substring(0, 100));
+      setSuggestingModeContent(baseline); // Start with baseline
+      console.log('📝 Entered Suggesting Mode. Baseline set.');
+    } else if (editingMode === 'editing') {
+      // Leaving suggesting mode - restore original content if there are unaccepted suggestions
+      if (versionStartContent && trackedEdits.length > 0) {
+        const shouldRevert = window.confirm(
+          `You have ${trackedEdits.length} unaccepted suggestion(s).\n\n` +
+          'Do you want to discard them and return to the original content?'
+        );
+        
+        if (shouldRevert) {
+          editor.commands.setContent(versionStartContent);
+          setTrackedEdits([]);
+        }
+      }
+      setVersionStartContent('');
+      setSuggestingModeContent('');
+      console.log('✏️ Entered Editing Mode.');
     }
   }, [editor, editingMode, currentVersion]);
 
@@ -1144,17 +1164,51 @@ export default function LiveDocEditor() {
         {/* Track Changes Sidebar (in suggesting mode) */}
         {showCommentSidebar && editingMode === 'suggesting' && trackedEdits.length > 0 && (
           <div className="w-96 bg-white border-l border-gray-200 flex flex-col shadow-xl">
-            <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between bg-green-50">
-              <h3 className="text-sm font-semibold text-black flex items-center gap-2">
-                📝 Tracked Changes
-                <span className="text-xs text-gray-600">({trackedEdits.length})</span>
-              </h3>
-              <button
-                onClick={() => setShowCommentSidebar(false)}
-                className="text-gray-500 hover:text-black text-xl"
-              >
-                ✕
-              </button>
+            <div className="px-4 py-3 border-b border-gray-200 bg-green-50">
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-sm font-semibold text-black flex items-center gap-2">
+                  📝 Suggestions
+                  <span className="text-xs text-gray-600">({trackedEdits.length})</span>
+                </h3>
+                <button
+                  onClick={() => setShowCommentSidebar(false)}
+                  className="text-gray-500 hover:text-black text-xl"
+                >
+                  ✕
+                </button>
+              </div>
+              
+              {/* Accept/Reject All Buttons */}
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    // Accept all suggestions - current content becomes the new version
+                    if (window.confirm(`Accept all ${trackedEdits.length} suggestions?`)) {
+                      setTrackedEdits([]);
+                      setVersionStartContent(editor?.getHTML() || '');
+                      alert('✓ All suggestions accepted!');
+                    }
+                  }}
+                  className="flex-1 px-3 py-1.5 text-xs font-medium text-white bg-green-600 rounded hover:bg-green-700"
+                >
+                  ✓ Accept All
+                </button>
+                <button
+                  onClick={() => {
+                    // Reject all suggestions - revert to baseline
+                    if (window.confirm(`Reject all ${trackedEdits.length} suggestions and revert to original?`)) {
+                      if (editor && versionStartContent) {
+                        editor.commands.setContent(versionStartContent);
+                      }
+                      setTrackedEdits([]);
+                      alert('✓ All suggestions rejected. Reverted to original.');
+                    }
+                  }}
+                  className="flex-1 px-3 py-1.5 text-xs font-medium text-white bg-red-600 rounded hover:bg-red-700"
+                >
+                  ✕ Reject All
+                </button>
+              </div>
             </div>
 
             <div className="flex-1 overflow-auto p-4 space-y-3">
