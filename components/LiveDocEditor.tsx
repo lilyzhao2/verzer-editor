@@ -16,10 +16,8 @@ import { CommentsExtension, Comment, CommentReply } from '@/lib/comments-extensi
 import { AIInlineExtension } from '@/lib/ai-inline-extension';
 import { DocumentVersion, VersionHistorySettings } from '@/lib/version-types';
 import { TabAutocompleteExtension } from '@/lib/tab-autocomplete-extension';
-import { InlineMarkupExtension } from '@/lib/inline-markup-plugin';
-import { TrackChangesPlugin, type TrackedChange as PluginTrackedChange } from '@/lib/track-changes-plugin';
-import { diffWords } from 'diff';
-import { advancedDiff, getDiffStats, type AdvancedChange } from '@/lib/advanced-diff';
+import { InsertionMark, DeletionMark } from '@/lib/suggestion-marks';
+import { SuggestChangesExtension } from '@/lib/suggest-changes-extension';
 
 /**
  * MODE 1: LIVE DOC EDITOR
@@ -84,6 +82,8 @@ export default function LiveDocEditor() {
       Underline,
       TextStyle,
       Color,
+      InsertionMark,
+      DeletionMark,
       FontFamily.configure({
         types: ['textStyle'],
       }),
@@ -125,26 +125,10 @@ export default function LiveDocEditor() {
         },
       }),
       AIInlineExtension,
-      TrackChangesPlugin.configure({
+      SuggestChangesExtension.configure({
         enabled: editingMode === 'suggesting',
         userId: 'user-1',
         userName: 'You',
-        userColor: '#ff9800',
-        onChangesUpdate: (changes) => {
-          // Convert to TrackedEdit format for sidebar
-          const edits: TrackedEdit[] = changes.map(c => ({
-            id: c.id,
-            userId: c.userId,
-            userName: c.userName,
-            userColor: c.userColor,
-            type: c.type,
-            from: c.from,
-            to: c.to,
-            text: c.text,
-            timestamp: new Date(c.timestamp),
-          }));
-          setTrackedEdits(edits);
-        },
       }),
       TabAutocompleteExtension.configure({
         enabled: true,
@@ -555,18 +539,15 @@ export default function LiveDocEditor() {
     };
   }, [editor, changesSinceLastSave, versionSettings]);
 
-  // Update plugin enabled state when mode changes
+  // Update suggest changes extension when mode changes
   React.useEffect(() => {
     if (!editor) return;
     
     editor.extensionManager.extensions.forEach((ext) => {
-      if (ext.name === 'trackChangesPlugin') {
+      if (ext.name === 'suggestChanges') {
         (ext.options as any).enabled = editingMode === 'suggesting';
       }
     });
-    
-    // Trigger view update to re-render decorations
-    editor.view.dispatch(editor.state.tr);
   }, [editor, editingMode]);
 
   // Handle mode switching - suggestions persist across modes
@@ -1167,10 +1148,8 @@ export default function LiveDocEditor() {
               <div className="flex gap-2">
                 <button
                   onClick={() => {
-                    // Accept all suggestions - current content becomes the new version
-                    if (window.confirm(`Accept all ${trackedEdits.length} suggestions?`)) {
-                      setTrackedEdits([]);
-                      setVersionStartContent(editor?.getHTML() || '');
+                    if (editor && window.confirm('Accept all suggestions?')) {
+                      editor.commands.acceptAllSuggestions();
                       alert('✓ All suggestions accepted!');
                     }
                   }}
@@ -1180,13 +1159,9 @@ export default function LiveDocEditor() {
                 </button>
                 <button
                   onClick={() => {
-                    // Reject all suggestions - revert to baseline
-                    if (window.confirm(`Reject all ${trackedEdits.length} suggestions and revert to original?`)) {
-                      if (editor && versionStartContent) {
-                        editor.commands.setContent(versionStartContent);
-                      }
-                      setTrackedEdits([]);
-                      alert('✓ All suggestions rejected. Reverted to original.');
+                    if (editor && window.confirm('Reject all suggestions?')) {
+                      editor.commands.rejectAllSuggestions();
+                      alert('✓ All suggestions rejected.');
                     }
                   }}
                   className="flex-1 px-3 py-1.5 text-xs font-medium text-white bg-red-600 rounded hover:bg-red-700"
