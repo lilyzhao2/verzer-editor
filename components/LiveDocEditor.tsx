@@ -10,6 +10,8 @@ import { FontFamily } from '@tiptap/extension-font-family';
 import { Highlight } from '@tiptap/extension-highlight';
 import { TextAlign } from '@tiptap/extension-text-align';
 import { Placeholder } from '@tiptap/extension-placeholder';
+import { CollaborationExtension, CollaboratorCursor } from '@/lib/collaboration-extension';
+import { TrackChangesExtension, TrackedEdit } from '@/lib/track-changes-v3';
 
 /**
  * MODE 1: LIVE DOC EDITOR
@@ -17,6 +19,12 @@ import { Placeholder } from '@tiptap/extension-placeholder';
  */
 export default function LiveDocEditor() {
   const [documentName, setDocumentName] = useState('Untitled Document');
+  const [trackChangesEnabled, setTrackChangesEnabled] = useState(false);
+  const [trackedEdits, setTrackedEdits] = useState<TrackedEdit[]>([]);
+  const [collaborators] = useState<CollaboratorCursor[]>([
+    // Demo collaborators - will be real-time later
+    // { id: 'user-2', name: 'Sarah', color: '#ea4335', position: 50 },
+  ]);
 
   const editor = useEditor({
     extensions: [
@@ -39,6 +47,17 @@ export default function LiveDocEditor() {
       }),
       Placeholder.configure({
         placeholder: 'Start writing...',
+      }),
+      CollaborationExtension.configure({
+        collaborators,
+        currentUserId: 'user-1',
+      }),
+      TrackChangesExtension.configure({
+        enabled: trackChangesEnabled,
+        currentUserId: 'user-1',
+        currentUserName: 'You',
+        currentUserColor: '#4285f4',
+        edits: trackedEdits,
       }),
     ],
     content: '<p></p>',
@@ -258,6 +277,21 @@ export default function LiveDocEditor() {
         {/* Image */}
         <button className="p-2 hover:bg-gray-200 rounded" title="Insert image">
           🖼
+        </button>
+
+        <div className="w-px h-6 bg-gray-300 mx-1" />
+
+        {/* Track Changes Toggle */}
+        <button
+          onClick={() => setTrackChangesEnabled(!trackChangesEnabled)}
+          className={`px-3 py-1.5 text-xs font-medium rounded ${
+            trackChangesEnabled
+              ? 'bg-green-600 text-white'
+              : 'bg-gray-200 text-black hover:bg-gray-300'
+          }`}
+          title="Track Changes"
+        >
+          📝 Track Changes {trackChangesEnabled && '✓'}
         </button>
 
         <div className="w-px h-6 bg-gray-300 mx-1" />
