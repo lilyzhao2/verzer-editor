@@ -209,14 +209,29 @@ export default function LiveDocEditor() {
 
   const handleRewriteText = async () => {
     setAIMenuVisible(false);
+    
+    // Ask for custom prompt
+    const customPrompt = prompt(
+      `How should AI rewrite this text?\n\nSelected: "${aiMenuSelection.text}"\n\nEnter your rewrite instructions (or leave blank for general improvements):`
+    );
+    
+    // User cancelled
+    if (customPrompt === null) return;
+    
     setAIResultType('rewrites');
     
-    // Simulate AI rewrites (replace with real API call)
-    const mockRewrites = [
-      aiMenuSelection.text.charAt(0).toUpperCase() + aiMenuSelection.text.slice(1) + ' - enhanced version.',
-      `An improved take: ${aiMenuSelection.text}`,
-      `Consider this alternative: ${aiMenuSelection.text.split(' ').reverse().join(' ')}`,
-    ];
+    // Simulate AI rewrites with custom prompt (replace with real API call)
+    const mockRewrites = customPrompt.trim()
+      ? [
+          `${aiMenuSelection.text} (rewritten with: ${customPrompt})`,
+          `${aiMenuSelection.text.toUpperCase()} - styled per your request`,
+          `Alternative: ${aiMenuSelection.text} → ${customPrompt}`,
+        ]
+      : [
+          aiMenuSelection.text.charAt(0).toUpperCase() + aiMenuSelection.text.slice(1) + ' - enhanced version.',
+          `An improved take: ${aiMenuSelection.text}`,
+          `Consider this alternative: ${aiMenuSelection.text.split(' ').reverse().join(' ')}`,
+        ];
     
     setAIRewrites(mockRewrites);
     setShowAIResults(true);
