@@ -14,6 +14,7 @@ import { CollaborationExtension, CollaboratorCursor } from '@/lib/collaboration-
 import { TrackChangesExtension, TrackedEdit } from '@/lib/track-changes-v3';
 import { CommentsExtension, Comment, CommentReply } from '@/lib/comments-extension';
 import { AIInlineExtension } from '@/lib/ai-inline-extension';
+import { DocumentVersion, VersionHistorySettings } from '@/lib/version-types';
 
 /**
  * MODE 1: LIVE DOC EDITOR
@@ -35,6 +36,27 @@ export default function LiveDocEditor() {
     // Demo collaborators - will be real-time later
     // { id: 'user-2', name: 'Sarah', color: '#ea4335', position: 50 },
   ]);
+
+  // Version History State
+  const [versions, setVersions] = useState<DocumentVersion[]>([
+    {
+      id: 'v0',
+      versionNumber: 0,
+      content: '<p></p>',
+      timestamp: new Date(),
+      createdBy: 'You',
+      autoSaved: false,
+    },
+  ]);
+  const [currentVersionId, setCurrentVersionId] = useState('v0');
+  const [showVersionHistory, setShowVersionHistory] = useState(false);
+  const [versionSettings, setVersionSettings] = useState<VersionHistorySettings>({
+    autoSaveFrequency: 10, // minutes
+    autoSaveByLineCount: 50,
+    autoSaveEnabled: true,
+  });
+  const [lastSaveTime, setLastSaveTime] = useState(new Date());
+  const [changesSinceLastSave, setChangesSinceLastSave] = useState(0);
 
   // Track Changes is auto-enabled in Suggesting mode
   const trackChangesEnabled = editingMode === 'suggesting';
@@ -146,9 +168,76 @@ export default function LiveDocEditor() {
     alert(`AI will rewrite with prompt: "${rewritePrompt}"\n\n(AI integration coming soon!)`);
   };
 
+  // Version History Functions
+  const createNewVersion = (content: string, autoSaved: boolean = false) => {
+    const newVersion: DocumentVersion = {
+      id: `v${versions.length}`,
+      versionNumber: versions.length,
+      content,
+      timestamp: new Date(),
+      createdBy: 'You',
+      autoSaved,
+      changesSinceLastVersion: changesSinceLastSave,
+    };
+
+    setVersions([...versions, newVersion]);
+    setCurrentVersionId(newVersion.id);
+    setLastSaveTime(new Date());
+    setChangesSinceLastSave(0);
+
+    return newVersion;
+  };
+
+  const loadVersion = (versionId: string) => {
+    const version = versions.find((v) => v.id === versionId);
+    if (version && editor) {
+      editor.commands.setContent(version.content);
+      setCurrentVersionId(versionId);
+    }
+  };
+
+  // Auto-save effect
+  React.useEffect(() => {
+    if (!versionSettings.autoSaveEnabled || !editor) return;
+
+    const interval = setInterval(() => {
+      const currentContent = editor.getHTML();
+      const currentVersion = versions.find((v) => v.id === currentVersionId);
+      
+      // Only save if content changed
+      if (currentVersion && currentContent !== currentVersion.content) {
+        createNewVersion(currentContent, true);
+      }
+    }, versionSettings.autoSaveFrequency * 60 * 1000); // Convert minutes to ms
+
+    return () => clearInterval(interval);
+  }, [editor, versionSettings.autoSaveFrequency, versionSettings.autoSaveEnabled, currentVersionId, versions]);
+
+  // Track changes for line-based auto-save
+  React.useEffect(() => {
+    if (!editor) return;
+
+    const handleUpdate = () => {
+      setChangesSinceLastSave((prev) => prev + 1);
+
+      // Auto-save if reached line threshold
+      if (versionSettings.autoSaveEnabled && changesSinceLastSave >= versionSettings.autoSaveByLineCount) {
+        const currentContent = editor.getHTML();
+        createNewVersion(currentContent, true);
+      }
+    };
+
+    editor.on('update', handleUpdate);
+    return () => {
+      editor.off('update', handleUpdate);
+    };
+  }, [editor, changesSinceLastSave, versionSettings]);
+
   if (!editor) {
     return null;
   }
+
+  const currentVersion = versions.find((v) => v.id === currentVersionId);
 
   return (
     <div className="flex flex-col h-screen bg-gray-100">
@@ -191,6 +280,52 @@ export default function LiveDocEditor() {
           </button>
           
           <div className="flex-1" />
+          
+          {/* Version Controls */}
+          <div className="flex items-center gap-2">
+            {/* Current Version Display */}
+            <span className="text-xs text-gray-600">
+              {currentVersion?.autoSaved ? '☁️ Auto-saved' : '💾 Saved'} • V{currentVersion?.versionNumber}
+            </span>
+
+            {/* Version Dropdown */}
+            <select
+              value={currentVersionId}
+              onChange={(e) => loadVersion(e.target.value)}
+              className="px-2 py-1 text-xs text-black bg-white border border-gray-300 rounded hover:bg-gray-50 cursor-pointer"
+              title="Select version"
+            >
+              {versions.map((v) => (
+                <option key={v.id} value={v.id}>
+                  V{v.versionNumber} - {v.timestamp.toLocaleTimeString()} {v.autoSaved ? '(auto)' : ''}
+                </option>
+              ))}
+            </select>
+
+            {/* History Button */}
+            <button
+              onClick={() => setShowVersionHistory(!showVersionHistory)}
+              className="px-3 py-1.5 text-xs font-medium text-black bg-white border border-gray-300 rounded hover:bg-gray-50"
+              title="Version History"
+            >
+              📜 History
+            </button>
+
+            {/* Manual Save Button */}
+            <button
+              onClick={() => {
+                if (editor) {
+                  const content = editor.getHTML();
+                  createNewVersion(content, false);
+                  alert('Version saved!');
+                }
+              }}
+              className="px-3 py-1.5 text-xs font-medium text-white bg-green-600 rounded hover:bg-green-700"
+              title="Save new version"
+            >
+              💾 Save Version
+            </button>
+          </div>
           
           {/* Mode Selector - Google Docs Style */}
           <div className="relative">
@@ -635,6 +770,108 @@ export default function LiveDocEditor() {
           </div>
         )}
       </div>
+
+      {/* Version History Sidebar */}
+      {showVersionHistory && (
+        <div className="fixed right-0 top-0 h-screen w-96 bg-white border-l border-gray-200 shadow-2xl z-40 flex flex-col">
+          <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+            <h2 className="text-lg font-semibold text-black">📜 Version History</h2>
+            <button
+              onClick={() => setShowVersionHistory(false)}
+              className="text-gray-500 hover:text-black text-xl"
+            >
+              ✕
+            </button>
+          </div>
+
+          {/* Settings */}
+          <div className="px-6 py-4 bg-gray-50 border-b border-gray-200">
+            <h3 className="text-sm font-medium text-black mb-3">Auto-Save Settings</h3>
+            <div className="space-y-3">
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={versionSettings.autoSaveEnabled}
+                  onChange={(e) =>
+                    setVersionSettings({ ...versionSettings, autoSaveEnabled: e.target.checked })
+                  }
+                  className="rounded"
+                />
+                <span className="text-sm text-black">Enable auto-save</span>
+              </label>
+
+              <div>
+                <label className="text-xs text-gray-600">Auto-save every (minutes):</label>
+                <input
+                  type="number"
+                  value={versionSettings.autoSaveFrequency}
+                  onChange={(e) =>
+                    setVersionSettings({
+                      ...versionSettings,
+                      autoSaveFrequency: parseInt(e.target.value) || 10,
+                    })
+                  }
+                  className="w-full mt-1 px-2 py-1 text-sm text-black border border-gray-300 rounded"
+                  min="1"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs text-gray-600">Auto-save after (edits):</label>
+                <input
+                  type="number"
+                  value={versionSettings.autoSaveByLineCount}
+                  onChange={(e) =>
+                    setVersionSettings({
+                      ...versionSettings,
+                      autoSaveByLineCount: parseInt(e.target.value) || 50,
+                    })
+                  }
+                  className="w-full mt-1 px-2 py-1 text-sm text-black border border-gray-300 rounded"
+                  min="1"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Version List */}
+          <div className="flex-1 overflow-auto px-6 py-4">
+            <div className="space-y-3">
+              {[...versions].reverse().map((version) => (
+                <div
+                  key={version.id}
+                  className={`p-3 rounded-lg border-2 cursor-pointer transition-all ${
+                    version.id === currentVersionId
+                      ? 'border-blue-500 bg-blue-50'
+                      : 'border-gray-200 bg-white hover:bg-gray-50'
+                  }`}
+                  onClick={() => loadVersion(version.id)}
+                >
+                  <div className="flex items-start justify-between mb-2">
+                    <span className="font-semibold text-black">
+                      Version {version.versionNumber}
+                    </span>
+                    <span className="text-xs text-gray-500">
+                      {version.autoSaved ? '☁️ Auto' : '💾 Manual'}
+                    </span>
+                  </div>
+                  <div className="text-xs text-gray-600">
+                    {version.timestamp.toLocaleString()}
+                  </div>
+                  <div className="text-xs text-gray-500 mt-1">
+                    By {version.createdBy}
+                  </div>
+                  {version.changesSinceLastVersion !== undefined && (
+                    <div className="text-xs text-gray-500 mt-1">
+                      {version.changesSinceLastVersion} edits
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* AI Floating Menu */}
       {aiMenuVisible && (
