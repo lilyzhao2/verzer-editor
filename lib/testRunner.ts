@@ -116,6 +116,8 @@ export const addEditorTests = (editor: any, editorElement: HTMLElement) => {
   testRunner.addTest('Editor Initialization', () => {
     if (!editor) throw new Error('Editor not initialized');
     if (!editorElement) throw new Error('Editor element not found');
+    if (!editor.state) throw new Error('Editor state not available');
+    if (!editor.view) throw new Error('Editor view not available');
   });
 
   testRunner.addTest('Editor Content Access', () => {
@@ -124,10 +126,19 @@ export const addEditorTests = (editor: any, editorElement: HTMLElement) => {
   });
 
   testRunner.addTest('Editor Commands Available', () => {
-    const commands = ['setContent', 'getHTML', 'focus', 'blur'];
+    const commands = ['setContent', 'focus', 'blur'];
     for (const cmd of commands) {
       if (typeof editor.commands[cmd] !== 'function') {
         throw new Error(`Command ${cmd} not available`);
+      }
+    }
+  });
+
+  testRunner.addTest('Editor Methods Available', () => {
+    const methods = ['getHTML', 'getText', 'isEmpty'];
+    for (const method of methods) {
+      if (typeof editor[method] !== 'function') {
+        throw new Error(`Method ${method} not available`);
       }
     }
   });
@@ -270,7 +281,7 @@ export const runAutoTests = () => {
       setTimeout(() => {
         console.log('🚀 Running automatic tests...');
         testRunner.runAllTests();
-      }, 2000); // Wait for editor to initialize
+      }, 3000); // Wait longer for editor to fully initialize
     });
   }
 };

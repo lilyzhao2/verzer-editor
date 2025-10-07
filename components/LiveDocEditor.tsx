@@ -458,10 +458,15 @@ export default function LiveDocEditor() {
   // Add editor tests when editor is ready
   useEffect(() => {
     if (editor) {
-      const editorElement = document.querySelector('[data-testid="editor"]') as HTMLElement;
-      if (editorElement) {
-        addEditorTests(editor, editorElement);
-      }
+      // Wait a bit for editor to be fully initialized
+      const timer = setTimeout(() => {
+        const editorElement = document.querySelector('[data-testid="editor"]') as HTMLElement;
+        if (editorElement && editor.state && editor.view) {
+          addEditorTests(editor, editorElement);
+        }
+      }, 1000);
+      
+      return () => clearTimeout(timer);
     }
   }, [editor]);
 
