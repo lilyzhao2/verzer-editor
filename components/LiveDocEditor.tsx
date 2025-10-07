@@ -63,8 +63,36 @@ export default function LiveDocEditor() {
     };
   };
 
-  // Cache for autocomplete suggestions
-  const [completionCache, setCompletionCache] = useState<Map<string, string[]>>(new Map());
+  // Cache for autocomplete suggestions - load from localStorage
+  const [completionCache, setCompletionCache] = useState<Map<string, string[]>>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const cached = localStorage.getItem('verzer-autocomplete-cache');
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          return new Map(Object.entries(parsed));
+        }
+      } catch (e) {
+        console.error('Failed to load cache:', e);
+      }
+    }
+    return new Map();
+  });
+  
+  // AbortController for cancelling outdated requests
+  const abortControllerRef = React.useRef<AbortController | null>(null);
+  
+  // Save cache to localStorage when it changes
+  React.useEffect(() => {
+    if (typeof window !== 'undefined' && completionCache.size > 0) {
+      try {
+        const cacheObj = Object.fromEntries(completionCache);
+        localStorage.setItem('verzer-autocomplete-cache', JSON.stringify(cacheObj));
+      } catch (e) {
+        console.error('Failed to save cache:', e);
+      }
+    }
+  }, [completionCache]);
   
   
   // Auto-open sidebar when suggestions exist in suggesting mode
@@ -168,22 +196,26 @@ export default function LiveDocEditor() {
         enabled: true, // Enable tab autocomplete
         onRequestCompletion: async (context: string) => {
           try {
-            // Check cache first for sub-500ms performance
+            // Check cache first for instant response
             const cacheKey = context.slice(-50); // Use last 50 chars as key
             if (completionCache.has(cacheKey)) {
-              console.log('🚀 Using cached completion');
               return completionCache.get(cacheKey) || ['...'];
             }
+
+            // Cancel any pending request
+            if (abortControllerRef.current) {
+              abortControllerRef.current.abort();
+            }
+
+            // Create new AbortController for this request
+            const abortController = new AbortController();
+            abortControllerRef.current = abortController;
 
             // Get project context for style matching
             const projectContext = getProjectContextForAI();
             
-            // Call real AI API for completion with context
-            console.log('🤖 Requesting tab autocomplete for context:', context);
-            
             // Make sure we have some content to send
             const contentToSend = context.trim() || 'Start of document';
-            console.log('🤖 Content to send:', contentToSend);
             
             const response = await fetch('/api/anthropic', {
               method: 'POST',
@@ -194,10 +226,12 @@ export default function LiveDocEditor() {
 [completion 2]
 [completion 3]`,
                 content: contentToSend,
-                model: 'claude-3-5-sonnet-20241022',
+                model: 'claude-3-5-haiku-20241022', // Faster model for autocomplete
                 mode: 'chat',
+                maxTokens: 128,
                 projectConfig: projectContext
-              })
+              }),
+              signal: abortController.signal // Add abort signal
             });
 
             if (!response.ok) {
@@ -208,7 +242,6 @@ export default function LiveDocEditor() {
 
             const data = await response.json();
             const aiResponse = data.response?.trim() || '';
-            console.log('🤖 AI autocomplete response:', aiResponse);
             
             // Parse AI response into multiple suggestions
             let suggestions = aiResponse.split('\n')
@@ -237,7 +270,6 @@ export default function LiveDocEditor() {
             }
             
             const finalSuggestions = suggestions.length > 0 ? suggestions : ['...'];
-            console.log('💡 Parsed suggestions:', finalSuggestions);
             
             // Cache the result
             setCompletionCache(prev => {
@@ -254,7 +286,11 @@ export default function LiveDocEditor() {
             });
             
             return finalSuggestions;
-          } catch (error) {
+          } catch (error: any) {
+            // Ignore abort errors (user typed more, request was cancelled)
+            if (error.name === 'AbortError') {
+              return [];
+            }
             console.error('Tab autocomplete failed:', error);
             // Return simple fallback while debugging
             return ['...', 'continue typing', 'keep writing'];
@@ -322,6 +358,7 @@ export default function LiveDocEditor() {
   const [aiRewrites, setAIRewrites] = useState<string[]>([]);
   const [showAIResults, setShowAIResults] = useState(false);
   const [aiResultType, setAIResultType] = useState<'thoughts' | 'rewrites'>('thoughts');
+  const [aiStreaming, setAIStreaming] = useState(false);
   const [showCommentInput, setShowCommentInput] = useState(false);
   const [showRewriteInput, setShowRewriteInput] = useState(false);
   const [commentInputValue, setCommentInputValue] = useState('');
@@ -331,6 +368,11 @@ export default function LiveDocEditor() {
   const [copiedFormat, setCopiedFormat] = useState<any>(null);
   const [versionStartContent, setVersionStartContent] = useState<string>('');
   const [suggestingModeContent, setSuggestingModeContent] = useState<string>(''); // Tracks changes during suggesting
+
+  // Custom confirm modal state (replaces window.confirm)
+  const [confirmModal, setConfirmModal] = useState<{ open: boolean; action: 'acceptAll' | 'rejectAll' | null }>(
+    { open: false, action: null }
+  );
 
   const handleAddComment = () => {
     setAIMenuVisible(false);
@@ -363,9 +405,11 @@ export default function LiveDocEditor() {
   const handleAskAI = async () => {
     setAIMenuVisible(false);
     setAIResultType('thoughts');
+    setAIStreaming(true);
+    setShowAIResults(true);
     
     try {
-      // Call real AI API
+      // Streaming request
       const response = await fetch('/api/anthropic', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -373,24 +417,55 @@ export default function LiveDocEditor() {
           prompt: `Analyze this selected text and provide 3 brief, helpful thoughts or suggestions for improvement. Be specific and constructive.`,
           content: aiMenuSelection.text,
           model: 'claude-3-5-sonnet-20241022',
-          mode: 'chat'
+          mode: 'chat',
+          maxTokens: 256,
+          stream: true,
         })
       });
 
-      if (!response.ok) {
+      if (!response.ok || !response.body) {
         throw new Error('AI request failed');
       }
 
-      const data = await response.json();
-      
-      // Parse the AI response into 3 thoughts
-      const aiResponse = data.response || '';
-      const thoughts = aiResponse.split('\n')
-        .filter(line => line.trim().length > 0)
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder('utf-8');
+      let buffer = '';
+      let assembled = '';
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed.startsWith('data:')) continue;
+          const json = trimmed.substring(5).trim();
+          if (json === '[DONE]') continue;
+          try {
+            const evt = JSON.parse(json);
+            if (evt.type === 'content_block_delta' && evt.delta && evt.delta.text) {
+              assembled += evt.delta.text;
+              // Show progressive preview
+              const preview = assembled
+                .split('\n')
+                .filter((t: string) => t.trim().length > 0)
+                .slice(0, 3)
+        .map((t: string) => t.replace(/^\d+\.\s*/, '').trim())
+        .filter((t: string) => t.length > 0);
+      if (preview.length > 0) setAIThoughts(preview);
+            }
+          } catch {}
+        }
+      }
+
+      const finalThoughts = assembled.split('\n')
+        .filter((t: string) => t.trim().length > 0)
         .slice(0, 3)
-        .map(line => line.replace(/^\d+\.\s*/, '').trim());
-      
-      setAIThoughts(thoughts.length > 0 ? thoughts : [
+        .map((t: string) => t.replace(/^\d+\.\s*/, '').trim())
+        .filter((t: string) => t.length > 0);
+      setAIThoughts(finalThoughts.length ? finalThoughts : [
         'This text looks good overall.',
         'Consider adding more detail for clarity.',
         'The tone is appropriate for the context.'
@@ -404,8 +479,7 @@ export default function LiveDocEditor() {
         `The tone is appropriate, but you could strengthen the argument with examples.`,
       ]);
     }
-    
-    setShowAIResults(true);
+    setAIStreaming(false);
   };
 
   const handleRewriteText = async () => {
@@ -442,20 +516,51 @@ export default function LiveDocEditor() {
           content: fullDocument, // Full document for context
           model: 'claude-3-5-sonnet-20241022',
           mode: 'chat',
-          projectConfig: projectContext
+          projectConfig: projectContext,
+          maxTokens: 512,
+          stream: true,
         })
       });
 
-      if (!response.ok) {
+      if (!response.ok || !response.body) {
         throw new Error('AI request failed');
       }
 
-      const data = await response.json();
-      
-      // Parse the AI response into 3 rewrites
-      const aiResponse = data.response || '';
-      console.log('🤖 AI Rewrite Response:', aiResponse);
-      
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder('utf-8');
+      let buffer = '';
+      let assembled = '';
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed.startsWith('data:')) continue;
+          const json = trimmed.substring(5).trim();
+          if (json === '[DONE]') continue;
+          try {
+            const evt = JSON.parse(json);
+            if (evt.type === 'content_block_delta' && evt.delta && evt.delta.text) {
+              assembled += evt.delta.text;
+              // Progressive preview for rewrites
+              const preview = assembled
+                .split(/\n\s*\n/)
+                .filter((s: string) => s.trim().length > 0)
+                .slice(0, 3)
+                .map((s: string) => s.replace(/^\d+\.\s*/, '').trim())
+                .filter((s: string) => s.length > 0);
+              if (preview.length) setAIRewrites(preview);
+            }
+          } catch {}
+        }
+      }
+
+      const aiResponse = assembled;
+
       // Try different parsing strategies
       let rewrites: string[] = [];
       
@@ -1489,43 +1594,13 @@ export default function LiveDocEditor() {
               {/* Accept/Reject All Buttons */}
               <div className="flex gap-2">
                 <button
-                  onClick={() => {
-                    if (editor && window.confirm('Accept all changes?')) {
-                      editor.commands.acceptAllChanges();
-                      setTrackedChanges([]);
-                      
-                      // Clear pendingSuggestions from current version
-                      const updatedVersions = versions.map(v => 
-                        v.id === currentVersionId 
-                          ? { ...v, pendingSuggestions: undefined }
-                          : v
-                      );
-                      setVersions(updatedVersions);
-                      
-                      console.log('✅ Accepted all changes and cleared suggestions');
-                    }
-                  }}
+                  onClick={() => setConfirmModal({ open: true, action: 'acceptAll' })}
                   className="flex-1 px-3 py-1.5 text-xs font-medium text-white bg-green-600 rounded hover:bg-green-700"
                 >
                   ✓ Accept All
                 </button>
                 <button
-                  onClick={() => {
-                    if (editor && window.confirm('Reject all changes?')) {
-                      editor.commands.rejectAllChanges();
-                      setTrackedChanges([]);
-                      
-                      // Clear pendingSuggestions from current version
-                      const updatedVersions = versions.map(v => 
-                        v.id === currentVersionId 
-                          ? { ...v, pendingSuggestions: undefined }
-                          : v
-                      );
-                      setVersions(updatedVersions);
-                      
-                      console.log('❌ Rejected all changes and cleared suggestions');
-                    }
-                  }}
+                  onClick={() => setConfirmModal({ open: true, action: 'rejectAll' })}
                   className="flex-1 px-3 py-1.5 text-xs font-medium text-white bg-red-600 rounded hover:bg-red-700"
                 >
                   ✕ Reject All
@@ -2101,6 +2176,42 @@ export default function LiveDocEditor() {
                 </div>
               ))
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Confirm Modal */}
+      {confirmModal.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setConfirmModal({ open: false, action: null })} />
+          <div className="relative bg-white rounded-lg shadow-xl w-full max-w-sm p-5">
+            <h4 className="text-base font-semibold text-black mb-2">{confirmModal.action === 'acceptAll' ? 'Accept all changes?' : 'Reject all changes?'}</h4>
+            <p className="text-sm text-gray-600 mb-4">This will {confirmModal.action === 'acceptAll' ? 'keep all insertions and confirm deletions' : 'remove all insertions and restore deleted text'}.</p>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setConfirmModal({ open: false, action: null })}
+                className="px-3 py-1.5 text-sm text-gray-700 bg-gray-100 rounded hover:bg-gray-200"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  if (!editor) return;
+                  if (confirmModal.action === 'acceptAll') {
+                    editor.commands.acceptAllChanges();
+                  } else if (confirmModal.action === 'rejectAll') {
+                    editor.commands.rejectAllChanges();
+                  }
+                  setTrackedChanges([]);
+                  const updated = versions.map(v => v.id === currentVersionId ? ({ ...v, pendingSuggestions: undefined }) : v);
+                  setVersions(updated);
+                  setConfirmModal({ open: false, action: null });
+                }}
+                className={"px-3 py-1.5 text-sm text-white rounded " + (confirmModal.action === 'acceptAll' ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700')}
+              >
+                {confirmModal.action === 'acceptAll' ? 'Accept all' : 'Reject all'}
+              </button>
+            </div>
           </div>
         </div>
       )}

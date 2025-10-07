@@ -1,6 +1,26 @@
 // API route for Anthropic Claude integration
 import { NextRequest, NextResponse } from 'next/server';
 
+// Simple in-memory micro-cache for recent requests (reduces latency and cost)
+// NOTE: Lives per server instance; fine for local/dev and small-scale prod.
+type CacheEntry = { value: any; expiresAt: number };
+const MICRO_CACHE = new Map<string, CacheEntry>();
+const MICRO_CACHE_TTL_MS = 60 * 1000; // 60s TTL
+
+function getCache(key: string) {
+  const entry = MICRO_CACHE.get(key);
+  if (!entry) return null;
+  if (Date.now() > entry.expiresAt) {
+    MICRO_CACHE.delete(key);
+    return null;
+  }
+  return entry.value;
+}
+
+function setCache(key: string, value: any, ttlMs = MICRO_CACHE_TTL_MS) {
+  MICRO_CACHE.set(key, { value, expiresAt: Date.now() + ttlMs });
+}
+
 // Function to clean up explanation text formatting
 function cleanExplanationText(text: string): string {
   if (!text) return text;
@@ -33,7 +53,7 @@ function cleanExplanationText(text: string): string {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { prompt, content, model, mode = 'edit', projectConfig } = body;
+    const { prompt, content, model, mode = 'edit', projectConfig, maxTokens, stream } = body;
     
     console.log('Anthropic API called with:', { 
       prompt: prompt?.substring(0, 100) + '...', 
@@ -129,6 +149,15 @@ Please keep all edits and responses aligned with this project context${hasLearne
     console.log('🔧 Context Length:', projectContext.length, 'characters');
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
+    // Micro-cache key to dedupe similar requests for short periods
+    const cacheKey = JSON.stringify({ mode, model, prompt, content: content?.slice(-200), projectName: projectConfig?.projectName, maxTokens });
+    if (!stream) {
+      const cached = getCache(cacheKey);
+      if (cached) {
+        return NextResponse.json(cached);
+      }
+    }
+
     // Different prompts based on mode
     let userContent: string;
 
@@ -199,6 +228,46 @@ Original HTML document:
 ${content}`;
     }
 
+    // If streaming requested, proxy Anthropic SSE directly
+    if (stream) {
+      const sseRes = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+          'Accept': 'text/event-stream',
+        },
+        body: JSON.stringify({
+          model: model || 'claude-3-5-sonnet-20241022',
+          max_tokens: Math.min(typeof maxTokens === 'number' ? maxTokens : 4000, 4000),
+          stream: true,
+          messages: [
+            { role: 'user', content: `${projectContext}${mode === 'chat' ? `Document content: ${content}\n\nQuestion: ${prompt}` : userContent}` }
+          ],
+        }),
+      });
+
+      if (!sseRes.ok) {
+        const error = await sseRes.text();
+        return NextResponse.json(
+          { error: `Failed to get response from Anthropic: ${sseRes.status} ${sseRes.statusText}`, details: error },
+          { status: sseRes.status }
+        );
+      }
+
+      // Pass-through SSE stream
+      return new Response(sseRes.body, {
+        headers: {
+          'Content-Type': 'text/event-stream; charset=utf-8',
+          'Cache-Control': 'no-cache, no-transform',
+          'Connection': 'keep-alive',
+          'X-Accel-Buffering': 'no',
+          'Access-Control-Allow-Origin': '*',
+        },
+      });
+    }
+
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -208,7 +277,7 @@ ${content}`;
       },
       body: JSON.stringify({
         model: model || 'claude-3-5-sonnet-20241022',
-        max_tokens: 4000,
+        max_tokens: Math.min(typeof maxTokens === 'number' ? maxTokens : 4000, 4000),
         messages: [
           {
             role: 'user',
@@ -226,7 +295,7 @@ ${content}`;
         error: error,
         requestBody: {
           model: model || 'claude-3-5-sonnet-20241022',
-          max_tokens: 4000,
+          max_tokens: Math.min(typeof maxTokens === 'number' ? maxTokens : 4000, 4000),
           messages: [{ role: 'user', content: userContent }]
         }
       });
@@ -241,10 +310,12 @@ ${content}`;
 
     // Return different response based on mode
     if (mode === 'chat') {
-      return NextResponse.json({ 
+      const payload = { 
         mode: 'chat',
         response: responseText 
-      });
+      };
+      setCache(cacheKey, payload);
+      return NextResponse.json(payload);
     } else if (mode === 'analyze') {
       // For analyze mode, try to extract and return clean JSON or structured text
       try {
@@ -252,20 +323,24 @@ ${content}`;
         const jsonMatch = responseText.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
           const jsonData = JSON.parse(jsonMatch[0]);
-          return NextResponse.json({ 
+          const payload = { 
             mode: 'analyze',
             response: jsonData 
-          });
+          };
+          setCache(cacheKey, payload);
+          return NextResponse.json(payload);
         }
       } catch (e) {
         console.error('Failed to parse JSON from analyze response:', e);
       }
       // If JSON parsing fails, return the raw text as "analysis"
-      return NextResponse.json({ 
+      const payload = { 
         mode: 'analyze',
         analysis: responseText,
         response: responseText 
-      });
+      };
+      setCache(cacheKey, payload);
+      return NextResponse.json(payload);
     } else {
       // Parse the structured response for edit mode
       const documentMatch = responseText.match(/\[DOCUMENT\]([\s\S]*?)\[\/DOCUMENT\]/);
@@ -313,11 +388,13 @@ ${content}`;
         explanationLength: explanation.length
       });
       
-      return NextResponse.json({ 
+      const payload = { 
         mode: 'edit',
         editedContent,
         explanation
-      });
+      };
+      setCache(cacheKey, payload);
+      return NextResponse.json(payload);
     }
   } catch (error) {
     console.error('Error in Anthropic API route:', error);

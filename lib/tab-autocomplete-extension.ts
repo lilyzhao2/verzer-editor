@@ -43,6 +43,10 @@ export const TabAutocompleteExtension = Extension.create<TabAutocompleteOptions>
     }
 
     const pluginKey = new PluginKey('tabAutocomplete');
+    // Cooldown + gating
+    let lastAcceptTimestamp = 0;
+    let lastAcceptPosition = 0;
+    let requireNewInput = false;
 
     return [
       new Plugin({
@@ -198,7 +202,11 @@ export const TabAutocompleteExtension = Extension.create<TabAutocompleteOptions>
                   display: flex;
                   align-items: center;
                   gap: 8px;
-                  ${index === selectedIndex ? 'background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;' : 'background: #f8fafc; color: #374151;'}
+                  ${index === selectedIndex ? 'background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;' : 'background: #f8fafc; color: #374151;'};
+                  max-width: 560px;
+                  white-space: nowrap;
+                  overflow: hidden;
+                  text-overflow: ellipsis;
                 `;
 
                 // Add number circle
@@ -266,6 +274,7 @@ export const TabAutocompleteExtension = Extension.create<TabAutocompleteOptions>
                 console.log('✅ Accepting suggestion:', selectedSuggestion);
                 const { state } = view;
                 const tr = state.tr.insertText(selectedSuggestion, suggestionFrom);
+                tr.setMeta('addToHistory', true);
                 view.dispatch(tr);
                 
                 // Clear suggestions
@@ -277,6 +286,11 @@ export const TabAutocompleteExtension = Extension.create<TabAutocompleteOptions>
                   showSuggestions: false,
                 });
                 view.dispatch(clearTr);
+
+                // Set cooldown + gating
+                lastAcceptTimestamp = Date.now();
+                lastAcceptPosition = suggestionFrom;
+                requireNewInput = true;
                 return true;
               } else {
                 // Request new suggestions (don't prevent default Tab behavior)
@@ -285,6 +299,15 @@ export const TabAutocompleteExtension = Extension.create<TabAutocompleteOptions>
                 const { from } = state.selection;
                 const textBefore = state.doc.textBetween(0, from, ' ');
                 
+                // Cooldown: if last accept at same position and < 400ms, ignore
+                if (from === lastAcceptPosition && Date.now() - lastAcceptTimestamp < 400) {
+                  return false;
+                }
+                // Require new input: must type after last accept
+                if (requireNewInput) {
+                  return false;
+                }
+
                 if (textBefore.trim().length > 0 && onRequestCompletion) {
                   // Get only current paragraph for faster autocomplete
                   const currentParagraph = getCurrentParagraph(state, from);
@@ -403,6 +426,8 @@ export const TabAutocompleteExtension = Extension.create<TabAutocompleteOptions>
               });
               view.dispatch(tr);
             }
+            // User typed → allow new suggestions
+            requireNewInput = false;
             
             // Don't auto-trigger - user must press Tab to request completion
             return false;
