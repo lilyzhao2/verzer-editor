@@ -239,43 +239,11 @@ if (typeof window !== 'undefined') {
   }
 }
 
-// React Error Boundary helper
-export const withErrorMonitoring = (WrappedComponent: React.ComponentType<any>) => {
-  return class extends React.Component<any, { hasError: boolean }> {
-    constructor(props: any) {
-      super(props);
-      this.state = { hasError: false };
-    }
+// Error monitoring utilities (React-specific code moved to components)
+export const reportComponentError = (error: Error, componentName: string) => {
+  errorMonitor.reportError(error, componentName, 'high');
+};
 
-    static getDerivedStateFromError(error: Error) {
-      return { hasError: true };
-    }
-
-    componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
-      errorMonitor.reportError(
-        error,
-        WrappedComponent.name || 'Unknown',
-        'high'
-      );
-    }
-
-    render() {
-      if (this.state.hasError) {
-        return (
-          <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
-            <h3 className="text-red-800 font-semibold">Something went wrong</h3>
-            <p className="text-red-600">An error occurred in {WrappedComponent.name || 'this component'}.</p>
-            <button
-              onClick={() => this.setState({ hasError: false })}
-              className="mt-2 px-3 py-1 bg-red-600 text-white rounded text-sm"
-            >
-              Try Again
-            </button>
-          </div>
-        );
-      }
-
-      return <WrappedComponent {...this.props} />;
-    }
-  };
+export const reportPerformanceIssue = (metric: string, value: number, component?: string) => {
+  errorMonitor.reportMetric(metric, value, 'ms', component);
 };

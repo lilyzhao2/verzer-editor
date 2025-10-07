@@ -22,6 +22,7 @@ import { TrackChangesDecorationExtension, TrackedChange } from '@/lib/track-chan
 import { errorMonitor } from '@/lib/errorMonitoring';
 import { testRunner, addEditorTests, runAutoTests } from '@/lib/testRunner';
 import { testReportGenerator } from '@/lib/testReport';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 
 /**
  * MODE 1: LIVE DOC EDITOR
@@ -152,49 +153,6 @@ const CommentList = React.memo(({
   </>
 ));
 
-// Error Boundary Component
-class EditorErrorBoundary extends React.Component<
-  { children: React.ReactNode },
-  { hasError: boolean; error?: Error }
-> {
-  constructor(props: { children: React.ReactNode }) {
-    super(props);
-    this.state = { hasError: false };
-  }
-
-  static getDerivedStateFromError(error: Error) {
-    return { hasError: true, error };
-  }
-
-  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
-    console.error('Editor Error:', error, errorInfo);
-    // In production, send to monitoring service
-    if (process.env.NODE_ENV === 'production') {
-      // TODO: Send to error monitoring service
-    }
-  }
-
-  render() {
-    if (this.state.hasError) {
-      return (
-        <div className="flex items-center justify-center h-64 bg-red-50 border border-red-200 rounded-lg">
-          <div className="text-center">
-            <h2 className="text-lg font-semibold text-red-800 mb-2">Something went wrong</h2>
-            <p className="text-red-600 mb-4">The editor encountered an error. Please refresh the page.</p>
-            <button
-              onClick={() => window.location.reload()}
-              className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
-            >
-              Refresh Page
-            </button>
-          </div>
-        </div>
-      );
-    }
-
-    return this.props.children;
-  }
-}
 
 // Performance monitoring hook
 const usePerformanceMonitor = () => {
@@ -1260,7 +1218,7 @@ export default function LiveDocEditor() {
   }
 
   return (
-    <EditorErrorBoundary>
+    <ErrorBoundary>
       <div className="flex flex-col h-screen bg-gray-100">
         {/* Top Bar - Like Google Docs */}
         <div className="bg-white border-b border-gray-200 px-6 py-2" data-testid="toolbar">
@@ -2630,6 +2588,6 @@ export default function LiveDocEditor() {
         🐛
       </button>
       </div>
-    </EditorErrorBoundary>
+    </ErrorBoundary>
   );
 }
