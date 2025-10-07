@@ -174,20 +174,26 @@ export default function LiveDocEditor() {
             if (mark.type.name === 'insertion') {
               edits.push({
                 id: mark.attrs.id,
-                type: 'addition',
-                value: node.text || '',
+                type: 'insertion',
+                text: node.text || '',
+                from: pos,
+                to: pos + (node.text?.length || 0),
                 userId: mark.attrs.userId,
                 userName: mark.attrs.userName,
-                timestamp: mark.attrs.timestamp,
+                userColor: mark.attrs.userId === 'user-1' ? '#4285f4' : '#9c27b0', // Blue for user, purple for AI
+                timestamp: new Date(mark.attrs.timestamp),
               });
             } else if (mark.type.name === 'deletion') {
               edits.push({
                 id: mark.attrs.id,
                 type: 'deletion',
-                value: node.text || '',
+                text: node.text || '',
+                from: pos,
+                to: pos + (node.text?.length || 0),
                 userId: mark.attrs.userId,
                 userName: mark.attrs.userName,
-                timestamp: mark.attrs.timestamp,
+                userColor: mark.attrs.userId === 'user-1' ? '#4285f4' : '#9c27b0',
+                timestamp: new Date(mark.attrs.timestamp),
               });
             }
           });
