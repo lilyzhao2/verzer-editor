@@ -154,34 +154,13 @@ const CommentList = React.memo(({
 ));
 
 
-// Performance monitoring hook
+// Simple performance monitoring hook (disabled to prevent infinite loops)
 const usePerformanceMonitor = () => {
-  const [metrics, setMetrics] = useState<{
-    renderCount: number;
-    lastRenderTime: number;
-    averageRenderTime: number;
-  }>({
-    renderCount: 0,
+  return {
+    renderCount: 1, // Static value to prevent infinite loops
     lastRenderTime: 0,
     averageRenderTime: 0,
-  });
-
-  useEffect(() => {
-    const startTime = performance.now();
-    
-    return () => {
-      const endTime = performance.now();
-      const renderTime = endTime - startTime;
-      
-      setMetrics(prev => ({
-        renderCount: prev.renderCount + 1,
-        lastRenderTime: renderTime,
-        averageRenderTime: (prev.averageRenderTime * prev.renderCount + renderTime) / (prev.renderCount + 1),
-      }));
-    };
-  });
-
-  return metrics;
+  };
 };
 
 export default function LiveDocEditor() {
