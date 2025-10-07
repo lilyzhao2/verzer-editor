@@ -265,27 +265,27 @@ export const TabAutocompleteExtension = Extension.create<TabAutocompleteOptions>
             
             // Tab key to accept selected suggestion OR request new ones
             if (event.key === 'Tab') {
-              if (showSuggestions && suggestions.length > 0) {
-                // Accept selected suggestion
-                event.preventDefault();
-                event.stopPropagation();
-                
-                const selectedSuggestion = suggestions[selectedIndex];
-                console.log('✅ Accepting suggestion:', selectedSuggestion);
-                const { state } = view;
-                const tr = state.tr.insertText(selectedSuggestion, suggestionFrom);
-                tr.setMeta('addToHistory', true);
-                view.dispatch(tr);
-                
-                // Clear suggestions
-                const clearTr = state.tr;
-                clearTr.setMeta(pluginKey, {
+            if (showSuggestions && suggestions.length > 0) {
+              // Accept selected suggestion
+              event.preventDefault();
+              event.stopPropagation();
+              
+              const selectedSuggestion = suggestions[selectedIndex];
+              console.log('✅ Accepting suggestion:', selectedSuggestion);
+              const { state } = view;
+              
+              // Create a single transaction that both inserts text and clears suggestions
+              const tr = state.tr
+                .insertText(selectedSuggestion, suggestionFrom)
+                .setMeta('addToHistory', true)
+                .setMeta(pluginKey, {
                   suggestions: [],
                   selectedIndex: 0,
                   suggestionFrom: 0,
                   showSuggestions: false,
                 });
-                view.dispatch(clearTr);
+              
+              view.dispatch(tr);
 
                 // Set cooldown + gating
                 lastAcceptTimestamp = Date.now();
@@ -391,18 +391,18 @@ export const TabAutocompleteExtension = Extension.create<TabAutocompleteOptions>
                   
                   const selectedSuggestion = suggestions[selectedIndex];
                   const { state } = view;
-                  const tr = state.tr.insertText(selectedSuggestion, suggestionFrom);
-                  view.dispatch(tr);
                   
-                  // Clear suggestions
-                  const clearTr = state.tr;
-                  clearTr.setMeta(pluginKey, {
-                    suggestions: [],
-                    selectedIndex: 0,
-                    suggestionFrom: 0,
-                    showSuggestions: false,
-                  });
-                  view.dispatch(clearTr);
+                  // Create a single transaction that both inserts text and clears suggestions
+                  const tr = state.tr
+                    .insertText(selectedSuggestion, suggestionFrom)
+                    .setMeta(pluginKey, {
+                      suggestions: [],
+                      selectedIndex: 0,
+                      suggestionFrom: 0,
+                      showSuggestions: false,
+                    });
+                  
+                  view.dispatch(tr);
                   return true;
                 } else {
                   // Don't prevent default - let Tab work normally
