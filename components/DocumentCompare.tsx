@@ -943,7 +943,7 @@ export function DocumentCompare() {
                   />
               );
             })}
-            </div>
+          </div>
             
           </div>
           

@@ -559,6 +559,19 @@ export default function LiveDocEditor() {
   const [versionStartContent, setVersionStartContent] = useState<string>('');
   const [suggestingModeContent, setSuggestingModeContent] = useState<string>(''); // Tracks changes during suggesting
 
+  // Consistent timestamp formatting for comments and edits
+  const formatTimestamp = useCallback((value: Date | string | number) => {
+    const date = value instanceof Date ? value : new Date(value);
+    return date.toLocaleString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+    });
+  }, []);
+
   // Custom confirm modal state (replaces window.confirm)
   const [confirmModal, setConfirmModal] = useState<{ open: boolean; action: 'acceptAll' | 'rejectAll' | null }>(
     { open: false, action: null }
@@ -1292,12 +1305,12 @@ export default function LiveDocEditor() {
             <select
               value={currentVersionId}
               onChange={(e) => loadVersion(e.target.value)}
-              className="px-2 py-1 text-xs text-black bg-white border border-gray-300 rounded hover:bg-gray-50 cursor-pointer"
+              className="px-3 py-1.5 text-sm font-semibold text-black bg-white border border-gray-300 rounded hover:bg-gray-50 cursor-pointer"
               title="Select version"
             >
               {versions.map((v) => (
                 <option key={v.id} value={v.id}>
-                  V{v.versionNumber} - {v.timestamp.toLocaleTimeString()} {v.autoSaved ? '(auto)' : ''}
+                  V{v.versionNumber} {v.autoSaved ? '(auto)' : ''}
                 </option>
               ))}
             </select>
@@ -1619,14 +1632,23 @@ export default function LiveDocEditor() {
             <span className="px-3 py-1.5 text-xs font-medium bg-green-600 text-white rounded">
               📝 Suggesting Mode
             </span>
-            {trackedChanges.length > 0 && (
-              <button
-                onClick={() => setShowCommentSidebar(!showCommentSidebar)}
-                className="px-3 py-1.5 text-xs font-medium text-green-700 bg-green-100 rounded hover:bg-green-200"
-              >
-                {trackedChanges.length} {trackedChanges.length === 1 ? 'change' : 'changes'}
-              </button>
-            )}
+            {/* Bulk actions */}
+            <button
+              onClick={() => setConfirmModal({ open: true, action: 'acceptAll' })}
+              disabled={trackedChanges.length === 0}
+              className="px-3 py-1.5 text-xs font-medium text-white bg-green-600 rounded hover:bg-green-700 disabled:opacity-30 disabled:cursor-not-allowed"
+              title="Accept all changes"
+            >
+              ✓ Accept All
+            </button>
+            <button
+              onClick={() => setConfirmModal({ open: true, action: 'rejectAll' })}
+              disabled={trackedChanges.length === 0}
+              className="px-3 py-1.5 text-xs font-medium text-white bg-red-600 rounded hover:bg-red-700 disabled:opacity-30 disabled:cursor-not-allowed"
+              title="Reject all changes"
+            >
+              ✕ Reject All
+            </button>
           </div>
         )}
         {editingMode === 'viewing' && (
@@ -1797,37 +1819,8 @@ export default function LiveDocEditor() {
         {/* Track Changes & Comments Sidebar (visible in BOTH editing and suggesting modes if there are changes OR comments) */}
         {showCommentSidebar && (trackedChanges.length > 0 || comments.length > 0) && (
           <div className="w-96 bg-white border-l border-gray-200 flex flex-col shadow-xl">
-            <div className="px-4 py-3 border-b border-gray-200 bg-green-50">
-              <div className="flex items-center justify-between mb-2">
-                <h3 className="text-sm font-semibold text-black flex items-center gap-2">
-                  📝 Suggestions & Comments
-                  <span className="text-xs text-gray-600">
-                    ({trackedChanges.length} changes, {comments.filter(c => !c.resolved).length} comments)
-                  </span>
-                </h3>
-                <button
-                  onClick={() => setShowCommentSidebar(false)}
-                  className="text-gray-500 hover:text-black text-xl"
-                >
-                  ✕
-                </button>
-              </div>
-              
-              {/* Accept/Reject All Buttons */}
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setConfirmModal({ open: true, action: 'acceptAll' })}
-                  className="flex-1 px-3 py-1.5 text-xs font-medium text-white bg-green-600 rounded hover:bg-green-700"
-                >
-                  ✓ Accept All
-                </button>
-                <button
-                  onClick={() => setConfirmModal({ open: true, action: 'rejectAll' })}
-                  className="flex-1 px-3 py-1.5 text-xs font-medium text-white bg-red-600 rounded hover:bg-red-700"
-                >
-                  ✕ Reject All
-                </button>
-              </div>
+            <div className="px-4 py-3 border-b border-gray-200 bg-gray-50">
+              {/* Intentionally minimal header (no explicit title) */}
             </div>
 
             <div className="flex-1 overflow-auto p-4 space-y-3">
@@ -1868,12 +1861,13 @@ export default function LiveDocEditor() {
                             <span className="px-2 py-0.5 text-xs font-semibold bg-blue-600 text-white rounded">
                               💬 COMMENT
                             </span>
-                            <span className="text-xs font-semibold text-black">
-                              {comment.userName}
-                            </span>
                             {comment.resolved && (
                               <span className="text-xs text-gray-500">(Resolved)</span>
                             )}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-medium text-gray-700">{comment.userName}</span>
+                            <span className="text-xs text-gray-500">{formatTimestamp(comment.timestamp)}</span>
                           </div>
                           <button
                             onClick={() => {
@@ -1888,9 +1882,6 @@ export default function LiveDocEditor() {
                           </button>
                         </div>
                         <p className="text-sm text-black mb-2">{comment.text}</p>
-                        <div className="text-xs text-gray-500">
-                          {new Date(comment.timestamp).toLocaleString()}
-                        </div>
                       </div>
                     );
                   }
@@ -1915,17 +1906,15 @@ export default function LiveDocEditor() {
                     >
                       <div className="flex items-start justify-between mb-2">
                         <div className="flex items-center gap-2">
-                          <div
-                            className="w-6 h-6 rounded-full flex items-center justify-center text-white text-xs font-bold"
-                            style={{ backgroundColor: userColor }}
+                          <span
+                            className="text-xs text-gray-500"
                           >
-                            {change.userName.charAt(0)}
-                          </div>
-                          <span className="text-xs font-medium text-black">
-                            {change.userName}
+                            {formatTimestamp(change.timestamp)}
                           </span>
                         </div>
-                        <div className="flex gap-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-medium text-gray-700">{change.userName}</span>
+                          <div className="flex gap-1">
                           <button
                             onClick={() => {
                               if (editor) {
@@ -1956,6 +1945,7 @@ export default function LiveDocEditor() {
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                             </svg>
                           </button>
+                          </div>
                         </div>
                       </div>
 
@@ -1979,20 +1969,9 @@ export default function LiveDocEditor() {
                         )}
                       </div>
 
-                      {displayType === 'insertion' && (
-                        <div className="mt-2 text-xs text-gray-500 italic">
-                          Added at position {change.from}
-                        </div>
-                      )}
-                      {displayType === 'deletion' && (
-                        <div className="mt-2 text-xs text-gray-500 italic">
-                          Deleted from position {change.from}
-                        </div>
-                      )}
+                      {/* Removed position details from UI */}
 
-                      <div className="mt-2 text-xs text-gray-500">
-                        {new Date(change.timestamp).toLocaleTimeString()}
-                      </div>
+                      {/* timestamp now in header line, right-aligned with user */}
                     </div>
                   );
                 })}
@@ -2262,9 +2241,6 @@ export default function LiveDocEditor() {
           </div>
 
           <div className="p-4">
-            <p className="text-xs text-gray-600 mb-2">
-              Selected: <span className="font-medium text-black">"{aiMenuSelection.text}"</span>
-            </p>
             <textarea
               value={commentInputValue}
               onChange={(e) => setCommentInputValue(e.target.value)}
@@ -2314,9 +2290,6 @@ export default function LiveDocEditor() {
           </div>
 
           <div className="p-4">
-            <p className="text-xs text-gray-600 mb-2">
-              Selected: <span className="font-medium text-black">"{aiMenuSelection.text}"</span>
-            </p>
             <textarea
               value={rewritePromptValue}
               onChange={(e) => setRewritePromptValue(e.target.value)}
