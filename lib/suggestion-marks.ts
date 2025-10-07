@@ -16,6 +16,9 @@ export interface SuggestionMarkOptions {
 // Insertion Mark (green underline)
 export const InsertionMark = Mark.create({
   name: 'insertion',
+  
+  // CRITICAL: Don't let this mark extend to new text typed after it
+  inclusive: false,
 
   addOptions() {
     return {
@@ -77,6 +80,9 @@ export const InsertionMark = Mark.create({
 // Deletion Mark (red strikethrough)
 export const DeletionMark = Mark.create({
   name: 'deletion',
+  
+  // CRITICAL: Don't let this mark extend to new text typed after it
+  inclusive: false,
 
   addOptions() {
     return {
