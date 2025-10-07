@@ -19,9 +19,6 @@ import { TabAutocompleteExtension } from '@/lib/tab-autocomplete-extension';
 import { ProjectSetup } from '@/components/ProjectSetup';
 import { preloadCriticalComponents, preloadHeavyComponents } from '@/components/LazyComponents';
 import { TrackChangesDecorationExtension, TrackedChange } from '@/lib/track-changes-decorations';
-import { errorMonitor } from '@/lib/errorMonitoring';
-import { simpleTestRunner, addBasicEditorTests, runBasicTests } from '@/lib/simpleTestRunner';
-import { ErrorBoundary } from '@/components/ErrorBoundary';
 
 /**
  * MODE 1: LIVE DOC EDITOR
@@ -152,13 +149,62 @@ const CommentList = React.memo(({
   </>
 ));
 
+// Error Boundary Component
+class EditorErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { hasError: boolean; error?: Error }
+> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false };
+  }
 
-// Simple performance monitoring hook (disabled to prevent infinite loops)
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error('Editor Error:', error, errorInfo);
+    // In production, send to monitoring service
+    if (process.env.NODE_ENV === 'production') {
+      // TODO: Send to error monitoring service
+    }
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="flex items-center justify-center h-64 bg-red-50 border border-red-200 rounded-lg">
+          <div className="text-center">
+            <h2 className="text-lg font-semibold text-red-800 mb-2">Something went wrong</h2>
+            <p className="text-red-600 mb-4">The editor encountered an error. Please refresh the page.</p>
+            <button
+              onClick={() => window.location.reload()}
+              className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
+            >
+              Refresh Page
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
+// Performance monitoring hook - simplified to avoid infinite loops
 const usePerformanceMonitor = () => {
+  const renderCountRef = useRef(0);
+  
+  // Track render count without causing re-renders
+  renderCountRef.current += 1;
+
+  // Return stable metrics that don't cause re-renders
   return {
-    renderCount: 1, // Static value to prevent infinite loops
-    lastRenderTime: 0,
-    averageRenderTime: 0,
+    renderCount: renderCountRef.current,
+    lastRenderTime: 0, // Disabled to avoid infinite loops
+    averageRenderTime: 0, // Disabled to avoid infinite loops
   };
 };
 
@@ -172,9 +218,7 @@ export default function LiveDocEditor() {
   // Preload critical components on mount
   useEffect(() => {
     preloadCriticalComponents();
-    runBasicTests(); // Start simple testing
   }, []);
-
   
   const [documentName, setDocumentName] = useState('Untitled Document');
   const [editingMode, setEditingMode] = useState<EditingMode>('editing');
@@ -453,17 +497,6 @@ export default function LiveDocEditor() {
       },
     },
   });
-
-  // Add basic editor tests when editor is ready
-  useEffect(() => {
-    if (editor) {
-      const timer = setTimeout(() => {
-        addBasicEditorTests(editor);
-      }, 1000);
-      
-      return () => clearTimeout(timer);
-    }
-  }, [editor]);
 
   // Check if current version is locked (old version) - MUST BE BEFORE useEffect
   const currentVersion = versions.find((v) => v.id === currentVersionId);
@@ -1197,10 +1230,10 @@ export default function LiveDocEditor() {
   }
 
   return (
-    <ErrorBoundary>
+    <EditorErrorBoundary>
       <div className="flex flex-col h-screen bg-gray-100">
-        {/* Top Bar - Like Google Docs */}
-        <div className="bg-white border-b border-gray-200 px-6 py-2" data-testid="toolbar">
+      {/* Top Bar - Like Google Docs */}
+      <div className="bg-white border-b border-gray-200 px-6 py-2">
         <div className="flex items-center gap-4">
           {/* Document Title */}
           <input
@@ -1260,7 +1293,6 @@ export default function LiveDocEditor() {
               value={currentVersionId}
               onChange={(e) => loadVersion(e.target.value)}
               className="px-2 py-1 text-xs text-black bg-white border border-gray-300 rounded hover:bg-gray-50 cursor-pointer"
-              data-testid="version-selector"
               title="Select version"
             >
               {versions.map((v) => (
@@ -1758,7 +1790,7 @@ export default function LiveDocEditor() {
                 border-radius: 2px;
               }
             `}</style>
-            <EditorContent editor={editor} data-testid="editor" />
+            <EditorContent editor={editor} />
           </div>
         </div>
 
@@ -2431,113 +2463,27 @@ export default function LiveDocEditor() {
         </div>
       )}
 
-      {/* Enhanced Debug Panel */}
+      {/* Debug Panel */}
       {debugMode && (
-        <div className="fixed bottom-4 right-4 bg-black text-white p-4 rounded-lg shadow-lg text-xs max-w-md max-h-96 overflow-y-auto" data-testid="debug-panel">
+        <div className="fixed bottom-4 right-4 bg-black text-white p-4 rounded-lg shadow-lg text-xs max-w-sm">
           <div className="flex justify-between items-center mb-2">
-            <h3 className="font-bold">🔍 Debug Panel</h3>
-            <div className="flex gap-2">
-              <button
-                onClick={() => simpleTestRunner.runTests()}
-                className="px-2 py-1 bg-blue-600 rounded text-xs hover:bg-blue-700"
-                title="Run Tests"
-              >
-                🧪 Test
-              </button>
-              <button
-                onClick={() => errorMonitor.exportData()}
-                className="px-2 py-1 bg-green-600 rounded text-xs hover:bg-green-700"
-                title="Export Data"
-              >
-                📊 Export
-              </button>
-              <button
-                onClick={() => setDebugMode(false)}
-                className="text-gray-400 hover:text-white"
-              >
-                ×
-              </button>
-            </div>
+            <h3 className="font-bold">Debug Info</h3>
+            <button
+              onClick={() => setDebugMode(false)}
+              className="text-gray-400 hover:text-white"
+            >
+              ×
+            </button>
           </div>
-          
-          <div className="space-y-2">
-            {/* Performance Metrics */}
-            <div className="border-b border-gray-600 pb-2">
-              <h4 className="font-semibold text-blue-300 mb-1">Performance</h4>
-              <div className="grid grid-cols-2 gap-1">
-                <div>Renders: {performanceMetrics.renderCount}</div>
-                <div>Last: {performanceMetrics.lastRenderTime.toFixed(2)}ms</div>
-                <div>Avg: {performanceMetrics.averageRenderTime.toFixed(2)}ms</div>
-                <div>Mode: {editingMode}</div>
-              </div>
-            </div>
-
-            {/* Error Statistics */}
-            <div className="border-b border-gray-600 pb-2">
-              <h4 className="font-semibold text-red-300 mb-1">Errors</h4>
-              {(() => {
-                const errorStats = errorMonitor.getErrorStats();
-                return (
-                  <div className="grid grid-cols-2 gap-1">
-                    <div>Total: {errorStats.total}</div>
-                    <div>Last Hour: {errorStats.lastHour}</div>
-                    <div>Critical: {errorStats.bySeverity.critical}</div>
-                    <div>High: {errorStats.bySeverity.high}</div>
-                  </div>
-                );
-              })()}
-            </div>
-
-            {/* Cache Statistics */}
-            <div className="border-b border-gray-600 pb-2">
-              <h4 className="font-semibold text-yellow-300 mb-1">Cache</h4>
-              <div className="text-xs">
-                <button
-                  onClick={async () => {
-                    try {
-                      const response = await fetch('/api/anthropic');
-                      const data = await response.json();
-                      console.log('Cache Stats:', data);
-                    } catch (e) {
-                      console.error('Failed to fetch cache stats:', e);
-                    }
-                  }}
-                  className="px-2 py-1 bg-yellow-600 rounded text-xs hover:bg-yellow-700"
-                >
-                  📈 Check Cache
-                </button>
-              </div>
-            </div>
-
-            {/* Editor State */}
-            <div className="border-b border-gray-600 pb-2">
-              <h4 className="font-semibold text-green-300 mb-1">Editor</h4>
-              <div className="grid grid-cols-2 gap-1">
-                <div>Changes: {trackedChanges.length}</div>
-                <div>Comments: {comments.length}</div>
-                <div>Versions: {versions.length}</div>
-                <div>Zoom: {zoomLevel}%</div>
-              </div>
-            </div>
-
-            {/* Memory Usage */}
-            <div>
-              <h4 className="font-semibold text-purple-300 mb-1">Memory</h4>
-              {(() => {
-                const memory = (performance as any).memory;
-                if (memory) {
-                  const usedMB = (memory.usedJSHeapSize / 1024 / 1024).toFixed(1);
-                  const totalMB = (memory.totalJSHeapSize / 1024 / 1024).toFixed(1);
-                  return (
-                    <div className="grid grid-cols-2 gap-1">
-                      <div>Used: {usedMB}MB</div>
-                      <div>Total: {totalMB}MB</div>
-                    </div>
-                  );
-                }
-                return <div className="text-gray-400">Not available</div>;
-              })()}
-            </div>
+          <div className="space-y-1">
+            <div>Renders: {performanceMetrics.renderCount}</div>
+            <div>Last Render: {performanceMetrics.lastRenderTime.toFixed(2)}ms</div>
+            <div>Avg Render: {performanceMetrics.averageRenderTime.toFixed(2)}ms</div>
+            <div>Mode: {editingMode}</div>
+            <div>Changes: {trackedChanges.length}</div>
+            <div>Comments: {comments.length}</div>
+            <div>Versions: {versions.length}</div>
+            <div>Zoom: {zoomLevel}%</div>
           </div>
         </div>
       )}
@@ -2551,6 +2497,6 @@ export default function LiveDocEditor() {
         🐛
       </button>
       </div>
-    </ErrorBoundary>
+    </EditorErrorBoundary>
   );
 }
