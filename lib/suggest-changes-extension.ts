@@ -89,33 +89,64 @@ export const SuggestChangesExtension = Extension.create<SuggestChangesOptions>({
               // Check if this is a deletion (from < to, and either no slice or empty slice)
               const isDeletion = from < to && (!stepJSON.slice || !stepJSON.slice.content);
               
+              console.log('🔎 isDeletion check:', {
+                isDeletion,
+                fromLessThanTo: from < to,
+                hasSlice: !!stepJSON.slice,
+                hasContent: stepJSON.slice?.content
+              });
+              
               if (isDeletion) {
-                // Text was deleted
+                // Text is being deleted
                 const deletedText = oldState.doc.textBetween(from, to);
                 console.log('🗑️ Deletion detected:', deletedText);
                 
                 if (deletedText && deletedText.trim()) {
-                  // Get the deleted slice with all formatting
-                  const deletedSlice = oldState.doc.slice(from, to);
+                  // Check if the deleted text already has marks (insertion or deletion)
+                  let hasInsertionMark = false;
+                  let hasDeletionMark = false;
                   
-                  // Re-insert the deleted content
-                  tr.insert(from, deletedSlice.content);
+                  oldState.doc.nodesBetween(from, to, (node) => {
+                    node.marks.forEach(mark => {
+                      if (mark.type.name === 'insertion') hasInsertionMark = true;
+                      if (mark.type.name === 'deletion') hasDeletionMark = true;
+                    });
+                  });
                   
-                  // Mark it as deleted
-                  const deletionMark = newState.schema.marks.deletion;
-                  if (deletionMark) {
-                    tr.addMark(
-                      from,
-                      from + deletedText.length,
-                      deletionMark.create({
-                        id: `delete-${Date.now()}-${index}`,
-                        userId: state.userId,
-                        userName: state.userName,
-                        timestamp: Date.now(),
-                      })
-                    );
-                    modified = true;
-                    console.log('✨ Applied deletion mark (text preserved) from', from, 'to', from + deletedText.length);
+                  if (hasInsertionMark) {
+                    // If deleting text that was just inserted (green), just remove it
+                    console.log('🗑️ Deleting inserted text, removing it completely');
+                    // Let the deletion happen naturally (don't re-insert)
+                  } else if (hasDeletionMark) {
+                    // If deleting text that's already marked as deleted (red strikethrough), remove it permanently
+                    console.log('🗑️ Deleting already-deleted text, removing permanently');
+                    // Let the deletion happen naturally
+                  } else {
+                    // Normal text being deleted - mark it with deletion mark
+                    console.log('🗑️ Marking normal text as deleted');
+                    
+                    // Get the deleted slice with all formatting
+                    const deletedSlice = oldState.doc.slice(from, to);
+                    
+                    // Re-insert the deleted content
+                    tr.insert(from, deletedSlice.content);
+                    
+                    // Apply deletion mark
+                    const deletionMark = newState.schema.marks.deletion;
+                    if (deletionMark) {
+                      tr.addMark(
+                        from,
+                        from + deletedText.length,
+                        deletionMark.create({
+                          id: `delete-${Date.now()}-${index}`,
+                          userId: state.userId,
+                          userName: state.userName,
+                          timestamp: Date.now(),
+                        })
+                      );
+                      modified = true;
+                      console.log('✨ Applied deletion mark from', from, 'to', from + deletedText.length);
+                    }
                   }
                 }
               }

@@ -32,6 +32,42 @@ export default function LiveDocEditor() {
   const [comments, setComments] = useState<Comment[]>([]);
   const [showCommentSidebar, setShowCommentSidebar] = useState(false);
   
+  // Extract tracked edits from editor marks
+  React.useEffect(() => {
+    if (!editor) return;
+    
+    const edits: TrackedEdit[] = [];
+    const { doc } = editor.state;
+    
+    doc.descendants((node, pos) => {
+      if (node.isText && node.marks.length > 0) {
+        node.marks.forEach(mark => {
+          if (mark.type.name === 'insertion') {
+            edits.push({
+              id: mark.attrs.id,
+              type: 'addition',
+              value: node.text || '',
+              userId: mark.attrs.userId,
+              userName: mark.attrs.userName,
+              timestamp: mark.attrs.timestamp,
+            });
+          } else if (mark.type.name === 'deletion') {
+            edits.push({
+              id: mark.attrs.id,
+              type: 'deletion',
+              value: node.text || '',
+              userId: mark.attrs.userId,
+              userName: mark.attrs.userName,
+              timestamp: mark.attrs.timestamp,
+            });
+          }
+        });
+      }
+    });
+    
+    setTrackedEdits(edits);
+  }, [editor?.state.doc, editor]);
+  
   // Auto-open sidebar when suggestions exist in suggesting mode
   React.useEffect(() => {
     if (editingMode === 'suggesting' && trackedEdits.length > 0) {
