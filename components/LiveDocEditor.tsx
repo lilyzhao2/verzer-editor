@@ -16,8 +16,7 @@ import { CommentsExtension, Comment, CommentReply } from '@/lib/comments-extensi
 import { AIInlineExtension } from '@/lib/ai-inline-extension';
 import { DocumentVersion, VersionHistorySettings } from '@/lib/version-types';
 import { TabAutocompleteExtension } from '@/lib/tab-autocomplete-extension';
-import { InsertionMark, DeletionMark } from '@/lib/suggestion-marks';
-import { SuggestChangesExtension } from '@/lib/suggest-changes-extension';
+import { TrackChangesDecorationExtension, TrackedChange } from '@/lib/track-changes-decorations';
 
 /**
  * MODE 1: LIVE DOC EDITOR
@@ -28,17 +27,17 @@ type EditingMode = 'editing' | 'suggesting' | 'viewing';
 export default function LiveDocEditor() {
   const [documentName, setDocumentName] = useState('Untitled Document');
   const [editingMode, setEditingMode] = useState<EditingMode>('editing');
-  const [trackedEdits, setTrackedEdits] = useState<TrackedEdit[]>([]);
+  const [trackedChanges, setTrackedChanges] = useState<TrackedChange[]>([]);
   const [comments, setComments] = useState<Comment[]>([]);
   const [showCommentSidebar, setShowCommentSidebar] = useState(false);
   
   
   // Auto-open sidebar when suggestions exist in suggesting mode
   React.useEffect(() => {
-    if (editingMode === 'suggesting' && trackedEdits.length > 0) {
+    if (editingMode === 'suggesting' && trackedChanges.length > 0) {
       setShowCommentSidebar(true);
     }
-  }, [editingMode, trackedEdits.length]);
+  }, [editingMode, trackedChanges.length]);
   const [selectedCommentId, setSelectedCommentId] = useState<string | null>(null);
   const [aiMenuVisible, setAIMenuVisible] = useState(false);
   const [aiMenuPosition, setAIMenuPosition] = useState({ x: 0, y: 0 });
@@ -87,8 +86,6 @@ export default function LiveDocEditor() {
       Underline,
       TextStyle,
       Color,
-      InsertionMark,
-      DeletionMark,
       FontFamily.configure({
         types: ['textStyle'],
       }),
@@ -110,7 +107,7 @@ export default function LiveDocEditor() {
         currentUserId: 'user-1',
         currentUserName: 'You',
         currentUserColor: '#4285f4',
-        edits: trackedEdits,
+        edits: [], // Not used anymore
       }),
       CommentsExtension.configure({
         comments,
@@ -130,10 +127,13 @@ export default function LiveDocEditor() {
         },
       }),
       AIInlineExtension,
-      SuggestChangesExtension.configure({
+      TrackChangesDecorationExtension.configure({
         enabled: isSuggestingMode,
         userId: 'user-1',
         userName: 'You',
+        onChangesUpdate: (changes) => {
+          setTrackedChanges(changes);
+        },
       }),
       TabAutocompleteExtension.configure({
         enabled: false, // Disabled for now
@@ -163,45 +163,6 @@ export default function LiveDocEditor() {
         style: 'min-height: 11in; padding: 1in 1in; font-family: Arial, sans-serif; font-size: 11pt; line-height: 1.5; color: #000000;',
       },
     },
-    onUpdate: ({ editor }) => {
-      // Extract tracked edits from marks
-      const edits: TrackedEdit[] = [];
-      const { doc } = editor.state;
-      
-      doc.descendants((node, pos) => {
-        if (node.isText && node.marks.length > 0) {
-          node.marks.forEach(mark => {
-            if (mark.type.name === 'insertion') {
-              edits.push({
-                id: mark.attrs.id,
-                type: 'insertion',
-                text: node.text || '',
-                from: pos,
-                to: pos + (node.text?.length || 0),
-                userId: mark.attrs.userId,
-                userName: mark.attrs.userName,
-                userColor: mark.attrs.userId === 'user-1' ? '#4285f4' : '#9c27b0', // Blue for user, purple for AI
-                timestamp: new Date(mark.attrs.timestamp),
-              });
-            } else if (mark.type.name === 'deletion') {
-              edits.push({
-                id: mark.attrs.id,
-                type: 'deletion',
-                text: node.text || '',
-                from: pos,
-                to: pos + (node.text?.length || 0),
-                userId: mark.attrs.userId,
-                userName: mark.attrs.userName,
-                userColor: mark.attrs.userId === 'user-1' ? '#4285f4' : '#9c27b0',
-                timestamp: new Date(mark.attrs.timestamp),
-              });
-            }
-          });
-        }
-      });
-      
-      setTrackedEdits(edits);
-    },
   });
 
   // Check if current version is locked (old version) - MUST BE BEFORE useEffect
@@ -218,8 +179,13 @@ export default function LiveDocEditor() {
       // Lock editor if in viewing mode OR viewing old version
       const shouldBeEditable = editorEditable && !isCurrentVersionLocked;
       editor.setEditable(shouldBeEditable);
+      
+      // Update track changes enabled state
+      const tr = editor.state.tr;
+      tr.setMeta('trackChangesEnabled', isSuggestingMode);
+      editor.view.dispatch(tr);
     }
-  }, [editor, editorEditable, isCurrentVersionLocked]);
+  }, [editor, editorEditable, isCurrentVersionLocked, isSuggestingMode]);
 
   // Listen for AI menu events
   React.useEffect(() => {
@@ -1005,12 +971,12 @@ export default function LiveDocEditor() {
             <span className="px-3 py-1.5 text-xs font-medium bg-green-600 text-white rounded">
               📝 Suggesting Mode
             </span>
-            {trackedEdits.length > 0 && (
+            {trackedChanges.length > 0 && (
               <button
                 onClick={() => setShowCommentSidebar(!showCommentSidebar)}
                 className="px-3 py-1.5 text-xs font-medium text-green-700 bg-green-100 rounded hover:bg-green-200"
               >
-                {trackedEdits.length} {trackedEdits.length === 1 ? 'change' : 'changes'}
+                {trackedChanges.length} {trackedChanges.length === 1 ? 'change' : 'changes'}
               </button>
             )}
           </div>
@@ -1181,13 +1147,13 @@ export default function LiveDocEditor() {
         </div>
 
         {/* Track Changes Sidebar (visible in BOTH editing and suggesting modes if there are changes) */}
-        {showCommentSidebar && trackedEdits.length > 0 && (
+        {showCommentSidebar && trackedChanges.length > 0 && (
           <div className="w-96 bg-white border-l border-gray-200 flex flex-col shadow-xl">
             <div className="px-4 py-3 border-b border-gray-200 bg-green-50">
               <div className="flex items-center justify-between mb-2">
                 <h3 className="text-sm font-semibold text-black flex items-center gap-2">
                   📝 Suggestions
-                  <span className="text-xs text-gray-600">({trackedEdits.length})</span>
+                  <span className="text-xs text-gray-600">({trackedChanges.length})</span>
                 </h3>
                 <button
                   onClick={() => setShowCommentSidebar(false)}
@@ -1201,9 +1167,9 @@ export default function LiveDocEditor() {
               <div className="flex gap-2">
                 <button
                   onClick={() => {
-                    if (editor && window.confirm('Accept all suggestions?')) {
-                      editor.commands.acceptAllSuggestions();
-                      alert('✓ All suggestions accepted!');
+                    if (editor && window.confirm('Accept all changes?')) {
+                      editor.commands.acceptAllChanges();
+                      setTrackedChanges([]);
                     }
                   }}
                   className="flex-1 px-3 py-1.5 text-xs font-medium text-white bg-green-600 rounded hover:bg-green-700"
@@ -1212,9 +1178,9 @@ export default function LiveDocEditor() {
                 </button>
                 <button
                   onClick={() => {
-                    if (editor && window.confirm('Reject all suggestions?')) {
-                      editor.commands.rejectAllSuggestions();
-                      alert('✓ All suggestions rejected.');
+                    if (editor && window.confirm('Reject all changes?')) {
+                      editor.commands.rejectAllChanges();
+                      setTrackedChanges([]);
                     }
                   }}
                   className="flex-1 px-3 py-1.5 text-xs font-medium text-white bg-red-600 rounded hover:bg-red-700"
@@ -1225,39 +1191,37 @@ export default function LiveDocEditor() {
             </div>
 
             <div className="flex-1 overflow-auto p-4 space-y-3">
-              {trackedEdits.length === 0 && (
+              {trackedChanges.length === 0 && (
                 <p className="text-sm text-gray-500 text-center py-8">
                   No changes yet. Start editing to see tracked changes.
                 </p>
               )}
 
-              {trackedEdits.map((edit) => {
-                // Check change type
-                const isMoved = edit.text.includes('📦 Moved');
-                const isReplacement = edit.text.includes('→') && !isMoved;
-                const displayType = isMoved ? 'moved' : isReplacement ? 'replacement' : edit.type;
+              {trackedChanges.map((change) => {
+                const userColor = change.userId === 'user-1' ? '#4285f4' : '#9c27b0';
+                const displayType = change.type;
                 
                 return (
                   <div
-                    key={edit.id}
+                    key={change.id}
                     className="p-3 bg-white border border-gray-200 rounded-lg hover:shadow-md transition-shadow"
                   >
                     <div className="flex items-start justify-between mb-2">
                       <div className="flex items-center gap-2">
                         <div
                           className="w-6 h-6 rounded-full flex items-center justify-center text-white text-xs font-bold"
-                          style={{ backgroundColor: edit.userColor }}
+                          style={{ backgroundColor: userColor }}
                         >
-                          {edit.userName.charAt(0)}
+                          {change.userName.charAt(0)}
                         </div>
                         <span className="text-xs font-medium text-black">
-                          {edit.userName}
+                          {change.userName}
                         </span>
                       </div>
                       <button
                         onClick={() => {
                           // Mark as resolved (remove from list)
-                          setTrackedEdits(trackedEdits.filter(e => e.id !== edit.id));
+                          setTrackedChanges(trackedChanges.filter(c => c.id !== change.id));
                         }}
                         className="text-green-600 hover:bg-green-50 p-1 rounded"
                         title="Mark as resolved"
@@ -1271,47 +1235,31 @@ export default function LiveDocEditor() {
                     <div className="text-xs text-gray-600 mb-2">
                       <span
                         className={`font-semibold px-2 py-0.5 rounded ${
-                          displayType === 'moved'
-                            ? 'bg-purple-100 text-purple-700'
-                            : displayType === 'replacement'
-                            ? 'bg-blue-100 text-blue-700'
-                            : displayType === 'insertion'
+                          displayType === 'insertion'
                             ? 'bg-green-100 text-green-700'
                             : 'bg-red-100 text-red-700'
                         }`}
                       >
-                        {displayType === 'moved' ? '📦 Moved' : displayType === 'replacement' ? 'Replaced' : displayType === 'insertion' ? 'Added' : 'Deleted'}
+                        {displayType === 'insertion' ? 'Added' : 'Deleted'}
                       </span>
                     </div>
 
-                    {isMoved ? (
-                      <div className="text-sm">
-                        <span className="text-purple-700 bg-purple-50 px-2 py-1 rounded block">
-                          {edit.text}
-                        </span>
-                      </div>
-                    ) : isReplacement ? (
-                      <div className="text-sm">
-                        <span className="text-blue-700 bg-blue-50 px-2 py-1 rounded block">
-                          {edit.text}
-                        </span>
-                      </div>
-                    ) : edit.type === 'insertion' ? (
+                    {change.type === 'insertion' ? (
                       <div className="text-sm">
                         <span className="text-green-700 bg-green-50 px-1 rounded">
-                          "{edit.text}"
+                          "{change.text}"
                         </span>
                       </div>
                     ) : (
                       <div className="text-sm">
                         <span className="text-red-700 bg-red-50 px-1 rounded line-through">
-                          "{edit.text}"
+                          "{change.text}"
                         </span>
                       </div>
                     )}
 
                     <div className="mt-2 text-xs text-gray-500">
-                      {edit.timestamp.toLocaleTimeString()}
+                      {new Date(change.timestamp).toLocaleTimeString()}
                     </div>
                   </div>
                 );
@@ -1320,8 +1268,8 @@ export default function LiveDocEditor() {
           </div>
         )}
 
-        {/* Comments Sidebar (when not in suggesting mode or no tracked edits) */}
-        {showCommentSidebar && (editingMode !== 'suggesting' || trackedEdits.length === 0) && (
+        {/* Comments Sidebar (when not in suggesting mode or no tracked changes) */}
+        {showCommentSidebar && (editingMode !== 'suggesting' || trackedChanges.length === 0) && (
           <div className="w-80 bg-white border-l border-gray-200 flex flex-col">
             <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
               <h3 className="text-sm font-semibold text-black">
