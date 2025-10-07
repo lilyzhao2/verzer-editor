@@ -1,24 +1,214 @@
 // API route for Anthropic Claude integration
 import { NextRequest, NextResponse } from 'next/server';
 
-// Simple in-memory micro-cache for recent requests (reduces latency and cost)
-// NOTE: Lives per server instance; fine for local/dev and small-scale prod.
-type CacheEntry = { value: any; expiresAt: number };
-const MICRO_CACHE = new Map<string, CacheEntry>();
-const MICRO_CACHE_TTL_MS = 60 * 1000; // 60s TTL
+// Advanced caching strategy with multiple cache layers
+type CacheEntry = { 
+  value: any; 
+  expiresAt: number; 
+  hits: number; 
+  lastAccessed: number;
+  size: number;
+};
+
+const CACHE_LAYERS = {
+  // Hot cache: Very fast, short TTL for frequent requests
+  HOT: new Map<string, CacheEntry>(),
+  // Warm cache: Medium TTL for moderate frequency
+  WARM: new Map<string, CacheEntry>(),
+  // Cold cache: Long TTL for infrequent but expensive requests
+  COLD: new Map<string, CacheEntry>(),
+};
+
+const CACHE_CONFIG = {
+  HOT_TTL: 30 * 1000,    // 30 seconds
+  WARM_TTL: 5 * 60 * 1000, // 5 minutes
+  COLD_TTL: 30 * 60 * 1000, // 30 minutes
+  MAX_HOT_SIZE: 50,
+  MAX_WARM_SIZE: 100,
+  MAX_COLD_SIZE: 200,
+  MAX_TOTAL_SIZE: 10 * 1024 * 1024, // 10MB total cache
+};
+
+let totalCacheSize = 0;
 
 function getCache(key: string) {
-  const entry = MICRO_CACHE.get(key);
-  if (!entry) return null;
-  if (Date.now() > entry.expiresAt) {
-    MICRO_CACHE.delete(key);
-    return null;
+  // Check hot cache first
+  let entry = CACHE_LAYERS.HOT.get(key);
+  if (entry && Date.now() <= entry.expiresAt) {
+    entry.hits++;
+    entry.lastAccessed = Date.now();
+    return entry.value;
   }
-  return entry.value;
+
+  // Check warm cache
+  entry = CACHE_LAYERS.WARM.get(key);
+  if (entry && Date.now() <= entry.expiresAt) {
+    entry.hits++;
+    entry.lastAccessed = Date.now();
+    // Promote to hot cache
+    promoteToHot(key, entry);
+    return entry.value;
+  }
+
+  // Check cold cache
+  entry = CACHE_LAYERS.COLD.get(key);
+  if (entry && Date.now() <= entry.expiresAt) {
+    entry.hits++;
+    entry.lastAccessed = Date.now();
+    // Promote to warm cache
+    promoteToWarm(key, entry);
+    return entry.value;
+  }
+
+  return null;
 }
 
-function setCache(key: string, value: any, ttlMs = MICRO_CACHE_TTL_MS) {
-  MICRO_CACHE.set(key, { value, expiresAt: Date.now() + ttlMs });
+function setCache(key: string, value: any, ttlMs?: number) {
+  const size = JSON.stringify(value).length;
+  const entry: CacheEntry = {
+    value,
+    expiresAt: Date.now() + (ttlMs || CACHE_CONFIG.WARM_TTL),
+    hits: 0,
+    lastAccessed: Date.now(),
+    size,
+  };
+
+  // Determine cache layer based on request type and size
+  const requestType = key.split(':')[0];
+  let targetLayer: keyof typeof CACHE_LAYERS = 'WARM';
+
+  if (requestType === 'autocomplete' || size < 1000) {
+    targetLayer = 'HOT';
+  } else if (requestType === 'rewrite' || requestType === 'thoughts') {
+    targetLayer = 'WARM';
+  } else if (requestType === 'edit' || size > 5000) {
+    targetLayer = 'COLD';
+  }
+
+  // Clean up expired entries first
+  cleanupExpiredEntries();
+
+  // Check if we need to evict entries
+  if (totalCacheSize + size > CACHE_CONFIG.MAX_TOTAL_SIZE) {
+    evictLeastUsed();
+  }
+
+  // Set in target layer
+  CACHE_LAYERS[targetLayer].set(key, entry);
+  totalCacheSize += size;
+
+  // Clean up if layer is too large
+  if (CACHE_LAYERS[targetLayer].size > getMaxSizeForLayer(targetLayer)) {
+    evictFromLayer(targetLayer);
+  }
+}
+
+function promoteToHot(key: string, entry: CacheEntry) {
+  // Remove from current layer
+  CACHE_LAYERS.WARM.delete(key);
+  CACHE_LAYERS.COLD.delete(key);
+  
+  // Add to hot cache
+  entry.expiresAt = Date.now() + CACHE_CONFIG.HOT_TTL;
+  CACHE_LAYERS.HOT.set(key, entry);
+}
+
+function promoteToWarm(key: string, entry: CacheEntry) {
+  // Remove from cold cache
+  CACHE_LAYERS.COLD.delete(key);
+  
+  // Add to warm cache
+  entry.expiresAt = Date.now() + CACHE_CONFIG.WARM_TTL;
+  CACHE_LAYERS.WARM.set(key, entry);
+}
+
+function getMaxSizeForLayer(layer: keyof typeof CACHE_LAYERS): number {
+  switch (layer) {
+    case 'HOT': return CACHE_CONFIG.MAX_HOT_SIZE;
+    case 'WARM': return CACHE_CONFIG.MAX_WARM_SIZE;
+    case 'COLD': return CACHE_CONFIG.MAX_COLD_SIZE;
+    default: return 0;
+  }
+}
+
+function cleanupExpiredEntries() {
+  const now = Date.now();
+  
+  Object.values(CACHE_LAYERS).forEach(cache => {
+    for (const [key, entry] of cache.entries()) {
+      if (now > entry.expiresAt) {
+        totalCacheSize -= entry.size;
+        cache.delete(key);
+      }
+    }
+  });
+}
+
+function evictLeastUsed() {
+  const allEntries: Array<{ key: string; layer: keyof typeof CACHE_LAYERS; entry: CacheEntry }> = [];
+  
+  Object.entries(CACHE_LAYERS).forEach(([layerName, cache]) => {
+    for (const [key, entry] of cache.entries()) {
+      allEntries.push({ key, layer: layerName as keyof typeof CACHE_LAYERS, entry });
+    }
+  });
+
+  // Sort by hits (ascending) then by last accessed (ascending)
+  allEntries.sort((a, b) => {
+    if (a.entry.hits !== b.entry.hits) {
+      return a.entry.hits - b.entry.hits;
+    }
+    return a.entry.lastAccessed - b.entry.lastAccessed;
+  });
+
+  // Remove 20% of least used entries
+  const toRemove = Math.ceil(allEntries.length * 0.2);
+  for (let i = 0; i < toRemove; i++) {
+    const { key, layer, entry } = allEntries[i];
+    CACHE_LAYERS[layer].delete(key);
+    totalCacheSize -= entry.size;
+  }
+}
+
+function evictFromLayer(layer: keyof typeof CACHE_LAYERS) {
+  const cache = CACHE_LAYERS[layer];
+  const entries = Array.from(cache.entries());
+  
+  // Sort by hits and last accessed
+  entries.sort((a, b) => {
+    if (a[1].hits !== b[1].hits) {
+      return a[1].hits - b[1].hits;
+    }
+    return a[1].lastAccessed - b[1].lastAccessed;
+  });
+
+  // Remove oldest 25% of entries
+  const toRemove = Math.ceil(entries.length * 0.25);
+  for (let i = 0; i < toRemove; i++) {
+    const [key, entry] = entries[i];
+    cache.delete(key);
+    totalCacheSize -= entry.size;
+  }
+}
+
+// Cache statistics for monitoring
+function getCacheStats() {
+  const stats = {
+    hot: { size: CACHE_LAYERS.HOT.size, hits: 0 },
+    warm: { size: CACHE_LAYERS.WARM.size, hits: 0 },
+    cold: { size: CACHE_LAYERS.COLD.size, hits: 0 },
+    totalSize: totalCacheSize,
+  };
+
+  Object.values(CACHE_LAYERS).forEach(cache => {
+    for (const entry of cache.values()) {
+      if (cache === CACHE_LAYERS.HOT) stats.hot.hits += entry.hits;
+      else if (cache === CACHE_LAYERS.WARM) stats.warm.hits += entry.hits;
+      else if (cache === CACHE_LAYERS.COLD) stats.cold.hits += entry.hits;
+    }
+  });
+
+  return stats;
 }
 
 // Function to clean up explanation text formatting
@@ -48,6 +238,15 @@ function cleanExplanationText(text: string): string {
   }
   
   return text;
+}
+
+// Cache statistics endpoint
+export async function GET() {
+  const stats = getCacheStats();
+  return NextResponse.json({
+    cache: stats,
+    timestamp: new Date().toISOString(),
+  });
 }
 
 export async function POST(request: NextRequest) {
@@ -149,13 +348,27 @@ Please keep all edits and responses aligned with this project context${hasLearne
     console.log('🔧 Context Length:', projectContext.length, 'characters');
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
-    // Micro-cache key to dedupe similar requests for short periods
-    const cacheKey = JSON.stringify({ mode, model, prompt, content: content?.slice(-200), projectName: projectConfig?.projectName, maxTokens });
+    // Generate cache key with request type prefix for layered caching
+    const requestType = mode === 'autocomplete' ? 'autocomplete' : 
+                       mode === 'chat' ? (prompt.includes('rewrite') ? 'rewrite' : 'thoughts') : 
+                       'edit';
+    
+    const cacheKey = `${requestType}:${JSON.stringify({ 
+      mode, 
+      model, 
+      prompt: prompt.slice(0, 100), // Truncate prompt for key
+      content: content?.slice(-200), 
+      projectName: projectConfig?.projectName, 
+      maxTokens 
+    })}`;
+    
     if (!stream) {
       const cached = getCache(cacheKey);
       if (cached) {
+        console.log(`🎯 Cache HIT (${requestType}): ${cacheKey.slice(0, 50)}...`);
         return NextResponse.json(cached);
       }
+      console.log(`❄️ Cache MISS (${requestType}): ${cacheKey.slice(0, 50)}...`);
     }
 
     // Different prompts based on mode
@@ -314,7 +527,7 @@ ${content}`;
         mode: 'chat',
         response: responseText 
       };
-      setCache(cacheKey, payload);
+      setCache(cacheKey, payload, CACHE_CONFIG.WARM_TTL);
       return NextResponse.json(payload);
     } else if (mode === 'analyze') {
       // For analyze mode, try to extract and return clean JSON or structured text
@@ -327,7 +540,7 @@ ${content}`;
             mode: 'analyze',
             response: jsonData 
           };
-          setCache(cacheKey, payload);
+          setCache(cacheKey, payload, CACHE_CONFIG.WARM_TTL);
           return NextResponse.json(payload);
         }
       } catch (e) {
@@ -339,7 +552,7 @@ ${content}`;
         analysis: responseText,
         response: responseText 
       };
-      setCache(cacheKey, payload);
+      setCache(cacheKey, payload, CACHE_CONFIG.WARM_TTL);
       return NextResponse.json(payload);
     } else {
       // Parse the structured response for edit mode
@@ -393,7 +606,7 @@ ${content}`;
         editedContent,
         explanation
       };
-      setCache(cacheKey, payload);
+      setCache(cacheKey, payload, CACHE_CONFIG.WARM_TTL);
       return NextResponse.json(payload);
     }
   } catch (error) {

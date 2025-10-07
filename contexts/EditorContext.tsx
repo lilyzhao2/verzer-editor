@@ -130,7 +130,11 @@ export function EditorProvider({ children }: { children: React.ReactNode }) {
       lastSystemPrompt: null,
       paragraphLineage: [],
       changeMetadata: [],
-      documentName: 'Untitled Document'
+      documentName: 'Untitled Document',
+      // V2: New fields
+      documentMode: 'editing',
+      workingContent: '<p>Start writing your document here...</p>',
+      stagedChanges: [],
     };
   });
 

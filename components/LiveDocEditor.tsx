@@ -17,6 +17,7 @@ import { AIInlineExtension } from '@/lib/ai-inline-extension';
 import { DocumentVersion, VersionHistorySettings } from '@/lib/version-types';
 import { TabAutocompleteExtension } from '@/lib/tab-autocomplete-extension';
 import { ProjectSetup } from '@/components/ProjectSetup';
+import { preloadCriticalComponents, preloadHeavyComponents } from '@/components/LazyComponents';
 import { TrackChangesDecorationExtension, TrackedChange } from '@/lib/track-changes-decorations';
 
 /**
@@ -228,6 +229,11 @@ export default function LiveDocEditor() {
   
   // Performance monitoring
   const performanceMetrics = usePerformanceMonitor();
+
+  // Preload critical components on mount
+  useEffect(() => {
+    preloadCriticalComponents();
+  }, []);
   
   const [documentName, setDocumentName] = useState('Untitled Document');
   const [editingMode, setEditingMode] = useState<EditingMode>('editing');
@@ -1314,6 +1320,7 @@ export default function LiveDocEditor() {
             {/* History Button */}
             <button
               onClick={() => setShowVersionHistory(!showVersionHistory)}
+              onMouseEnter={() => preloadHeavyComponents()}
               className="px-3 py-1.5 text-xs font-medium text-black bg-white border border-gray-300 rounded hover:bg-gray-50"
               title="Version History"
             >
