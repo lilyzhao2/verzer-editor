@@ -50,25 +50,32 @@ function mergeConsecutiveChanges(changes: TrackedChange[]): TrackedChange[] {
   for (let i = 1; i < sorted.length; i++) {
     const next = sorted[i];
 
-    // Check if we can merge: same type, same user, and within 2 seconds
+    // Check if we can merge: same type, same user, and within 3 seconds
     const timeDiff = Math.abs(next.timestamp - current.timestamp);
-    const isRecent = timeDiff < 2000; // 2 seconds
+    const isRecent = timeDiff < 3000; // 3 seconds (increased from 2)
     const sameTypeAndUser = current.type === next.type && current.userId === next.userId;
     
-    // For insertions: check if positions are close (within 10 chars)
-    const isCloseInsertion = current.type === 'insertion' && 
-                             Math.abs(next.from - current.to) < 10;
+    // For insertions: check if they're adjacent or very close
+    const isAdjacentInsertion = current.type === 'insertion' && 
+                                (next.from === current.to || Math.abs(next.from - current.to) <= 5);
     
-    // For deletions: check if positions overlap or are adjacent
+    // For deletions: check if positions are close
     const isCloseDeletion = current.type === 'deletion' &&
-                           Math.abs(next.from - current.from) < 10;
+                           Math.abs(next.from - current.from) < 20;
 
-    if (sameTypeAndUser && isRecent && (isCloseInsertion || isCloseDeletion)) {
+    if (sameTypeAndUser && isRecent && (isAdjacentInsertion || isCloseDeletion)) {
       // Merge into current
       if (current.type === 'insertion') {
         // For insertions, append text and extend range
-        current.text += next.text;
-        current.to = Math.max(current.to, next.to);
+        if (next.from >= current.to) {
+          // Next comes after current
+          current.text += next.text;
+          current.to = next.to;
+        } else {
+          // Overlapping or before - just extend range
+          current.text = current.text + next.text;
+          current.to = Math.max(current.to, next.to);
+        }
       } else {
         // For deletions, combine text and extend range
         current.text += next.text;
@@ -76,6 +83,7 @@ function mergeConsecutiveChanges(changes: TrackedChange[]): TrackedChange[] {
         current.to = Math.max(current.to, next.to);
       }
       current.timestamp = next.timestamp;
+      console.log('🔗 Merged:', current.type, 'now has', current.text.length, 'chars');
     } else {
       // Can't merge, push current and start new
       merged.push(current);
@@ -86,6 +94,7 @@ function mergeConsecutiveChanges(changes: TrackedChange[]): TrackedChange[] {
   // Push the last one
   merged.push(current);
 
+  console.log('📊 Merge result:', sorted.length, '→', merged.length, 'changes');
   return merged;
 }
 
@@ -159,6 +168,14 @@ export const TrackChangesDecorationExtension = Extension.create<TrackChangesOpti
           // Check if this is a user transaction (not a system transaction)
           const userTransaction = transactions.find(tr => tr.getMeta('addToHistory') !== false && tr.docChanged);
           if (!userTransaction) return null;
+
+          // CRITICAL: Don't track undo/redo operations
+          const isUndo = userTransaction.getMeta('uiEvent') === 'undo';
+          const isRedo = userTransaction.getMeta('uiEvent') === 'redo';
+          if (isUndo || isRedo) {
+            console.log('⏮️ Skipping undo/redo operation');
+            return null;
+          }
 
           console.log('🔍 Track changes: Processing user transaction');
 
@@ -291,14 +308,16 @@ export const TrackChangesDecorationExtension = Extension.create<TrackChangesOpti
                 // Red strikethrough widget for deletions
                 const deletionWidget = document.createElement('span');
                 deletionWidget.className = 'track-change-deletion';
-                deletionWidget.style.cssText = 'background-color: #fee2e2; text-decoration: line-through; color: #dc2626; padding: 0 2px; border-radius: 2px;';
+                deletionWidget.style.cssText = 'background-color: #fee2e2; text-decoration: line-through; color: #dc2626; padding: 0 2px; border-radius: 2px; pointer-events: none; user-select: none;';
                 deletionWidget.textContent = change.text;
                 deletionWidget.setAttribute('data-change-id', change.id);
                 deletionWidget.setAttribute('data-user', change.userName);
+                deletionWidget.contentEditable = 'false';
 
                 decorations.push(
                   Decoration.widget(change.from, deletionWidget, {
-                    side: 1, // Place after the position
+                    side: -1, // Place before the position (helps with cursor)
+                    ignoreSelection: true, // Don't interfere with selection
                   })
                 );
               }
@@ -319,19 +338,18 @@ export const TrackChangesDecorationExtension = Extension.create<TrackChangesOpti
         const pluginState = trackChangesPluginKey.getState(state);
         if (!pluginState) return false;
 
-        // Apply all changes to the document
-        const newTr = tr;
+        console.log('✅ Accepting all changes:', pluginState.changes.length, 'total');
+        console.log('📊 Changes:', pluginState.changes.map(c => `${c.type}: "${c.text}"`).join(', '));
         
-        // Process deletions (remove the text)
-        pluginState.changes
-          .filter(change => change.type === 'deletion')
-          .sort((a, b) => b.from - a.from) // Process from end to start
-          .forEach(change => {
-            newTr.delete(change.from, change.to);
-          });
-
-        // Clear all changes
+        // ACCEPT means:
+        // - Insertions: Keep them (they're already in the document)
+        // - Deletions: Confirm deletion (they're already gone from document, just widgets)
+        // So we just need to clear all decorations!
+        
+        const newTr = tr;
         newTr.setMeta('trackChangesUpdate', []);
+        
+        console.log('✅ All decorations cleared');
         
         dispatch(newTr);
         return true;
@@ -343,26 +361,50 @@ export const TrackChangesDecorationExtension = Extension.create<TrackChangesOpti
         const pluginState = trackChangesPluginKey.getState(state);
         if (!pluginState) return false;
 
+        console.log('❌ Rejecting all changes:', pluginState.changes.length, 'total');
+        
         const newTr = tr;
         
-        // Process insertions (remove them)
-        pluginState.changes
+        // CRITICAL: Mark this transaction as non-trackable to prevent restored deletions
+        // from being tracked as new insertions!
+        newTr.setMeta('addToHistory', false);
+        
+        // REJECT means:
+        // - Insertions: Remove them from document
+        // - Deletions: Restore them to document
+        
+        // Separate insertions and deletions
+        const insertions = pluginState.changes
           .filter(change => change.type === 'insertion')
-          .sort((a, b) => b.from - a.from) // Process from end to start
-          .forEach(change => {
-            newTr.delete(change.from, change.to);
-          });
-
-        // Process deletions (restore the text by inserting it back)
-        pluginState.changes
+          .sort((a, b) => b.from - a.from); // Process from end to start
+        
+        const deletions = pluginState.changes
           .filter(change => change.type === 'deletion')
-          .sort((a, b) => a.from - b.from) // Process from start to end
-          .forEach(change => {
-            newTr.insertText(change.text, change.from);
-          });
+          .sort((a, b) => a.from - b.from); // Process from start to end
+        
+        console.log('📊 Insertions to remove:', insertions.length);
+        console.log('📊 Deletions to restore:', deletions.length);
+        
+        // 1. Remove insertions (from end to start to maintain positions)
+        insertions.forEach(change => {
+          console.log('🗑️ Removing insertion:', JSON.stringify(change.text), 'at', change.from, '-', change.to);
+          newTr.delete(change.from, change.to);
+        });
 
-        // Clear all changes
+        // 2. Restore deletions (from start to end)
+        // We need to map positions through the deletion steps
+        let mapping = newTr.mapping;
+        deletions.forEach(change => {
+          // Map the position through previous changes
+          const mappedPos = mapping.map(change.from);
+          console.log('📝 Restoring deletion:', JSON.stringify(change.text), 'at original', change.from, '→ mapped', mappedPos);
+          newTr.insertText(change.text, mappedPos);
+        });
+
+        // Clear all changes LAST
         newTr.setMeta('trackChangesUpdate', []);
+        
+        console.log('✅ Reject complete, changes cleared');
         
         dispatch(newTr);
         return true;
@@ -373,6 +415,56 @@ export const TrackChangesDecorationExtension = Extension.create<TrackChangesOpti
         
         const newTr = tr;
         newTr.setMeta('trackChangesUpdate', []);
+        dispatch(newTr);
+        return true;
+      },
+
+      acceptChange: (changeId: string) => ({ tr, state, dispatch }) => {
+        if (!dispatch) return false;
+
+        const pluginState = trackChangesPluginKey.getState(state);
+        if (!pluginState) return false;
+
+        console.log('✅ Accepting single change:', changeId);
+
+        // Find and remove this specific change
+        const updatedChanges = pluginState.changes.filter(c => c.id !== changeId);
+        
+        const newTr = tr;
+        newTr.setMeta('trackChangesUpdate', updatedChanges);
+        
+        dispatch(newTr);
+        return true;
+      },
+
+      rejectChange: (changeId: string) => ({ tr, state, dispatch }) => {
+        if (!dispatch) return false;
+
+        const pluginState = trackChangesPluginKey.getState(state);
+        if (!pluginState) return false;
+
+        const change = pluginState.changes.find(c => c.id === changeId);
+        if (!change) return false;
+
+        console.log('❌ Rejecting single change:', changeId, change.type);
+
+        const newTr = tr;
+        newTr.setMeta('addToHistory', false); // Don't track this operation
+
+        if (change.type === 'insertion') {
+          // Remove the insertion
+          console.log('🗑️ Removing insertion:', change.text);
+          newTr.delete(change.from, change.to);
+        } else if (change.type === 'deletion') {
+          // Restore the deletion
+          console.log('📝 Restoring deletion:', change.text);
+          newTr.insertText(change.text, change.from);
+        }
+
+        // Remove this change from the list
+        const updatedChanges = pluginState.changes.filter(c => c.id !== changeId);
+        newTr.setMeta('trackChangesUpdate', updatedChanges);
+        
         dispatch(newTr);
         return true;
       },

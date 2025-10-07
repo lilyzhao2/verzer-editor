@@ -2,6 +2,17 @@
  * Version History Types for Live Doc Mode
  */
 
+export interface TrackedChange {
+  id: string;
+  type: 'insertion' | 'deletion';
+  from: number;
+  to: number;
+  text: string;
+  userId: string;
+  userName: string;
+  timestamp: number;
+}
+
 export interface DocumentVersion {
   id: string;
   versionNumber: number;
@@ -10,6 +21,8 @@ export interface DocumentVersion {
   createdBy: string;
   autoSaved: boolean; // true if auto-saved, false if manually saved
   changesSinceLastVersion?: number; // number of edits since last version
+  pendingSuggestions?: TrackedChange[]; // Unresolved suggestions that carry over
+  baselineContent?: string; // Previous version content (for showing diffs)
 }
 
 export interface VersionHistorySettings {

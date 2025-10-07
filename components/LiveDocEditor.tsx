@@ -68,10 +68,10 @@ export default function LiveDocEditor() {
   const [lastSaveTime, setLastSaveTime] = useState(new Date());
   const [changesSinceLastSave, setChangesSinceLastSave] = useState(0);
 
-  // Track Changes is auto-enabled in Suggesting mode
-  const trackChangesEnabled = editingMode === 'suggesting';
+  // Track Changes is ALWAYS enabled (both editing and suggesting modes show markup)
+  const trackChangesEnabled = true; // Always show markup
   const editorEditable = editingMode !== 'viewing';
-  const isSuggestingMode = editingMode === 'suggesting';
+  const isSuggestingMode = true; // Always track changes
 
   const editor = useEditor({
     editorProps: {
@@ -470,6 +470,9 @@ export default function LiveDocEditor() {
 
   // Version History Functions
   const createNewVersion = (content: string, autoSaved: boolean = false) => {
+    // Get current version for baseline
+    const currentVersion = versions.find(v => v.id === currentVersionId);
+    
     const newVersion: DocumentVersion = {
       id: `v${versions.length}`,
       versionNumber: versions.length,
@@ -478,7 +481,13 @@ export default function LiveDocEditor() {
       createdBy: 'You',
       autoSaved,
       changesSinceLastVersion: changesSinceLastSave,
+      // OPTION C: Save pending suggestions to carry over
+      pendingSuggestions: trackedChanges.length > 0 ? trackedChanges : undefined,
+      // Save baseline for showing diffs later
+      baselineContent: currentVersion?.content,
     };
+
+    console.log('📝 Creating new version with', trackedChanges.length, 'pending suggestions');
 
     setVersions([...versions, newVersion]);
     setCurrentVersionId(newVersion.id);
@@ -507,8 +516,32 @@ export default function LiveDocEditor() {
         if (!confirmRevert) return;
       }
       
+      // Load the version content
       editor.commands.setContent(version.content);
       setCurrentVersionId(versionId);
+      
+      // OPTION C: Restore pending suggestions if they exist
+      if (version.pendingSuggestions && version.pendingSuggestions.length > 0) {
+        console.log('🔄 Restoring', version.pendingSuggestions.length, 'pending suggestions');
+        
+        // Update the track changes plugin state
+        const tr = editor.state.tr;
+        tr.setMeta('trackChangesUpdate', version.pendingSuggestions);
+        editor.view.dispatch(tr);
+        
+        // Update React state
+        setTrackedChanges(version.pendingSuggestions);
+        
+        // Auto-open sidebar if in suggesting mode
+        if (editingMode === 'suggesting') {
+          setShowCommentSidebar(true);
+        }
+      } else {
+        // Clear suggestions if none exist
+        console.log('🧹 No pending suggestions for this version');
+        editor.commands.clearAllChanges();
+        setTrackedChanges([]);
+      }
     }
   };
 
@@ -1146,14 +1179,16 @@ export default function LiveDocEditor() {
           </div>
         </div>
 
-        {/* Track Changes Sidebar (visible in BOTH editing and suggesting modes if there are changes) */}
-        {showCommentSidebar && trackedChanges.length > 0 && (
+        {/* Track Changes & Comments Sidebar (visible in BOTH editing and suggesting modes if there are changes OR comments) */}
+        {showCommentSidebar && (trackedChanges.length > 0 || comments.length > 0) && (
           <div className="w-96 bg-white border-l border-gray-200 flex flex-col shadow-xl">
             <div className="px-4 py-3 border-b border-gray-200 bg-green-50">
               <div className="flex items-center justify-between mb-2">
                 <h3 className="text-sm font-semibold text-black flex items-center gap-2">
-                  📝 Suggestions
-                  <span className="text-xs text-gray-600">({trackedChanges.length})</span>
+                  📝 Suggestions & Comments
+                  <span className="text-xs text-gray-600">
+                    ({trackedChanges.length} changes, {comments.filter(c => !c.resolved).length} comments)
+                  </span>
                 </h3>
                 <button
                   onClick={() => setShowCommentSidebar(false)}
@@ -1170,6 +1205,16 @@ export default function LiveDocEditor() {
                     if (editor && window.confirm('Accept all changes?')) {
                       editor.commands.acceptAllChanges();
                       setTrackedChanges([]);
+                      
+                      // Clear pendingSuggestions from current version
+                      const updatedVersions = versions.map(v => 
+                        v.id === currentVersionId 
+                          ? { ...v, pendingSuggestions: undefined }
+                          : v
+                      );
+                      setVersions(updatedVersions);
+                      
+                      console.log('✅ Accepted all changes and cleared suggestions');
                     }
                   }}
                   className="flex-1 px-3 py-1.5 text-xs font-medium text-white bg-green-600 rounded hover:bg-green-700"
@@ -1181,6 +1226,16 @@ export default function LiveDocEditor() {
                     if (editor && window.confirm('Reject all changes?')) {
                       editor.commands.rejectAllChanges();
                       setTrackedChanges([]);
+                      
+                      // Clear pendingSuggestions from current version
+                      const updatedVersions = versions.map(v => 
+                        v.id === currentVersionId 
+                          ? { ...v, pendingSuggestions: undefined }
+                          : v
+                      );
+                      setVersions(updatedVersions);
+                      
+                      console.log('❌ Rejected all changes and cleared suggestions');
                     }
                   }}
                   className="flex-1 px-3 py-1.5 text-xs font-medium text-white bg-red-600 rounded hover:bg-red-700"
@@ -1191,85 +1246,159 @@ export default function LiveDocEditor() {
             </div>
 
             <div className="flex-1 overflow-auto p-4 space-y-3">
-              {trackedChanges.length === 0 && (
+              {trackedChanges.length === 0 && comments.length === 0 && (
                 <p className="text-sm text-gray-500 text-center py-8">
-                  No changes yet. Start editing to see tracked changes.
+                  No changes or comments yet.
                 </p>
               )}
 
-              {trackedChanges.map((change) => {
-                const userColor = change.userId === 'user-1' ? '#4285f4' : '#9c27b0';
-                const displayType = change.type;
-                
-                return (
-                  <div
-                    key={change.id}
-                    className="p-3 bg-white border border-gray-200 rounded-lg hover:shadow-md transition-shadow"
-                  >
-                    <div className="flex items-start justify-between mb-2">
-                      <div className="flex items-center gap-2">
-                        <div
-                          className="w-6 h-6 rounded-full flex items-center justify-center text-white text-xs font-bold"
-                          style={{ backgroundColor: userColor }}
-                        >
-                          {change.userName.charAt(0)}
-                        </div>
-                        <span className="text-xs font-medium text-black">
-                          {change.userName}
-                        </span>
-                      </div>
-                      <button
-                        onClick={() => {
-                          // Mark as resolved (remove from list)
-                          setTrackedChanges(trackedChanges.filter(c => c.id !== change.id));
-                        }}
-                        className="text-green-600 hover:bg-green-50 p-1 rounded"
-                        title="Mark as resolved"
-                      >
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                        </svg>
-                      </button>
-                    </div>
-
-                    <div className="text-xs text-gray-600 mb-2">
-                      <span
-                        className={`font-semibold px-2 py-0.5 rounded ${
-                          displayType === 'insertion'
-                            ? 'bg-green-100 text-green-700'
-                            : 'bg-red-100 text-red-700'
+              {/* MIXED LIST: Changes + Comments sorted by timestamp */}
+              {[
+                ...trackedChanges.map(c => ({ type: 'change' as const, data: c, timestamp: c.timestamp })),
+                ...comments.map(c => ({ type: 'comment' as const, data: c, timestamp: c.timestamp }))
+              ]
+                .sort((a, b) => b.timestamp - a.timestamp)
+                .map((item) => {
+                  if (item.type === 'comment') {
+                    const comment = item.data;
+                    return (
+                      <div
+                        key={`comment-${comment.id}`}
+                        className={`p-3 rounded-lg border ${
+                          comment.resolved
+                            ? 'bg-gray-100 border-gray-300 opacity-60'
+                            : 'bg-blue-50 border-blue-300'
                         }`}
                       >
-                        {displayType === 'insertion' ? 'Added' : 'Deleted'}
-                      </span>
-                    </div>
+                        <div className="flex items-start justify-between mb-2">
+                          <div className="flex items-center gap-2">
+                            <span className="px-2 py-0.5 text-xs font-semibold bg-blue-600 text-white rounded">
+                              💬 COMMENT
+                            </span>
+                            <span className="text-xs font-semibold text-black">
+                              {comment.author}
+                            </span>
+                            {comment.resolved && (
+                              <span className="text-xs text-gray-500">(Resolved)</span>
+                            )}
+                          </div>
+                          <button
+                            onClick={() => {
+                              const updatedComments = comments.map((c) =>
+                                c.id === comment.id ? { ...c, resolved: !c.resolved } : c
+                              );
+                              setComments(updatedComments);
+                            }}
+                            className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+                          >
+                            {comment.resolved ? 'Unresolve' : 'Resolve'}
+                          </button>
+                        </div>
+                        <p className="text-sm text-black mb-2">{comment.text}</p>
+                        <div className="text-xs text-gray-500">
+                          {new Date(comment.timestamp).toLocaleString()}
+                        </div>
+                      </div>
+                    );
+                  }
 
-                    {change.type === 'insertion' ? (
+                  // Otherwise it's a tracked change
+                  const change = item.data;
+                  const userColor = change.userId === 'user-1' ? '#4285f4' : '#9c27b0';
+                  const displayType = change.type;
+                  
+                  return (
+                    <div
+                      key={`change-${change.id}`}
+                      className="p-3 bg-white border border-gray-200 rounded-lg hover:shadow-md transition-shadow"
+                    >
+                      <div className="flex items-start justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <div
+                            className="w-6 h-6 rounded-full flex items-center justify-center text-white text-xs font-bold"
+                            style={{ backgroundColor: userColor }}
+                          >
+                            {change.userName.charAt(0)}
+                          </div>
+                          <span className="text-xs font-medium text-black">
+                            {change.userName}
+                          </span>
+                        </div>
+                        <div className="flex gap-1">
+                          <button
+                            onClick={() => {
+                              if (editor) {
+                                editor.commands.acceptChange(change.id);
+                                setTrackedChanges(trackedChanges.filter(c => c.id !== change.id));
+                              }
+                            }}
+                            className="text-green-600 hover:bg-green-50 p-1 rounded"
+                            title="Accept this change"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                            </svg>
+                          </button>
+                          <button
+                            onClick={() => {
+                              if (editor) {
+                                editor.commands.rejectChange(change.id);
+                                setTrackedChanges(trackedChanges.filter(c => c.id !== change.id));
+                              }
+                            }}
+                            className="text-red-600 hover:bg-red-50 p-1 rounded"
+                            title="Reject this change"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                        </div>
+                      </div>
+
                       <div className="text-sm">
-                        <span className="text-green-700 bg-green-50 px-1 rounded">
-                          "{change.text}"
+                        <span
+                          className={`px-2 py-0.5 text-xs font-semibold rounded ${
+                            displayType === 'insertion'
+                              ? 'bg-green-600 text-white'
+                              : 'bg-red-600 text-white'
+                          }`}
+                        >
+                          {displayType === 'insertion' ? '+ ADDED' : '- DELETED'}
                         </span>
                       </div>
-                    ) : (
-                      <div className="text-sm">
-                        <span className="text-red-700 bg-red-50 px-1 rounded line-through">
-                          "{change.text}"
-                        </span>
-                      </div>
-                    )}
 
-                    <div className="mt-2 text-xs text-gray-500">
-                      {new Date(change.timestamp).toLocaleTimeString()}
+                      <div className="mt-2 text-sm text-black font-mono bg-gray-50 p-2 rounded">
+                        {displayType === 'insertion' ? (
+                          <span className="text-green-700 font-semibold">"{change.text}"</span>
+                        ) : (
+                          <span className="text-red-700 line-through">"{change.text}"</span>
+                        )}
+                      </div>
+
+                      {displayType === 'insertion' && (
+                        <div className="mt-2 text-xs text-gray-500 italic">
+                          Added at position {change.from}
+                        </div>
+                      )}
+                      {displayType === 'deletion' && (
+                        <div className="mt-2 text-xs text-gray-500 italic">
+                          Deleted from position {change.from}
+                        </div>
+                      )}
+
+                      <div className="mt-2 text-xs text-gray-500">
+                        {new Date(change.timestamp).toLocaleTimeString()}
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
             </div>
           </div>
         )}
 
-        {/* Comments Sidebar (when not in suggesting mode or no tracked changes) */}
-        {showCommentSidebar && (editingMode !== 'suggesting' || trackedChanges.length === 0) && (
+        {/* OLD Comments Sidebar - REMOVE THIS */}
+        {false && showCommentSidebar && (editingMode !== 'suggesting' || trackedChanges.length === 0) && (
           <div className="w-80 bg-white border-l border-gray-200 flex flex-col">
             <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
               <h3 className="text-sm font-semibold text-black">
