@@ -113,13 +113,16 @@ export const SuggestChangesExtension = Extension.create<SuggestChangesOptions>({
                     });
                   });
                   
+                  console.log('🔍 Mark check:', { hasInsertionMark, hasDeletionMark });
+                  
                   if (hasInsertionMark) {
-                    // If deleting text that was just inserted (green), just remove it
-                    console.log('🗑️ Deleting inserted text, removing it completely');
+                    // If deleting text that was just inserted (green), just remove it completely
+                    console.log('✅ Deleting inserted text, removing it completely (no red mark)');
                     // Let the deletion happen naturally (don't re-insert)
+                    // DO NOT set modified = true, we want the deletion to go through as-is
                   } else if (hasDeletionMark) {
                     // If deleting text that's already marked as deleted (red strikethrough), remove it permanently
-                    console.log('🗑️ Deleting already-deleted text, removing permanently');
+                    console.log('✅ Deleting already-deleted text, removing permanently');
                     // Let the deletion happen naturally
                   } else {
                     // Normal text being deleted - mark it with deletion mark
