@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useEditor as useTiptapEditor, EditorContent } from '@tiptap/react';
 import { useEditor } from '@/contexts/EditorContext';
 import StarterKit from '@tiptap/starter-kit';
@@ -25,9 +25,209 @@ import { TrackChangesDecorationExtension, TrackedChange } from '@/lib/track-chan
  */
 type EditingMode = 'editing' | 'suggesting' | 'viewing';
 
+// Memoized components for better performance
+const TrackedChangesList = React.memo(({ 
+  changes, 
+  onAcceptChange, 
+  onRejectChange 
+}: { 
+  changes: TrackedChange[]; 
+  onAcceptChange: (id: string) => void; 
+  onRejectChange: (id: string) => void; 
+}) => (
+  <>
+    {changes.map((change) => (
+      <div
+        key={`change-${change.id}`}
+        className="p-3 bg-white border border-gray-200 rounded-lg hover:shadow-md transition-shadow cursor-pointer"
+      >
+        <div className="flex items-start justify-between mb-2">
+          <div className="flex items-center gap-2">
+            <span className={`px-2 py-0.5 text-xs font-semibold rounded ${
+              change.type === 'insertion' 
+                ? 'bg-green-600 text-white' 
+                : 'bg-red-600 text-white'
+            }`}>
+              {change.type === 'insertion' ? '➕ INSERT' : '➖ DELETE'}
+            </span>
+            <span className="text-xs font-semibold text-black">
+              {change.userName}
+            </span>
+          </div>
+          <div className="flex gap-1">
+            <button
+              onClick={() => onAcceptChange(change.id)}
+              className="text-green-600 hover:bg-green-50 p-1 rounded"
+              title="Accept this change"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+            </button>
+            <button
+              onClick={() => onRejectChange(change.id)}
+              className="text-red-600 hover:bg-red-50 p-1 rounded"
+              title="Reject this change"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+        <div className="text-sm text-gray-700">
+          <span className="font-medium">
+            {change.type === 'insertion' ? 'Added: ' : 'Removed: '}
+          </span>
+          <span className={`${
+            change.type === 'insertion' ? 'text-green-700' : 'text-red-700'
+          }`}>
+            "{change.text}"
+          </span>
+        </div>
+      </div>
+    ))}
+  </>
+));
+
+const CommentList = React.memo(({ 
+  comments, 
+  onResolveComment, 
+  onAddReply 
+}: { 
+  comments: Comment[]; 
+  onResolveComment: (id: string) => void; 
+  onAddReply: (id: string, reply: CommentReply) => void; 
+}) => (
+  <>
+    {comments.map((comment) => (
+      <div
+        key={`comment-${comment.id}`}
+        className={`p-3 rounded-lg border cursor-pointer ${
+          comment.resolved
+            ? 'bg-gray-100 border-gray-300 opacity-60'
+            : 'bg-blue-50 border-blue-300'
+        }`}
+      >
+        <div className="flex items-start justify-between mb-2">
+          <div className="flex items-center gap-2">
+            <span className="px-2 py-0.5 text-xs font-semibold bg-blue-600 text-white rounded">
+              💬 COMMENT
+            </span>
+            <span className="text-xs font-semibold text-black">
+              {comment.userName}
+            </span>
+            {comment.resolved && (
+              <span className="text-xs text-gray-500">(Resolved)</span>
+            )}
+          </div>
+          {!comment.resolved && (
+            <button
+              onClick={() => onResolveComment(comment.id)}
+              className="text-green-600 hover:bg-green-50 p-1 rounded text-xs"
+              title="Resolve comment"
+            >
+              ✓ Resolve
+            </button>
+          )}
+        </div>
+        <div className="text-sm text-gray-700 mb-2">
+          {comment.text}
+        </div>
+        {comment.replies.length > 0 && (
+          <div className="ml-4 space-y-2">
+            {comment.replies.map((reply) => (
+              <div key={reply.id} className="text-xs text-gray-600 bg-white p-2 rounded border">
+                <span className="font-semibold">{reply.userName}:</span> {reply.text}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    ))}
+  </>
+));
+
+// Error Boundary Component
+class EditorErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { hasError: boolean; error?: Error }
+> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error('Editor Error:', error, errorInfo);
+    // In production, send to monitoring service
+    if (process.env.NODE_ENV === 'production') {
+      // TODO: Send to error monitoring service
+    }
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="flex items-center justify-center h-64 bg-red-50 border border-red-200 rounded-lg">
+          <div className="text-center">
+            <h2 className="text-lg font-semibold text-red-800 mb-2">Something went wrong</h2>
+            <p className="text-red-600 mb-4">The editor encountered an error. Please refresh the page.</p>
+            <button
+              onClick={() => window.location.reload()}
+              className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
+            >
+              Refresh Page
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
+// Performance monitoring hook
+const usePerformanceMonitor = () => {
+  const [metrics, setMetrics] = useState<{
+    renderCount: number;
+    lastRenderTime: number;
+    averageRenderTime: number;
+  }>({
+    renderCount: 0,
+    lastRenderTime: 0,
+    averageRenderTime: 0,
+  });
+
+  useEffect(() => {
+    const startTime = performance.now();
+    
+    return () => {
+      const endTime = performance.now();
+      const renderTime = endTime - startTime;
+      
+      setMetrics(prev => ({
+        renderCount: prev.renderCount + 1,
+        lastRenderTime: renderTime,
+        averageRenderTime: (prev.averageRenderTime * prev.renderCount + renderTime) / (prev.renderCount + 1),
+      }));
+    };
+  });
+
+  return metrics;
+};
+
 export default function LiveDocEditor() {
   // Get EditorContext for project configs
   const { state: editorState, updateProjectConfig } = useEditor();
+  
+  // Performance monitoring
+  const performanceMetrics = usePerformanceMonitor();
   
   const [documentName, setDocumentName] = useState('Untitled Document');
   const [editingMode, setEditingMode] = useState<EditingMode>('editing');
@@ -137,9 +337,6 @@ export default function LiveDocEditor() {
   const isSuggestingMode = editingMode === 'suggesting';
 
   const editor = useTiptapEditor({
-    editorProps: {
-      editable: () => editorEditable,
-    },
     extensions: [
       StarterKit.configure({
         heading: {
@@ -302,6 +499,7 @@ export default function LiveDocEditor() {
     immediatelyRender: false,
     editable: editorEditable,
     editorProps: {
+      editable: () => editorEditable,
       attributes: {
         class: 'focus:outline-none',
         style: 'min-height: 11in; padding: 1in 1in; font-family: Arial, sans-serif; font-size: 11pt; line-height: 1.5; color: #000000;',
@@ -365,6 +563,7 @@ export default function LiveDocEditor() {
   const [rewritePromptValue, setRewritePromptValue] = useState('');
   const [zoomLevel, setZoomLevel] = useState(100);
   const [formatPainterActive, setFormatPainterActive] = useState(false);
+  const [debugMode, setDebugMode] = useState(false);
   const [copiedFormat, setCopiedFormat] = useState<any>(null);
   const [versionStartContent, setVersionStartContent] = useState<string>('');
   const [suggestingModeContent, setSuggestingModeContent] = useState<string>(''); // Tracks changes during suggesting
@@ -402,7 +601,7 @@ export default function LiveDocEditor() {
     setCommentInputValue('');
   };
 
-  const handleAskAI = async () => {
+  const handleAskAI = useCallback(async () => {
     setAIMenuVisible(false);
     setAIResultType('thoughts');
     setAIStreaming(true);
@@ -480,7 +679,7 @@ export default function LiveDocEditor() {
       ]);
     }
     setAIStreaming(false);
-  };
+  }, [aiMenuSelection.text]);
 
   const handleRewriteText = async () => {
     setAIMenuVisible(false);
@@ -488,7 +687,7 @@ export default function LiveDocEditor() {
     setRewritePromptValue('');
   };
 
-  const submitRewritePrompt = async () => {
+  const submitRewritePrompt = useCallback(async () => {
     setAIResultType('rewrites');
     
     try {
@@ -576,7 +775,7 @@ export default function LiveDocEditor() {
             return null;
           }
           return clean;
-        }).filter(Boolean);
+        }).filter((item): item is string => Boolean(item));
       }
       
       // Strategy 2: Look for bullet points or dashes
@@ -590,7 +789,7 @@ export default function LiveDocEditor() {
               return null;
             }
             return clean;
-          }).filter(Boolean);
+          }).filter((item): item is string => Boolean(item));
           if (bulletRewrites.length >= 2) {
             rewrites = bulletRewrites;
           }
@@ -678,7 +877,7 @@ export default function LiveDocEditor() {
     setShowAIResults(true);
     setShowRewriteInput(false);
     setRewritePromptValue('');
-  };
+  }, [aiMenuSelection.text, rewritePromptValue, editor]);
 
   const handleSelectAIThought = (thought: string) => {
     const newComment: Comment = {
@@ -806,7 +1005,7 @@ export default function LiveDocEditor() {
   };
 
   // Wipe everything - reset to fresh state
-  const handleWipeEverything = () => {
+  const handleWipeEverything = useCallback(() => {
     const confirmed = window.confirm(
       '⚠️ WARNING: This will delete EVERYTHING!\n\n' +
       '• All versions\n' +
@@ -850,7 +1049,36 @@ export default function LiveDocEditor() {
     }
 
     alert('✓ Everything has been wiped. Starting fresh!');
-  };
+  }, [editor]);
+
+  // Memoized callbacks for sidebar components
+  const handleAcceptChange = useCallback((changeId: string) => {
+    if (editor) {
+      // @ts-ignore - Commands added by TrackChangesDecorationExtension
+      editor.commands.acceptChange(changeId);
+      setTrackedChanges(trackedChanges.filter(c => c.id !== changeId));
+    }
+  }, [editor, trackedChanges]);
+
+  const handleRejectChange = useCallback((changeId: string) => {
+    if (editor) {
+      // @ts-ignore - Commands added by TrackChangesDecorationExtension
+      editor.commands.rejectChange(changeId);
+      setTrackedChanges(trackedChanges.filter(c => c.id !== changeId));
+    }
+  }, [editor, trackedChanges]);
+
+  const handleResolveComment = useCallback((commentId: string) => {
+    setComments(comments.map(c => 
+      c.id === commentId ? { ...c, resolved: true } : c
+    ));
+  }, [comments]);
+
+  const handleAddReply = useCallback((commentId: string, reply: CommentReply) => {
+    setComments(comments.map(c =>
+      c.id === commentId ? { ...c, replies: [...c.replies, reply] } : c
+    ));
+  }, [comments]);
 
   // Version History Functions
   const createNewVersion = (content: string, autoSaved: boolean = false) => {
@@ -923,6 +1151,7 @@ export default function LiveDocEditor() {
       } else {
         // Clear suggestions if none exist
         console.log('🧹 No pending suggestions for this version');
+        // @ts-ignore - Commands added by TrackChangesDecorationExtension
         editor.commands.clearAllChanges();
         setTrackedChanges([]);
       }
@@ -1010,7 +1239,8 @@ export default function LiveDocEditor() {
   }
 
   return (
-    <div className="flex flex-col h-screen bg-gray-100">
+    <EditorErrorBoundary>
+      <div className="flex flex-col h-screen bg-gray-100">
       {/* Top Bar - Like Google Docs */}
       <div className="bg-white border-b border-gray-200 px-6 py-2">
         <div className="flex items-center gap-4">
@@ -1647,7 +1877,7 @@ export default function LiveDocEditor() {
                               💬 COMMENT
                             </span>
                             <span className="text-xs font-semibold text-black">
-                              {comment.author}
+                              {comment.userName}
                             </span>
                             {comment.resolved && (
                               <span className="text-xs text-gray-500">(Resolved)</span>
@@ -1707,6 +1937,7 @@ export default function LiveDocEditor() {
                           <button
                             onClick={() => {
                               if (editor) {
+                                // @ts-ignore - Commands added by TrackChangesDecorationExtension
                                 editor.commands.acceptChange(change.id);
                                 setTrackedChanges(trackedChanges.filter(c => c.id !== change.id));
                               }
@@ -1721,6 +1952,7 @@ export default function LiveDocEditor() {
                           <button
                             onClick={() => {
                               if (editor) {
+                                // @ts-ignore - Commands added by TrackChangesDecorationExtension
                                 editor.commands.rejectChange(change.id);
                                 setTrackedChanges(trackedChanges.filter(c => c.id !== change.id));
                               }
@@ -2198,8 +2430,10 @@ export default function LiveDocEditor() {
                 onClick={() => {
                   if (!editor) return;
                   if (confirmModal.action === 'acceptAll') {
+                    // @ts-ignore - Commands added by TrackChangesDecorationExtension
                     editor.commands.acceptAllChanges();
                   } else if (confirmModal.action === 'rejectAll') {
+                    // @ts-ignore - Commands added by TrackChangesDecorationExtension
                     editor.commands.rejectAllChanges();
                   }
                   setTrackedChanges([]);
@@ -2236,6 +2470,41 @@ export default function LiveDocEditor() {
           </div>
         </div>
       )}
-    </div>
+
+      {/* Debug Panel */}
+      {debugMode && (
+        <div className="fixed bottom-4 right-4 bg-black text-white p-4 rounded-lg shadow-lg text-xs max-w-sm">
+          <div className="flex justify-between items-center mb-2">
+            <h3 className="font-bold">Debug Info</h3>
+            <button
+              onClick={() => setDebugMode(false)}
+              className="text-gray-400 hover:text-white"
+            >
+              ×
+            </button>
+          </div>
+          <div className="space-y-1">
+            <div>Renders: {performanceMetrics.renderCount}</div>
+            <div>Last Render: {performanceMetrics.lastRenderTime.toFixed(2)}ms</div>
+            <div>Avg Render: {performanceMetrics.averageRenderTime.toFixed(2)}ms</div>
+            <div>Mode: {editingMode}</div>
+            <div>Changes: {trackedChanges.length}</div>
+            <div>Comments: {comments.length}</div>
+            <div>Versions: {versions.length}</div>
+            <div>Zoom: {zoomLevel}%</div>
+          </div>
+        </div>
+      )}
+
+      {/* Debug Toggle Button */}
+      <button
+        onClick={() => setDebugMode(!debugMode)}
+        className="fixed bottom-4 left-4 bg-gray-800 text-white p-2 rounded-full shadow-lg hover:bg-gray-700 text-xs"
+        title="Toggle Debug Panel"
+      >
+        🐛
+      </button>
+      </div>
+    </EditorErrorBoundary>
   );
 }
