@@ -207,7 +207,7 @@ ${content}`;
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
-        model: model || 'claude-3-7-sonnet-20250219',
+        model: model || 'claude-3-5-sonnet-20241022',
         max_tokens: 4000,
         messages: [
           {
@@ -223,10 +223,15 @@ ${content}`;
       console.error('Anthropic API error:', {
         status: response.status,
         statusText: response.statusText,
-        error: error
+        error: error,
+        requestBody: {
+          model: model || 'claude-3-5-sonnet-20241022',
+          max_tokens: 4000,
+          messages: [{ role: 'user', content: userContent }]
+        }
       });
       return NextResponse.json(
-        { error: `Failed to get response from Anthropic: ${response.status} ${response.statusText}` },
+        { error: `Failed to get response from Anthropic: ${response.status} ${response.statusText}`, details: error },
         { status: response.status }
       );
     }

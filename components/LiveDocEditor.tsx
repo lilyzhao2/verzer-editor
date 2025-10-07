@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState } from 'react';
-import { useEditor, EditorContent } from '@tiptap/react';
+import { useEditor as useTiptapEditor, EditorContent } from '@tiptap/react';
+import { useEditor } from '@/contexts/EditorContext';
 import StarterKit from '@tiptap/starter-kit';
 import { Underline } from '@tiptap/extension-underline';
 import { TextStyle } from '@tiptap/extension-text-style';
@@ -11,11 +12,11 @@ import { Highlight } from '@tiptap/extension-highlight';
 import { TextAlign } from '@tiptap/extension-text-align';
 import { Placeholder } from '@tiptap/extension-placeholder';
 import { CollaborationExtension, CollaboratorCursor } from '@/lib/collaboration-extension';
-import { TrackChangesExtension, TrackedEdit } from '@/lib/track-changes-v3';
 import { CommentsExtension, Comment, CommentReply } from '@/lib/comments-extension';
 import { AIInlineExtension } from '@/lib/ai-inline-extension';
 import { DocumentVersion, VersionHistorySettings } from '@/lib/version-types';
 import { TabAutocompleteExtension } from '@/lib/tab-autocomplete-extension';
+import { ProjectSetup } from '@/components/ProjectSetup';
 import { TrackChangesDecorationExtension, TrackedChange } from '@/lib/track-changes-decorations';
 
 /**
@@ -25,11 +26,45 @@ import { TrackChangesDecorationExtension, TrackedChange } from '@/lib/track-chan
 type EditingMode = 'editing' | 'suggesting' | 'viewing';
 
 export default function LiveDocEditor() {
+  // Get EditorContext for project configs
+  const { state: editorState, updateProjectConfig } = useEditor();
+  
   const [documentName, setDocumentName] = useState('Untitled Document');
   const [editingMode, setEditingMode] = useState<EditingMode>('editing');
   const [trackedChanges, setTrackedChanges] = useState<TrackedChange[]>([]);
   const [comments, setComments] = useState<Comment[]>([]);
   const [showCommentSidebar, setShowCommentSidebar] = useState(false);
+  const [showContextPage, setShowContextPage] = useState(false);
+
+  // Helper function to get project context for AI
+  const getProjectContextForAI = () => {
+    // Get the active project config from EditorContext
+    const activeConfig = editorState.projectConfigs?.[0];
+    if (activeConfig) {
+      return {
+        projectName: activeConfig.projectName || 'My Document',
+        styleGuide: activeConfig.styleGuide || 'Professional and clear',
+        tone: activeConfig.tone || 'informative',
+        audience: activeConfig.audience || 'general',
+        learnedPatterns: activeConfig.learnedPatterns || '',
+        description: activeConfig.description || '',
+        constraints: activeConfig.constraints || '',
+        additionalContext: activeConfig.additionalContext || ''
+      };
+    }
+    
+    // Fallback to basic context
+    return {
+      projectName: 'My Document',
+      styleGuide: 'Professional and clear',
+      tone: 'informative',
+      audience: 'general',
+      learnedPatterns: ''
+    };
+  };
+
+  // Cache for autocomplete suggestions
+  const [completionCache, setCompletionCache] = useState<Map<string, string[]>>(new Map());
   
   
   // Auto-open sidebar when suggestions exist in suggesting mode
@@ -73,7 +108,7 @@ export default function LiveDocEditor() {
   const editorEditable = editingMode !== 'viewing';
   const isSuggestingMode = editingMode === 'suggesting';
 
-  const editor = useEditor({
+  const editor = useTiptapEditor({
     editorProps: {
       editable: () => editorEditable,
     },
@@ -82,6 +117,7 @@ export default function LiveDocEditor() {
         heading: {
           levels: [1, 2, 3],
         },
+        underline: false, // Disable underline from StarterKit since we import it separately
       }),
       Underline,
       TextStyle,
@@ -101,13 +137,6 @@ export default function LiveDocEditor() {
       CollaborationExtension.configure({
         collaborators,
         currentUserId: 'user-1',
-      }),
-      TrackChangesExtension.configure({
-        enabled: trackChangesEnabled,
-        currentUserId: 'user-1',
-        currentUserName: 'You',
-        currentUserColor: '#4285f4',
-        edits: [], // Not used anymore
       }),
       CommentsExtension.configure({
         comments,
@@ -136,21 +165,100 @@ export default function LiveDocEditor() {
         },
       }),
       TabAutocompleteExtension.configure({
-        enabled: false, // Disabled for now
+        enabled: true, // Enable tab autocomplete
         onRequestCompletion: async (context: string) => {
-          // Simulate AI completion (replace with real API call)
-          await new Promise(resolve => setTimeout(resolve, 300));
-          
-          // Mock completions based on context
-          const lastWord = context.trim().split(' ').pop() || '';
-          const completions: Record<string, string> = {
-            'The': ' quick brown fox jumps over the lazy dog.',
-            'Hello': ', how are you doing today?',
-            'I': ' think this is a great idea to implement.',
-            'This': ' document will help us achieve our goals.',
-          };
-          
-          return completions[lastWord] || ' is an interesting topic to explore further.';
+          try {
+            // Check cache first for sub-500ms performance
+            const cacheKey = context.slice(-50); // Use last 50 chars as key
+            if (completionCache.has(cacheKey)) {
+              console.log('🚀 Using cached completion');
+              return completionCache.get(cacheKey) || ['...'];
+            }
+
+            // Get project context for style matching
+            const projectContext = getProjectContextForAI();
+            
+            // Call real AI API for completion with context
+            console.log('🤖 Requesting tab autocomplete for context:', context);
+            
+            // Make sure we have some content to send
+            const contentToSend = context.trim() || 'Start of document';
+            console.log('🤖 Content to send:', contentToSend);
+            
+            const response = await fetch('/api/anthropic', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                prompt: `Complete this text naturally in 3 different ways. Provide ONLY the completion text, no numbering, no explanations. Format as:
+[completion 1]
+[completion 2]
+[completion 3]`,
+                content: contentToSend,
+                model: 'claude-3-5-sonnet-20241022',
+                mode: 'chat',
+                projectConfig: projectContext
+              })
+            });
+
+            if (!response.ok) {
+              const errorText = await response.text();
+              console.error('🚨 API Error:', response.status, errorText);
+              throw new Error(`AI request failed: ${response.status} - ${errorText}`);
+            }
+
+            const data = await response.json();
+            const aiResponse = data.response?.trim() || '';
+            console.log('🤖 AI autocomplete response:', aiResponse);
+            
+            // Parse AI response into multiple suggestions
+            let suggestions = aiResponse.split('\n')
+              .filter((line: string) => {
+                const trimmed = line.trim();
+                return trimmed.length > 0 && 
+                       !trimmed.startsWith('[') && 
+                       !trimmed.startsWith('completion');
+              })
+              .slice(0, 3) // Max 3 suggestions
+              .map((line: string) => {
+                // Remove numbering, quotes, and extra formatting
+                let clean = line.replace(/^\d+\.\s*/, '').replace(/^[-•*]\s*/, '').trim();
+                clean = clean.replace(/^["']|["']$/g, '').trim();
+                return clean;
+              })
+              .filter((s: string) => s.length > 0);
+            
+            // If we didn't get good suggestions, try splitting by double newlines
+            if (suggestions.length === 0) {
+              suggestions = aiResponse.split(/\n\s*\n/)
+                .filter((line: string) => line.trim().length > 0)
+                .slice(0, 3)
+                .map((line: string) => line.replace(/^\d+\.\s*/, '').replace(/^["']|["']$/g, '').trim())
+                .filter((s: string) => s.length > 0);
+            }
+            
+            const finalSuggestions = suggestions.length > 0 ? suggestions : ['...'];
+            console.log('💡 Parsed suggestions:', finalSuggestions);
+            
+            // Cache the result
+            setCompletionCache(prev => {
+              const newCache = new Map(prev);
+              newCache.set(cacheKey, finalSuggestions);
+              // Keep only last 50 entries to prevent memory bloat
+              if (newCache.size > 50) {
+                const firstKey = newCache.keys().next().value;
+                if (firstKey) {
+                  newCache.delete(firstKey);
+                }
+              }
+              return newCache;
+            });
+            
+            return finalSuggestions;
+          } catch (error) {
+            console.error('Tab autocomplete failed:', error);
+            // Return simple fallback while debugging
+            return ['...', 'continue typing', 'keep writing'];
+          }
         },
       }),
     ],
@@ -256,14 +364,47 @@ export default function LiveDocEditor() {
     setAIMenuVisible(false);
     setAIResultType('thoughts');
     
-    // Simulate AI thinking (replace with real API call)
-    const mockThoughts = [
-      `This text is clear and concise. Good job!`,
-      `Consider adding more context about "${aiMenuSelection.text.split(' ')[0]}" for clarity.`,
-      `The tone is appropriate, but you could strengthen the argument with examples.`,
-    ];
+    try {
+      // Call real AI API
+      const response = await fetch('/api/anthropic', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt: `Analyze this selected text and provide 3 brief, helpful thoughts or suggestions for improvement. Be specific and constructive.`,
+          content: aiMenuSelection.text,
+          model: 'claude-3-5-sonnet-20241022',
+          mode: 'chat'
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('AI request failed');
+      }
+
+      const data = await response.json();
+      
+      // Parse the AI response into 3 thoughts
+      const aiResponse = data.response || '';
+      const thoughts = aiResponse.split('\n')
+        .filter(line => line.trim().length > 0)
+        .slice(0, 3)
+        .map(line => line.replace(/^\d+\.\s*/, '').trim());
+      
+      setAIThoughts(thoughts.length > 0 ? thoughts : [
+        'This text looks good overall.',
+        'Consider adding more detail for clarity.',
+        'The tone is appropriate for the context.'
+      ]);
+    } catch (error) {
+      console.error('AI request failed:', error);
+      // Fallback to mock data
+      setAIThoughts([
+        `This text is clear and concise. Good job!`,
+        `Consider adding more context about "${aiMenuSelection.text.split(' ')[0]}" for clarity.`,
+        `The tone is appropriate, but you could strengthen the argument with examples.`,
+      ]);
+    }
     
-    setAIThoughts(mockThoughts);
     setShowAIResults(true);
   };
 
@@ -273,24 +414,162 @@ export default function LiveDocEditor() {
     setRewritePromptValue('');
   };
 
-  const submitRewritePrompt = () => {
+  const submitRewritePrompt = async () => {
     setAIResultType('rewrites');
     
-    // Simulate AI rewrites with custom prompt (replace with real API call)
-    const customPrompt = rewritePromptValue.trim();
-    const mockRewrites = customPrompt
-      ? [
-          `${aiMenuSelection.text} (rewritten with: ${customPrompt})`,
-          `${aiMenuSelection.text.toUpperCase()} - styled per your request`,
-          `Alternative: ${aiMenuSelection.text} → ${customPrompt}`,
-        ]
-      : [
-          aiMenuSelection.text.charAt(0).toUpperCase() + aiMenuSelection.text.slice(1) + ' - enhanced version.',
-          `An improved take: ${aiMenuSelection.text}`,
-          `Consider this alternative: ${aiMenuSelection.text.split(' ').reverse().join(' ')}`,
-        ];
+    try {
+      const customPrompt = rewritePromptValue.trim();
+      const prompt = customPrompt 
+        ? `Rewrite this text: "${aiMenuSelection.text}" with this specific instruction: "${customPrompt}". Provide 3 different rewritten versions. Each version should be a complete rewrite, not a description. Format as:
+1. [rewritten version 1]
+2. [rewritten version 2] 
+3. [rewritten version 3]`
+        : `Rewrite this text to make it better: "${aiMenuSelection.text}". Provide 3 different improved versions. Each version should be a complete rewrite, not a description. Format as:
+1. [rewritten version 1]
+2. [rewritten version 2]
+3. [rewritten version 3]`;
+
+      // Get full document context for better rewrites
+      const fullDocument = editor?.getHTML() || '';
+      const projectContext = getProjectContextForAI();
+
+      // Call real AI API with full document context
+      const response = await fetch('/api/anthropic', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt,
+          content: fullDocument, // Full document for context
+          model: 'claude-3-5-sonnet-20241022',
+          mode: 'chat',
+          projectConfig: projectContext
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('AI request failed');
+      }
+
+      const data = await response.json();
+      
+      // Parse the AI response into 3 rewrites
+      const aiResponse = data.response || '';
+      console.log('🤖 AI Rewrite Response:', aiResponse);
+      
+      // Try different parsing strategies
+      let rewrites: string[] = [];
+      
+      // Strategy 1: Look for numbered list (1. 2. 3.) - most reliable
+      const numberedMatch = aiResponse.match(/(\d+\.\s*[^\n]+)/g);
+      if (numberedMatch && numberedMatch.length >= 2) {
+        rewrites = numberedMatch.slice(0, 3).map(line => {
+          let clean = line.replace(/^\d+\.\s*/, '').trim();
+          // Remove quotes and extra formatting
+          clean = clean.replace(/^["']|["']$/g, '').trim();
+          // Remove meta-descriptions
+          if (clean.includes('(rewritten with:') || clean.includes('styled per your request') || clean.includes('Alternative:')) {
+            return null;
+          }
+          return clean;
+        }).filter(Boolean);
+      }
+      
+      // Strategy 2: Look for bullet points or dashes
+      if (rewrites.length < 2) {
+        const bulletMatch = aiResponse.match(/(?:[-•*]\s*[^\n]+)/g);
+        if (bulletMatch && bulletMatch.length >= 2) {
+          const bulletRewrites = bulletMatch.slice(0, 3).map(line => {
+            let clean = line.replace(/^[-•*]\s*/, '').trim();
+            clean = clean.replace(/^["']|["']$/g, '').trim();
+            if (clean.includes('(rewritten with:') || clean.includes('styled per your request') || clean.includes('Alternative:')) {
+              return null;
+            }
+            return clean;
+          }).filter(Boolean);
+          if (bulletRewrites.length >= 2) {
+            rewrites = bulletRewrites;
+          }
+        }
+      }
+      
+      // Strategy 3: Split by double newlines
+      if (rewrites.length < 2) {
+        const paragraphRewrites = aiResponse
+          .split(/\n\s*\n/)
+          .filter(line => {
+            const clean = line.trim();
+            return clean.length > 10 && 
+                   !clean.includes('(rewritten with:') && 
+                   !clean.includes('styled per your request') && 
+                   !clean.includes('Alternative:');
+          })
+          .slice(0, 3)
+          .map(line => line.replace(/^["']|["']$/g, '').trim());
+        if (paragraphRewrites.length >= 2) {
+          rewrites = paragraphRewrites;
+        }
+      }
+      
+      // Strategy 4: Fallback to line splitting
+      if (rewrites.length < 2) {
+        const lineRewrites = aiResponse.split('\n')
+          .filter(line => {
+            const clean = line.trim();
+            return clean.length > 5 && 
+                   !clean.includes('(rewritten with:') && 
+                   !clean.includes('styled per your request') && 
+                   !clean.includes('Alternative:');
+          })
+          .slice(0, 3)
+          .map(line => line.replace(/^\d+\.\s*/, '').replace(/^["']|["']$/g, '').trim());
+        if (lineRewrites.length >= 2) {
+          rewrites = lineRewrites;
+        }
+      }
+      
+      // If we still don't have good rewrites, create some
+      if (rewrites.length < 2) {
+        console.log('⚠️ Using fallback rewrites');
+        const originalText = aiMenuSelection.text;
+        const customPrompt = rewritePromptValue.trim();
+        
+        if (customPrompt) {
+          rewrites = [
+            `${originalText} (${customPrompt})`,
+            `A ${customPrompt} version: ${originalText}`,
+            `Here's a ${customPrompt} take: ${originalText}`
+          ];
+        } else {
+          rewrites = [
+            originalText.charAt(0).toUpperCase() + originalText.slice(1) + ' - enhanced version.',
+            `An improved take: ${originalText}`,
+            `Consider this alternative: ${originalText.split(' ').reverse().join(' ')}`
+          ];
+        }
+      }
+      
+      console.log('📝 Final rewrites:', rewrites);
+      setAIRewrites(rewrites);
+    } catch (error) {
+      console.error('AI request failed:', error);
+      // Fallback to mock data
+      const customPrompt = rewritePromptValue.trim();
+      const originalText = aiMenuSelection.text;
+      
+      const mockRewrites = customPrompt
+        ? [
+            `${originalText} (${customPrompt})`,
+            `A ${customPrompt} version: ${originalText}`,
+            `Here's a ${customPrompt} take: ${originalText}`
+          ]
+        : [
+            originalText.charAt(0).toUpperCase() + originalText.slice(1) + ' - enhanced version.',
+            `An improved take: ${originalText}`,
+            `Consider this alternative: ${originalText.split(' ').reverse().join(' ')}`
+          ];
+      setAIRewrites(mockRewrites);
+    }
     
-    setAIRewrites(mockRewrites);
     setShowAIResults(true);
     setShowRewriteInput(false);
     setRewritePromptValue('');
@@ -657,6 +936,15 @@ export default function LiveDocEditor() {
         
         {/* Menu Bar */}
         <div className="flex items-center gap-4 mt-2 text-sm">
+          {/* Context Page */}
+          <button 
+            onClick={() => setShowContextPage(true)}
+            className="text-blue-600 px-3 py-1 rounded hover:bg-blue-50 transition-colors" 
+            title="Project Context & Settings"
+          >
+            ⚙️ Context
+          </button>
+          
           {/* Placeholder for future modes */}
           <button className="text-gray-400 px-3 py-1 rounded cursor-not-allowed opacity-50" disabled title="Coming soon">
             🤖 AI Mode <span className="text-xs">(Coming Soon)</span>
@@ -1525,7 +1813,7 @@ export default function LiveDocEditor() {
 
       {/* Version History Sidebar */}
       {showVersionHistory && (
-        <div className="fixed right-0 top-0 h-screen w-96 bg-white border-l border-gray-200 shadow-2xl z-40 flex flex-col">
+        <div className="fixed left-0 top-0 h-screen w-96 bg-white border-r border-gray-200 shadow-2xl z-40 flex flex-col">
           <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
             <h2 className="text-lg font-semibold text-black">📜 Version History</h2>
             <button
@@ -1813,6 +2101,27 @@ export default function LiveDocEditor() {
                 </div>
               ))
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Context Page Modal */}
+      {showContextPage && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl w-full h-full max-w-6xl max-h-[90vh] overflow-hidden">
+            <div className="flex items-center justify-between p-4 border-b border-gray-200">
+              <h2 className="text-xl font-semibold text-black">Project Context & Settings</h2>
+              <button
+                onClick={() => setShowContextPage(false)}
+                className="text-gray-500 hover:text-gray-700 text-2xl font-bold"
+                title="Close"
+              >
+                ×
+              </button>
+            </div>
+            <div className="h-full overflow-y-auto">
+              <ProjectSetup />
+            </div>
           </div>
         </div>
       )}
