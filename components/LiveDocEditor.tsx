@@ -451,7 +451,7 @@ export default function LiveDocEditor() {
     }]);
     setCurrentVersionId('v0');
     setComments([]);
-    setTrackedEdits([]);
+    setTrackedChanges([]);
     setVersionStartContent('');
     setEditingMode('editing');
     setShowCommentSidebar(false);
