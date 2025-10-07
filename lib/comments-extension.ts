@@ -72,11 +72,11 @@ export const CommentsExtension = Extension.create<CommentsOptions>({
                   return;
                 }
 
-                // Highlight commented text
+                // Highlight commented text with YELLOW background
                 decorations.push(
                   Decoration.inline(comment.from, comment.to, {
                     class: 'commented-text',
-                    style: `background-color: ${comment.userColor}20; border-bottom: 2px solid ${comment.userColor}; cursor: pointer;`,
+                    style: `background-color: #fef3c7; cursor: pointer;`, // Light yellow
                     'data-comment-id': comment.id,
                     'data-user': comment.userName,
                   })

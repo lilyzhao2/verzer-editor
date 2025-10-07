@@ -68,10 +68,10 @@ export default function LiveDocEditor() {
   const [lastSaveTime, setLastSaveTime] = useState(new Date());
   const [changesSinceLastSave, setChangesSinceLastSave] = useState(0);
 
-  // Track Changes is ALWAYS enabled (both editing and suggesting modes show markup)
-  const trackChangesEnabled = true; // Always show markup
+  // Track Changes is ONLY enabled in Suggesting mode
+  const trackChangesEnabled = editingMode === 'suggesting';
   const editorEditable = editingMode !== 'viewing';
-  const isSuggestingMode = true; // Always track changes
+  const isSuggestingMode = editingMode === 'suggesting';
 
   const editor = useEditor({
     editorProps: {
@@ -1252,23 +1252,31 @@ export default function LiveDocEditor() {
                 </p>
               )}
 
-              {/* MIXED LIST: Changes + Comments sorted by timestamp */}
+              {/* MIXED LIST: Changes + Comments sorted by POSITION in document (sequential) */}
               {[
-                ...trackedChanges.map(c => ({ type: 'change' as const, data: c, timestamp: c.timestamp })),
-                ...comments.map(c => ({ type: 'comment' as const, data: c, timestamp: c.timestamp }))
+                ...trackedChanges.map(c => ({ type: 'change' as const, data: c, position: c.from, timestamp: c.timestamp })),
+                ...comments.map(c => ({ type: 'comment' as const, data: c, position: c.from, timestamp: c.timestamp }))
               ]
-                .sort((a, b) => b.timestamp - a.timestamp)
+                .sort((a, b) => a.position - b.position)
                 .map((item) => {
                   if (item.type === 'comment') {
                     const comment = item.data;
                     return (
                       <div
                         key={`comment-${comment.id}`}
-                        className={`p-3 rounded-lg border ${
+                        className={`p-3 rounded-lg border cursor-pointer ${
                           comment.resolved
                             ? 'bg-gray-100 border-gray-300 opacity-60'
                             : 'bg-blue-50 border-blue-300'
                         }`}
+                        onClick={() => {
+                          if (editor) {
+                            // Jump cursor to this comment position
+                            editor.commands.focus();
+                            editor.commands.setTextSelection({ from: comment.from, to: comment.to });
+                            console.log('🎯 Jumped to comment at position', comment.from, '-', comment.to);
+                          }
+                        }}
                       >
                         <div className="flex items-start justify-between mb-2">
                           <div className="flex items-center gap-2">
@@ -1310,7 +1318,15 @@ export default function LiveDocEditor() {
                   return (
                     <div
                       key={`change-${change.id}`}
-                      className="p-3 bg-white border border-gray-200 rounded-lg hover:shadow-md transition-shadow"
+                      className="p-3 bg-white border border-gray-200 rounded-lg hover:shadow-md transition-shadow cursor-pointer"
+                      onClick={() => {
+                        if (editor) {
+                          // Jump cursor to this change position
+                          editor.commands.focus();
+                          editor.commands.setTextSelection({ from: change.from, to: change.to });
+                          console.log('🎯 Jumped to change at position', change.from);
+                        }
+                      }}
                     >
                       <div className="flex items-start justify-between mb-2">
                         <div className="flex items-center gap-2">

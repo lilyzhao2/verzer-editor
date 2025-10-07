@@ -170,11 +170,19 @@ export const TrackChangesDecorationExtension = Extension.create<TrackChangesOpti
           if (!userTransaction) return null;
 
           // CRITICAL: Don't track undo/redo operations
-          const isUndo = userTransaction.getMeta('uiEvent') === 'undo';
-          const isRedo = userTransaction.getMeta('uiEvent') === 'redo';
+          // Check multiple ways to detect undo/redo
+          const isUndo = userTransaction.getMeta('history$') !== undefined || 
+                        userTransaction.getMeta('uiEvent') === 'undo';
+          const isRedo = userTransaction.getMeta('history$') !== undefined || 
+                        userTransaction.getMeta('uiEvent') === 'redo';
+          
           if (isUndo || isRedo) {
-            console.log('⏮️ Skipping undo/redo operation');
-            return null;
+            console.log('⏮️ Undo/redo detected - clearing ALL tracked changes to avoid conflicts');
+            
+            // Clear all tracked changes when undo/redo happens
+            const clearTr = newState.tr;
+            clearTr.setMeta('trackChangesUpdate', []);
+            return clearTr;
           }
 
           console.log('🔍 Track changes: Processing user transaction');
@@ -190,8 +198,77 @@ export const TrackChangesDecorationExtension = Extension.create<TrackChangesOpti
               const from = stepJSON.from;
               const to = stepJSON.to;
 
+              // REPLACEMENT: from < to AND has slice with content (select text and type)
+              if (from < to && stepJSON.slice && stepJSON.slice.content && stepJSON.slice.content.length > 0) {
+                const deletedText = oldState.doc.textBetween(from, to);
+                console.log('🔄 REPLACEMENT detected: deleting', JSON.stringify(deletedText), 'and inserting new text');
+
+                // Extract inserted text
+                let insertedText = '';
+                stepJSON.slice.content.forEach((item: any) => {
+                  if (item.type === 'text') {
+                    insertedText += item.text;
+                  } else if (item.content) {
+                    item.content.forEach((node: any) => {
+                      if (node.type === 'text') {
+                        insertedText += node.text;
+                      }
+                    });
+                  }
+                });
+
+                console.log('🔄 Replacement: deleted', JSON.stringify(deletedText), '→ inserted', JSON.stringify(insertedText));
+
+                // Check if deleting text that overlaps with ANY insertion
+                const overlappingInsertions = newChanges.filter(
+                  change => change.type === 'insertion' && 
+                  !(change.to <= from || change.from >= to) // Ranges overlap
+                );
+
+                if (overlappingInsertions.length > 0) {
+                  // Remove overlapping insertions (user is editing their own insertion)
+                  overlappingInsertions.forEach(insertion => {
+                    console.log('✅ Cancelling overlapping insertion:', insertion.text);
+                    const index = newChanges.indexOf(insertion);
+                    if (index > -1) {
+                      newChanges.splice(index, 1);
+                      hasNewChanges = true;
+                    }
+                  });
+                } else {
+                  // Add deletion for the original text
+                  newChanges.push({
+                    id: `delete-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                    type: 'deletion',
+                    from,
+                    to,
+                    text: deletedText,
+                    userId: state.userId,
+                    userName: state.userName,
+                    timestamp: Date.now(),
+                  });
+                  hasNewChanges = true;
+                  console.log('✨ Added deletion for replacement');
+                }
+
+                // Add insertion for the new text
+                if (insertedText) {
+                  newChanges.push({
+                    id: `insert-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                    type: 'insertion',
+                    from,
+                    to: from + insertedText.length,
+                    text: insertedText,
+                    userId: state.userId,
+                    userName: state.userName,
+                    timestamp: Date.now(),
+                  });
+                  hasNewChanges = true;
+                  console.log('✨ Added insertion for replacement');
+                }
+              }
               // DELETION: from < to, no slice or empty slice
-              if (from < to && (!stepJSON.slice || !stepJSON.slice.content || stepJSON.slice.content.length === 0)) {
+              else if (from < to && (!stepJSON.slice || !stepJSON.slice.content || stepJSON.slice.content.length === 0)) {
                 const deletedText = oldState.doc.textBetween(from, to);
                 console.log('🗑️ Deletion:', deletedText, 'at', from, '-', to);
 
