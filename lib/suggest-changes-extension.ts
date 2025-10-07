@@ -99,9 +99,9 @@ export const SuggestChangesExtension = Extension.create<SuggestChangesOptions>({
               if (isDeletion) {
                 // Text is being deleted
                 const deletedText = oldState.doc.textBetween(from, to);
-                console.log('🗑️ Deletion detected:', deletedText);
+                console.log('🗑️ Deletion detected:', JSON.stringify(deletedText));
                 
-                if (deletedText && deletedText.trim()) {
+                if (deletedText) {
                   // Check if the deleted text already has marks (insertion or deletion)
                   let hasInsertionMark = false;
                   let hasDeletionMark = false;
@@ -113,7 +113,7 @@ export const SuggestChangesExtension = Extension.create<SuggestChangesOptions>({
                     });
                   });
                   
-                  console.log('🔍 Mark check:', { hasInsertionMark, hasDeletionMark });
+                  console.log('🔍 Mark check:', { hasInsertionMark, hasDeletionMark, deletedText: JSON.stringify(deletedText) });
                   
                   if (hasInsertionMark) {
                     // If deleting text that was just inserted (green), just remove it completely
@@ -137,11 +137,13 @@ export const SuggestChangesExtension = Extension.create<SuggestChangesOptions>({
                     // Apply deletion mark
                     const deletionMark = newState.schema.marks.deletion;
                     if (deletionMark) {
+                      // Use a more unique ID with random component
+                      const uniqueId = `delete-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
                       tr.addMark(
                         from,
                         from + deletedText.length,
                         deletionMark.create({
-                          id: `delete-${Date.now()}-${index}`,
+                          id: uniqueId,
                           userId: state.userId,
                           userName: state.userName,
                           timestamp: Date.now(),
