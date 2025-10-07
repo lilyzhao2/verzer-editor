@@ -20,8 +20,7 @@ import { ProjectSetup } from '@/components/ProjectSetup';
 import { preloadCriticalComponents, preloadHeavyComponents } from '@/components/LazyComponents';
 import { TrackChangesDecorationExtension, TrackedChange } from '@/lib/track-changes-decorations';
 import { errorMonitor } from '@/lib/errorMonitoring';
-import { testRunner, addEditorTests, runAutoTests } from '@/lib/testRunner';
-import { testReportGenerator } from '@/lib/testReport';
+import { simpleTestRunner, addBasicEditorTests, runBasicTests } from '@/lib/simpleTestRunner';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 
 /**
@@ -173,7 +172,7 @@ export default function LiveDocEditor() {
   // Preload critical components on mount
   useEffect(() => {
     preloadCriticalComponents();
-    runAutoTests(); // Start automatic testing
+    runBasicTests(); // Start simple testing
   }, []);
 
   
@@ -455,15 +454,11 @@ export default function LiveDocEditor() {
     },
   });
 
-  // Add editor tests when editor is ready
+  // Add basic editor tests when editor is ready
   useEffect(() => {
     if (editor) {
-      // Wait a bit for editor to be fully initialized
       const timer = setTimeout(() => {
-        const editorElement = document.querySelector('[data-testid="editor"]') as HTMLElement;
-        if (editorElement && editor.state && editor.view) {
-          addEditorTests(editor, editorElement);
-        }
+        addBasicEditorTests(editor);
       }, 1000);
       
       return () => clearTimeout(timer);
@@ -2443,7 +2438,7 @@ export default function LiveDocEditor() {
             <h3 className="font-bold">🔍 Debug Panel</h3>
             <div className="flex gap-2">
               <button
-                onClick={() => testRunner.runAllTests()}
+                onClick={() => simpleTestRunner.runTests()}
                 className="px-2 py-1 bg-blue-600 rounded text-xs hover:bg-blue-700"
                 title="Run Tests"
               >
@@ -2455,22 +2450,6 @@ export default function LiveDocEditor() {
                 title="Export Data"
               >
                 📊 Export
-              </button>
-              <button
-                onClick={async () => {
-                  const html = await testReportGenerator.generateHTMLReport();
-                  const blob = new Blob([html], { type: 'text/html' });
-                  const url = URL.createObjectURL(blob);
-                  const a = document.createElement('a');
-                  a.href = url;
-                  a.download = `verzer-test-report-${new Date().toISOString().split('T')[0]}.html`;
-                  a.click();
-                  URL.revokeObjectURL(url);
-                }}
-                className="px-2 py-1 bg-purple-600 rounded text-xs hover:bg-purple-700"
-                title="Generate Test Report"
-              >
-                📋 Report
               </button>
               <button
                 onClick={() => setDebugMode(false)}

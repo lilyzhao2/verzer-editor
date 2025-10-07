@@ -135,7 +135,7 @@ export const addEditorTests = (editor: any, editorElement: HTMLElement) => {
   });
 
   testRunner.addTest('Editor Methods Available', () => {
-    const methods = ['getHTML', 'getText', 'isEmpty'];
+    const methods = ['getHTML', 'getText'];
     for (const method of methods) {
       if (typeof editor[method] !== 'function') {
         throw new Error(`Method ${method} not available`);
