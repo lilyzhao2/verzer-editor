@@ -3611,117 +3611,148 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
 
       {/* Version History Sidebar */}
       {showVersionHistory && (
-        <div className="fixed left-0 top-0 h-screen w-96 bg-white border-r border-gray-200 shadow-2xl z-40 flex flex-col">
-          <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-black">📜 Version History</h2>
-            <button
-              onClick={() => setShowVersionHistory(false)}
-              className="text-gray-500 hover:text-black text-xl"
-            >
-              ✕
-            </button>
-          </div>
-
-          {/* Settings */}
-          <div className="px-6 py-4 bg-gray-50 border-b border-gray-200">
-            <h3 className="text-sm font-medium text-black mb-3">Auto-Save Settings</h3>
-            <div className="space-y-3">
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={versionSettings.autoSaveEnabled}
-                  onChange={(e) =>
-                    setVersionSettings({ ...versionSettings, autoSaveEnabled: e.target.checked })
-                  }
-                  className="rounded"
-                />
-                <span className="text-sm text-black">Enable auto-save</span>
-              </label>
-
-              <div>
-                <label className="text-xs text-gray-600">Auto-save every (minutes):</label>
-                <input
-                  type="number"
-                  value={versionSettings.autoSaveFrequency}
-                  onChange={(e) =>
-                    setVersionSettings({
-                      ...versionSettings,
-                      autoSaveFrequency: parseInt(e.target.value) || 10,
-                    })
-                  }
-                  className="w-full mt-1 px-2 py-1 text-sm text-black border border-gray-300 rounded"
-                  min="1"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs text-gray-600">Auto-save after (edits):</label>
-                <input
-                  type="number"
-                  value={versionSettings.autoSaveByLineCount}
-                  onChange={(e) =>
-                    setVersionSettings({
-                      ...versionSettings,
-                      autoSaveByLineCount: parseInt(e.target.value) || 50,
-                    })
-                  }
-                  className="w-full mt-1 px-2 py-1 text-sm text-black border border-gray-300 rounded"
-                  min="1"
-                />
-              </div>
+        <div className="fixed left-0 top-0 h-screen w-96 bg-white border-r border-gray-200 shadow-lg z-40 flex flex-col">
+          {/* Header */}
+          <div className="px-6 py-5 border-b border-gray-200">
+            <div className="flex items-center justify-between mb-1">
+              <h2 className="text-2xl font-bold text-gray-900">Version Tree</h2>
+              <button
+                onClick={() => setShowVersionHistory(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
             </div>
+            <p className="text-sm text-gray-500">{versions.length} versions</p>
           </div>
 
           {/* Version List */}
-          <div className="flex-1 overflow-auto px-6 py-4">
-            {/* Active Versions */}
-            <div className="space-y-3">
-              {[...versions].reverse().map((version) => {
+          <div className="flex-1 overflow-auto px-6 py-6">
+            <div className="space-y-4">
+              {[...versions].reverse().map((version, index) => {
                 const isOlderVersion = version.versionNumber < versions[versions.length - 1].versionNumber;
                 const isCurrentVersion = version.id === currentVersionId;
                 
                 return (
-                  <div key={version.id}>
+                  <div key={version.id} className="relative">
+                    {/* Connection line to next version */}
+                    {index < versions.length - 1 && (
+                      <div className="absolute left-5 top-16 w-0.5 h-8 bg-gray-200"></div>
+                    )}
+                    
                     <div
-                      className={`p-3 rounded-lg border-2 cursor-pointer transition-all ${
+                      className={`relative flex items-start gap-4 p-4 rounded-xl border-2 cursor-pointer transition-all ${
                         isCurrentVersion
-                          ? 'border-blue-500 bg-blue-50'
-                          : 'border-gray-200 bg-white hover:bg-gray-50'
+                          ? 'border-blue-500 bg-blue-50 shadow-sm'
+                          : 'border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm'
                       }`}
                       onClick={() => loadVersion(version.id, false)}
                     >
-                      <div className="flex items-start justify-between mb-2">
-                        <span className="font-semibold text-black">
-                          {version.autoSaved ? '☁️' : '💾'} V{version.versionNumber}
-                        </span>
-                        {isCurrentVersion && (
-                          <span className="text-xs text-blue-600 font-semibold">Current</span>
-                        )}
+                      {/* Version Badge */}
+                      <div className={`flex-shrink-0 w-10 h-10 rounded-lg flex items-center justify-center font-bold text-white ${
+                        isCurrentVersion ? 'bg-blue-500' : 'bg-gray-400'
+                      }`}>
+                        v{version.versionNumber}
                       </div>
                       
-                      {version.changesSinceLastVersion !== undefined && (
-                        <p className="text-xs text-gray-600 truncate">
-                          {version.changesSinceLastVersion} edits
+                      {/* Version Info */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between mb-1">
+                          <h3 className="font-semibold text-gray-900">
+                            {version.versionNumber === 0 ? 'Original' : `Version ${version.versionNumber}`}
+                          </h3>
+                          {isCurrentVersion && (
+                            <span className="px-2 py-0.5 text-xs font-medium text-blue-600 bg-blue-100 rounded-full">
+                              Current
+                            </span>
+                          )}
+                        </div>
+                        
+                        <p className="text-sm text-gray-600 italic mb-2">
+                          {version.versionNumber === 0 ? '📝 Initial version' : 
+                           version.autoSaved ? '☁️ Auto-saved' : '💾 Manual save'}
                         </p>
-                      )}
-                      
-                      <p className="text-xs text-gray-400 mt-1">
-                        {new Date(version.timestamp).toLocaleTimeString()}
-                      </p>
+                        
+                        <p className="text-xs text-gray-500">
+                          {new Date(version.timestamp).toLocaleString('en-US', {
+                            month: '2-digit',
+                            day: '2-digit',
+                            year: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            hour12: true
+                          })}
+                        </p>
+                        
+                        {/* Action Icons */}
+                        <div className="flex items-center gap-2 mt-3">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              loadVersion(version.id, false);
+                            }}
+                            className="p-1 hover:bg-gray-100 rounded"
+                            title="Preview version"
+                          >
+                            <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                            </svg>
+                          </button>
+                          
+                          {isOlderVersion && !isCurrentVersion && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                loadVersion(version.id, true);
+                              }}
+                              className="p-1 hover:bg-gray-100 rounded"
+                              title="Restore this version"
+                            >
+                              <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                              </svg>
+                            </button>
+                          )}
+                          
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              // Star/bookmark functionality could go here
+                            }}
+                            className="p-1 hover:bg-gray-100 rounded"
+                            title="Bookmark version"
+                          >
+                            <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
+                            </svg>
+                          </button>
+                          
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              // Archive functionality
+                            }}
+                            className="p-1 hover:bg-gray-100 rounded"
+                            title="Archive version"
+                          >
+                            <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
+                            </svg>
+                          </button>
+                          
+                          {isCurrentVersion && (
+                            <div className="ml-auto">
+                              <svg className="w-5 h-5 text-blue-500" fill="currentColor" viewBox="0 0 20 20">
+                                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                              </svg>
+                            </div>
+                          )}
+                        </div>
+                      </div>
                     </div>
-                    
-                    {/* Make Active button for older versions */}
-                    {isOlderVersion && !isCurrentVersion && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          loadVersion(version.id, true);
-                        }}
-                        className="mt-1 w-full px-3 py-1.5 text-xs font-medium text-white bg-[#1e3a8a] rounded hover:bg-[#1e40af] transition-colors"
-                      >
-                        🔄 Make Active & Archive Future
-                      </button>
-                    )}
                   </div>
                 );
               })}
@@ -3729,37 +3760,40 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
             
             {/* Archived Versions */}
             {archivedVersions.length > 0 && (
-              <div className="mt-4 pt-4 border-t border-gray-200">
-                <h4 className="text-xs font-medium text-gray-500 px-2 mb-2">
-                  📦 Archived Alternatives
+              <div className="mt-6 pt-6 border-t border-gray-200">
+                <h4 className="text-sm font-semibold text-gray-700 mb-3">
+                  📦 Archived Versions
                 </h4>
-                <div className="space-y-1">
+                <div className="space-y-2">
                   {[...archivedVersions].reverse().map((version) => (
                     <button
                       key={version.id}
                       onClick={() => {
                         if (editor) {
                           editor.commands.setContent(version.content);
-                          showToast(`Viewing archived V${version.versionNumber} (read-only)`, 'info');
+                          showToast(`Viewing archived V${version.versionNumber}`, 'info');
                         }
                       }}
-                      className="w-full text-left px-3 py-2 rounded-lg transition-colors bg-gray-50 hover:bg-gray-100 border-2 border-transparent opacity-60"
+                      className="w-full text-left px-4 py-3 rounded-lg bg-gray-50 hover:bg-gray-100 border border-gray-200 transition-colors"
                     >
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-sm font-medium text-gray-900">
-                          {version.autoSaved ? '☁️' : '💾'} V{version.versionNumber}
-                        </span>
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-lg bg-gray-300 flex items-center justify-center font-bold text-white text-sm">
+                          v{version.versionNumber}
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium text-gray-900">Version {version.versionNumber}</p>
+                          <p className="text-xs text-gray-500">
+                            {new Date(version.timestamp).toLocaleString('en-US', {
+                              month: '2-digit',
+                              day: '2-digit',
+                              year: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                              hour12: true
+                            })}
+                          </p>
+                        </div>
                       </div>
-                      
-                      {version.changesSinceLastVersion !== undefined && (
-                        <p className="text-xs text-gray-600 truncate">
-                          {version.changesSinceLastVersion} edits
-                        </p>
-                      )}
-                      
-                      <p className="text-xs text-gray-400 mt-1">
-                        {new Date(version.timestamp).toLocaleTimeString()}
-                      </p>
                     </button>
                   ))}
                 </div>
