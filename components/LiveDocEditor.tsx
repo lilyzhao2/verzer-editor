@@ -3313,7 +3313,7 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
                   }}
                   className="px-3 py-1 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700 transition-colors"
                 >
-                  Restore This Version
+                  {archivedVersions.some(v => v.id === viewingVersionId) ? 'Unarchive This Version' : 'Restore This Version'}
                 </button>
               </div>
             )}
@@ -3734,11 +3734,11 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
                 return (
                   <div key={`version-${version.id}`}>
                     <div
-                      onClick={() => !isCurrentVersion && loadVersion(version.id, false)}
-                      className={`p-4 rounded-lg border transition-all ${
+                      onClick={() => loadVersion(version.id, false)}
+                      className={`p-4 rounded-lg border transition-all cursor-pointer ${
                         isCurrentVersion
                           ? 'border-blue-400 bg-blue-50'
-                          : 'border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm cursor-pointer'
+                          : 'border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm'
                       }`}
                     >
                       {/* Header Row */}
