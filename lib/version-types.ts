@@ -20,6 +20,7 @@ export interface DocumentVersion {
   timestamp: Date;
   createdBy: string;
   autoSaved: boolean; // true if auto-saved, false if manually saved
+  archived?: boolean; // true if archived (when making older version active)
   changesSinceLastVersion?: number; // number of edits since last version
   pendingSuggestions?: TrackedChange[]; // Unresolved suggestions that carry over
   baselineContent?: string; // Previous version content (for showing diffs)
