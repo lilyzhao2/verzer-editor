@@ -575,29 +575,52 @@ export default function LiveDocEditor() {
               }
             }
             
-            const response = await fetch('/api/anthropic', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                prompt: `${basePrompt}${stylePrompt}
+            // Validate content before sending
+            if (!contentToSend || contentToSend.trim().length === 0) {
+              console.warn('⚠️ No content to send, skipping autocomplete');
+              return '';
+            }
+
+            const requestPayload = {
+              prompt: `${basePrompt}${stylePrompt}
 
 Text to continue: ${contentToSend}
 
 ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with just the missing words:'}`,
-                content: contentToSend,
-                model: 'claude-3-5-haiku-20241022',
-                mode: 'chat',
-                maxTokens: maxTokens,
-                temperature: 0.5,
-                stopSequences: stopSequences,
-                projectConfig: projectContext
-              }),
+              content: contentToSend,
+              model: 'claude-3-5-haiku-20241022',
+              mode: 'chat',
+              maxTokens: maxTokens,
+              temperature: 0.5,
+              stopSequences: stopSequences,
+              projectConfig: projectContext
+            };
+
+            console.log('📤 Sending autocomplete request:', {
+              contentLength: contentToSend.length,
+              isAfterSentenceEnd,
+              maxTokens
+            });
+
+            const response = await fetch('/api/anthropic', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(requestPayload),
               signal: abortController.signal
             });
 
             if (!response.ok) {
               const errorText = await response.text();
               console.error('🚨 API Error:', response.status, errorText);
+              
+              // Try to parse error details
+              try {
+                const errorData = JSON.parse(errorText);
+                console.error('🔍 Error details:', errorData);
+              } catch (e) {
+                console.error('🔍 Raw error:', errorText);
+              }
+              
               throw new Error(`AI request failed: ${response.status} - ${errorText}`);
             }
 

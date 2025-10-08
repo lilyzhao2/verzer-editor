@@ -251,7 +251,17 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
+    let body;
+    try {
+      body = await request.json();
+    } catch (parseError) {
+      console.error('❌ Failed to parse request body:', parseError);
+      return NextResponse.json(
+        { error: 'Invalid JSON in request body', details: parseError instanceof Error ? parseError.message : String(parseError) },
+        { status: 400 }
+      );
+    }
+    
     const { prompt, content, model, mode = 'edit', projectConfig, maxTokens, stream } = body;
     
     console.log('Anthropic API called with:', { 
@@ -610,9 +620,18 @@ ${content}`;
       return NextResponse.json(payload);
     }
   } catch (error) {
-    console.error('Error in Anthropic API route:', error);
+    console.error('❌ Error in Anthropic API route:', error);
+    console.error('Error details:', {
+      message: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+      name: error instanceof Error ? error.name : undefined
+    });
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { 
+        error: 'Internal server error',
+        details: error instanceof Error ? error.message : String(error),
+        type: error instanceof Error ? error.name : 'Unknown'
+      },
       { status: 500 }
     );
   }
