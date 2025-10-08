@@ -532,6 +532,70 @@ body {
   font-weight: 500;
 }
 
+/* AI Rewrite Extension Styles */
+.ai-rewrite-menu {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+  animation: slideInLeft 0.2s ease-out;
+}
+
+@keyframes slideInLeft {
+  from {
+    opacity: 0;
+    transform: translateX(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* Inline preview styles */
+.rewrite-preview-hidden {
+  transition: all 0.2s ease;
+}
+
+.rewrite-preview-inline {
+  display: inline;
+  animation: fadeInScale 0.2s ease-out;
+}
+
+@keyframes fadeInScale {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.rewrite-option {
+  transition: all 0.15s ease;
+  position: relative;
+}
+
+.rewrite-option:hover {
+  background: #f8fafc !important;
+  border-color: #e2e8f0 !important;
+  transform: translateX(2px);
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+.rewrite-option:active {
+  transform: translateX(1px);
+  background: #f1f5f9 !important;
+}
+
+/* Improved hover states for better UX */
+.ai-rewrite-menu .rewrite-option:hover .variation-label {
+  color: #4f46e5 !important;
+}
+
+.ai-rewrite-menu .rewrite-option:hover .variation-text {
+  color: #1e293b !important;
+}
+
 /* Animations */
 @keyframes slideInDown {
   from {

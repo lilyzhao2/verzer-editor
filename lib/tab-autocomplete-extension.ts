@@ -254,8 +254,15 @@ export const TabAutocompleteExtension = Extension.create<TabAutocompleteOptions>
               };
             }
 
-            // Clear suggestions if selection changed (cursor moved)
+            // Clear suggestions if selection changed (cursor moved), but not during AI rewrite
             if (tr.selectionSet && !tr.getMeta('tabAutocomplete')) {
+              // Check if AI rewrite menu is potentially opening
+              const aiRewriteMeta = tr.getMeta('aiRewrite');
+              if (aiRewriteMeta) {
+                console.log('🚫 AI rewrite activity detected, not clearing ghost text');
+                return oldState;
+              }
+              
               console.log('👆 Selection changed, clearing ghost text');
               return {
                 ...oldState,
@@ -279,6 +286,23 @@ export const TabAutocompleteExtension = Extension.create<TabAutocompleteOptions>
 
         props: {
           decorations(state) {
+            // Check if AI rewrite menu is active - if so, don't show autocomplete
+            try {
+              const plugins = state.plugins;
+              for (let plugin of plugins) {
+                if (plugin.key && plugin.key === 'aiRewrite') {
+                  const aiRewriteState = plugin.getState(state);
+                  if (aiRewriteState?.menuVisible) {
+                    console.log('🚫 AI rewrite menu is active, hiding autocomplete decorations');
+                    return null;
+                  }
+                  break;
+                }
+              }
+            } catch (error) {
+              console.log('⚠️ Could not check AI rewrite state:', error);
+            }
+            
             const pluginState = tabAutocompleteKey.getState(state);
             if (!pluginState?.showSuggestion || !pluginState.suggestion) {
               return null;
@@ -402,18 +426,35 @@ export const TabAutocompleteExtension = Extension.create<TabAutocompleteOptions>
       }),
     ];
 
-    async function requestCompletion(view: any, onRequestCompletion?: (context: string, styleHints: StyleAnalysis) => Promise<string>) {
-      console.log('🚀 requestCompletion called!');
-      console.log('📋 View available:', !!view);
-      console.log('🎯 Callback available:', !!onRequestCompletion);
-      
-      if (!onRequestCompletion) {
-        console.log('❌ No completion callback provided');
-        return;
-      }
+        async function requestCompletion(view: any, onRequestCompletion?: (context: string, styleHints: StyleAnalysis) => Promise<string>) {
+          console.log('🚀 requestCompletion called!');
+          console.log('📋 View available:', !!view);
+          console.log('🎯 Callback available:', !!onRequestCompletion);
+          
+          if (!onRequestCompletion) {
+            console.log('❌ No completion callback provided');
+            return;
+          }
 
-      const now = Date.now();
-      const currentPosition = view.state.selection.from;
+          // Check if AI rewrite menu is active - if so, don't show autocomplete
+          try {
+            const plugins = view.state.plugins;
+            for (let plugin of plugins) {
+              if (plugin.key && plugin.key.key === 'aiRewrite') {
+                const aiRewriteState = plugin.getState(view.state);
+                if (aiRewriteState?.menuVisible) {
+                  console.log('🚫 AI rewrite menu is active, skipping autocomplete');
+                  return;
+                }
+                break;
+              }
+            }
+          } catch (error) {
+            console.log('⚠️ Could not check AI rewrite state:', error);
+          }
+
+          const now = Date.now();
+          const currentPosition = view.state.selection.from;
       
       console.log('📍 Current position:', currentPosition);
       console.log('⏰ Time since last request:', now - extension.storage.lastRequestTime);

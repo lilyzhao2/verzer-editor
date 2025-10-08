@@ -16,6 +16,7 @@ import { CommentsExtension, Comment, CommentReply } from '@/lib/comments-extensi
 import { AIInlineExtension } from '@/lib/ai-inline-extension';
 import { DocumentVersion, VersionHistorySettings } from '@/lib/version-types';
 import { TabAutocompleteExtension } from '@/lib/tab-autocomplete-extension';
+import { AIRewriteExtension, RewriteVariation } from '@/lib/ai-rewrite-extension';
 import { ProjectSetup } from '@/components/ProjectSetup';
 import { preloadCriticalComponents, preloadHeavyComponents } from '@/components/LazyComponents';
 import { TrackChangesDecorationExtension, TrackedChange } from '@/lib/track-changes-decorations';
@@ -255,6 +256,38 @@ export default function LiveDocEditor() {
     };
   };
 
+  // Helper function to request rewrites from API
+  const requestRewrites = async (selectedText: string, context: string): Promise<RewriteVariation[]> => {
+    try {
+      console.log('🔄 Requesting rewrites for:', selectedText.substring(0, 50) + '...');
+      
+      const response = await fetch('/api/rewrite', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          selectedText,
+          context,
+          model: 'claude-3-5-sonnet-20241022',
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || `Request failed: ${response.status}`);
+      }
+
+      const data = await response.json();
+      console.log('✅ Received rewrites:', data.variations.length);
+      
+      return data.variations;
+    } catch (error) {
+      console.error('❌ Rewrite request failed:', error);
+      throw error;
+    }
+  };
+
   // Cache for autocomplete suggestions - load from localStorage
   const [completionCache, setCompletionCache] = useState<Map<string, string[]>>(() => {
     if (typeof window !== 'undefined') {
@@ -384,6 +417,10 @@ export default function LiveDocEditor() {
         },
       }),
       ...(editingMode !== 'viewing' ? [AIInlineExtension] : []), // Disable AI inline in viewing mode
+      ...(editingMode !== 'viewing' ? [AIRewriteExtension.configure({
+        enabled: true,
+        onRequestRewrites: requestRewrites,
+      })] : []), // Disable AI rewrite in viewing mode
       TrackChangesDecorationExtension.configure({
         enabled: isSuggestingMode,
         userId: 'user-1',
@@ -838,9 +875,22 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
   // Removed "Ask AI for thoughts" feature
 
   const handleRewriteText = async () => {
+    console.log('🎯 handleRewriteText called');
     setAIMenuVisible(false);
-    setShowRewriteInput(true);
-    setRewritePromptValue('');
+    
+    // Small delay to ensure selection is stable
+    setTimeout(() => {
+      // Use the new AI rewrite extension
+      if (editor) {
+        console.log('📝 Editor available, calling showRewriteMenu');
+        console.log('🔍 Available commands:', Object.keys(editor.commands));
+        // @ts-ignore - showRewriteMenu is added by AIRewriteExtension
+        const result = editor.commands.showRewriteMenu();
+        console.log('✅ showRewriteMenu result:', result);
+      } else {
+        console.log('❌ No editor available');
+      }
+    }, 50);
   };
 
   const submitRewritePrompt = useCallback(async () => {
@@ -2592,7 +2642,7 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
             className="w-full px-4 py-2 text-left text-sm text-black hover:bg-gray-100 flex items-center gap-2"
           >
             <span>✨</span>
-            <span>Ask AI to rewrite</span>
+            <span>Rewrite (5 variations)</span>
           </button>
         </div>
       )}
