@@ -469,11 +469,45 @@ export default function LiveDocEditor() {
       createdBy: 'You',
       autoSaved: false,
       archived: false,
+      isStarred: false,
+      saveType: 'initial' as 'initial' | 'manual' | 'auto' | 'ai',
     },
   ]);
   const [archivedVersions, setArchivedVersions] = useState<DocumentVersion[]>([]);
   const [currentVersionId, setCurrentVersionId] = useState('v0');
+  const [viewingVersionId, setViewingVersionId] = useState('v0'); // Track which version is being viewed
+  const [highestVersionNumber, setHighestVersionNumber] = useState(0);
   const [showVersionHistory, setShowVersionHistory] = useState(false);
+  
+  // Sync highestVersionNumber when versions or archived versions change
+  useEffect(() => {
+    const allVersionNumbers = [
+      ...versions.map(v => v.versionNumber),
+      ...archivedVersions.map(v => v.versionNumber)
+    ];
+    const maxVersion = Math.max(...allVersionNumbers, 0);
+    if (maxVersion > highestVersionNumber) {
+      setHighestVersionNumber(maxVersion);
+    }
+  }, [versions, archivedVersions]);
+
+  // Sync viewingVersionId with currentVersionId when current version changes (e.g., after save)
+  useEffect(() => {
+    // Only sync if not actively viewing a different version
+    const isViewingDifferent = viewingVersionId !== currentVersionId;
+    const currentVersionExists = versions.some(v => v.id === currentVersionId) || archivedVersions.some(v => v.id === currentVersionId);
+    const viewingVersionExists = versions.some(v => v.id === viewingVersionId) || archivedVersions.some(v => v.id === viewingVersionId);
+    
+    // If viewing version doesn't exist anymore, or if we just created a new version, sync to current
+    if (!isViewingDifferent || !viewingVersionExists) {
+      if (currentVersionExists) {
+        setViewingVersionId(currentVersionId);
+      }
+    }
+  }, [currentVersionId, versions, archivedVersions]);
+  const [showRestoreWarning, setShowRestoreWarning] = useState(false);
+  const [versionToRestore, setVersionToRestore] = useState<DocumentVersion | null>(null);
+  const [restoreConfirmChecked, setRestoreConfirmChecked] = useState(false);
   const [versionSettings, setVersionSettings] = useState<VersionHistorySettings>({
     autoSaveFrequency: 10, // minutes
     autoSaveByLineCount: 50,
@@ -1377,8 +1411,8 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
         const topPx = coords.top - parentRect.top;
         
         setPendingCommentPosition({ from, to, topPx });
-        setShowCommentInput(true);
-        setCommentInputValue('');
+    setShowCommentInput(true);
+    setCommentInputValue('');
       } catch (error) {
         console.error('Error calculating comment position:', error);
       }
@@ -1756,8 +1790,13 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
       timestamp: new Date(),
       createdBy: 'You',
       autoSaved: false,
+      archived: false,
+      isStarred: false,
+      saveType: 'initial' as 'initial' | 'manual' | 'auto' | 'ai',
     }]);
+    setArchivedVersions([]);
     setCurrentVersionId('v0');
+    setHighestVersionNumber(0);
     setComments([]);
     setTrackedChanges([]);
     setVersionStartContent('');
@@ -1810,13 +1849,8 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
     // Get current version for baseline
     const currentVersion = versions.find(v => v.id === currentVersionId);
     
-    // Get the highest version number from BOTH active and archived versions
-    const allVersionNumbers = [
-      ...versions.map(v => v.versionNumber),
-      ...archivedVersions.map(v => v.versionNumber)
-    ];
-    const maxVersionNumber = Math.max(...allVersionNumbers, -1);
-    const newVersionNumber = maxVersionNumber + 1;
+    // Use global counter that always increments
+    const newVersionNumber = highestVersionNumber + 1;
     
     const newVersion: DocumentVersion = {
       id: `v${Date.now()}`,
@@ -1826,6 +1860,8 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
       createdBy: 'You',
       autoSaved,
       archived: false,
+      isStarred: false,
+      saveType: autoSaved ? 'auto' : 'manual',
       changesSinceLastVersion: changesSinceLastSave,
       // OPTION C: Save pending suggestions to carry over
       pendingSuggestions: trackedChanges.length > 0 ? trackedChanges : undefined,
@@ -1837,63 +1873,116 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
 
     setVersions([...versions, newVersion]);
     setCurrentVersionId(newVersion.id);
+    setViewingVersionId(newVersion.id); // Always view the latest version after save
+    setHighestVersionNumber(newVersionNumber); // Update global counter
     setLastSaveTime(new Date());
     setChangesSinceLastSave(0);
 
     return newVersion;
   };
 
+  const handleRestoreConfirm = () => {
+    if (!versionToRestore || !editor) return;
+    
+    const version = versionToRestore;
+    const latestVersion = versions[versions.length - 1];
+    
+    // Check if restoring an archived version
+    const isRestoringArchived = archivedVersions.some(v => v.id === version.id);
+    
+    // Move future versions to archived (from active versions)
+    const futureVersions = versions.filter(v => v.versionNumber > version.versionNumber);
+    
+    // Keep active versions up to and including the restored version
+    let remainingVersions = versions.filter(v => v.versionNumber < version.versionNumber);
+    
+    // Always add the restored version to active versions (whether it was archived or active)
+    remainingVersions = [...remainingVersions, { ...version, archived: false }].sort((a, b) => a.versionNumber - b.versionNumber);
+    
+    // Mark future versions as archived
+    const markedAsArchived = futureVersions.map(v => ({ ...v, archived: true }));
+    
+    // Remove the restored version from archived list (if it was archived)
+    const updatedArchivedVersions = archivedVersions.filter(v => v.id !== version.id);
+    
+    console.log(`📦 Archiving ${futureVersions.length} future versions`);
+    console.log(`✅ Keeping ${remainingVersions.length} active versions up to V${version.versionNumber}`);
+    if (isRestoringArchived) {
+      console.log(`♻️ Unarchiving V${version.versionNumber}`);
+    }
+    
+    // Update both lists
+    setVersions(remainingVersions);
+    setArchivedVersions([...updatedArchivedVersions, ...markedAsArchived]);
+    
+    // Load the version content
+    editor.commands.setContent(version.content);
+    setCurrentVersionId(version.id);
+    setViewingVersionId(version.id); // Also update viewing state
+    
+    // Re-enable editing when restoring - switch to editing mode if in viewing mode
+    if (editingMode === 'viewing') {
+      setEditingMode('editing');
+    }
+    editor.setEditable(true);
+    
+    // Restore pending suggestions if they exist
+    if (version.pendingSuggestions && version.pendingSuggestions.length > 0) {
+      console.log('🔄 Restoring', version.pendingSuggestions.length, 'pending suggestions');
+      const tr = editor.state.tr;
+      tr.setMeta('trackChangesUpdate', version.pendingSuggestions);
+      editor.view.dispatch(tr);
+      setTrackedChanges(version.pendingSuggestions);
+      
+      if (editingMode === 'suggesting') {
+        setShowCommentSidebar(true);
+      }
+    } else {
+      console.log('🧹 No pending suggestions for this version');
+      // @ts-ignore
+      editor.commands.clearAllChanges();
+      setTrackedChanges([]);
+    }
+    
+    showToast(`Made V${version.versionNumber} active. ${futureVersions.length} version(s) archived.`, 'success');
+    
+    // Close modal
+    setShowRestoreWarning(false);
+    setVersionToRestore(null);
+  };
+  
   const loadVersion = (versionId: string, makeActive: boolean = false) => {
-    const version = versions.find((v) => v.id === versionId);
+    const version = versions.find((v) => v.id === versionId) || archivedVersions.find((v) => v.id === versionId);
     const latestVersion = versions[versions.length - 1];
     
     if (version && editor) {
-      // Check if trying to load an old version
-      if (version.versionNumber < latestVersion.versionNumber) {
-        if (makeActive) {
-          // Making this version active - archive all future versions
-          const confirmRevert = window.confirm(
-            `⚠️ Make V${version.versionNumber} the active version?\n\n` +
-            `This will:\n` +
-            `• Archive all versions after V${version.versionNumber} (you can still view them)\n` +
-            `• Make this version your current working version\n` +
-            `• New versions will continue from V${version.versionNumber + 1}\n\n` +
-            `Continue?`
-          );
-          
-          if (!confirmRevert) return;
-          
-          // Move future versions to archived
-          const futureVersions = versions.filter(v => v.versionNumber > version.versionNumber);
-          const remainingVersions = versions.filter(v => v.versionNumber <= version.versionNumber);
-          
-          // Mark future versions as archived
-          const markedAsArchived = futureVersions.map(v => ({ ...v, archived: true }));
-          
-          console.log(`📦 Archiving ${futureVersions.length} future versions`);
-          console.log(`✅ Keeping ${remainingVersions.length} active versions up to V${version.versionNumber}`);
-          
-          // Update both lists
-          setVersions(remainingVersions);
-          setArchivedVersions([...archivedVersions, ...markedAsArchived]);
-          
-          showToast(`Made V${version.versionNumber} active. ${futureVersions.length} version(s) archived.`, 'success');
-        } else {
-          // Just viewing - show read-only warning
-          const confirmView = window.confirm(
-            `⚠️ Viewing older version (V${version.versionNumber}).\n\n` +
-            `This version is READ-ONLY for preview.\n` +
-            `To make it active and archive future versions, use the "Make Active" button.\n\n` +
-            `View this version?`
-          );
-          
-          if (!confirmView) return;
-        }
+      // Check if trying to make an old version active
+      // If there are future versions or if this is an archived version, show warning
+      const hasFutureVersions = versions.some(v => v.versionNumber > version.versionNumber);
+      const isArchived = archivedVersions.some(v => v.id === versionId);
+      
+      if (makeActive && (hasFutureVersions || isArchived)) {
+        // Show warning modal before making active
+        setVersionToRestore(version);
+        setShowRestoreWarning(true);
+        return; // Wait for user confirmation
       }
       
       // Load the version content
       editor.commands.setContent(version.content);
-      setCurrentVersionId(versionId);
+      
+      // Update viewing state
+      setViewingVersionId(versionId);
+      
+      // Only update current if making active
+      if (makeActive) {
+        setCurrentVersionId(versionId);
+        // Enable editing when making active
+        editor.setEditable(true);
+      } else {
+        // Disable editing when just viewing
+        editor.setEditable(false);
+      }
       
       // Restore pending suggestions if they exist
       if (version.pendingSuggestions && version.pendingSuggestions.length > 0) {
@@ -1917,6 +2006,11 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
         // @ts-ignore - Commands added by TrackChangesDecorationExtension
         editor.commands.clearAllChanges();
         setTrackedChanges([]);
+      }
+      
+      // Show toast if viewing (not making active)
+      if (!makeActive && versionId !== currentVersionId) {
+        showToast(`Viewing V${version.versionNumber} (read-only)`, 'info');
       }
     }
   };
@@ -2333,8 +2427,8 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
               onClick={() => setShowSaveMenu(!showSaveMenu)}
             >
               Save As
-            </button>
-            
+          </button>
+          
             {showSaveMenu && (
               <div className="absolute left-0 top-10 bg-white border border-gray-200 rounded-md shadow-lg z-50 min-w-[180px]">
                 <div className="py-1">
@@ -2362,12 +2456,12 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
                     className="w-full text-left px-4 py-2 text-sm text-gray-500 hover:bg-gray-100"
                   >
                     🌐 Save as HTML
-                  </button>
+          </button>
                 </div>
               </div>
             )}
-          </div>
-          
+        </div>
+        
           {/* History Button */}
           <button
             onClick={() => setShowVersionHistory(!showVersionHistory)}
@@ -2402,20 +2496,32 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
             {/* Current Version Display */}
             <span className="text-xs text-gray-600">
               {currentVersion?.autoSaved ? '☁️ Auto-saved' : '💾 Saved'} • V{currentVersion?.versionNumber}
+              {viewingVersionId !== currentVersionId && (
+                <span className="text-yellow-600 font-semibold"> (Viewing V{versions.find(v => v.id === viewingVersionId)?.versionNumber || archivedVersions.find(v => v.id === viewingVersionId)?.versionNumber})</span>
+              )}
             </span>
 
             {/* Version Dropdown */}
             <select
-              value={currentVersionId}
-              onChange={(e) => loadVersion(e.target.value)}
+              value={viewingVersionId}
+              onChange={(e) => loadVersion(e.target.value, false)}
               className="px-3 py-1.5 text-sm font-semibold text-black bg-white border border-gray-300 rounded hover:bg-gray-50 cursor-pointer"
-              title="Select version"
+              title="Select version to view"
             >
               {versions.map((v) => (
-                <option key={v.id} value={v.id}>
-                  V{v.versionNumber} {v.autoSaved ? '(auto)' : ''}
+                <option key={`active-${v.id}`} value={v.id}>
+                  V{v.versionNumber} {v.autoSaved ? '(auto)' : ''} {v.id === currentVersionId ? '★' : ''}
                 </option>
               ))}
+              {archivedVersions.filter(av => !versions.some(v => v.id === av.id)).length > 0 && (
+                <optgroup label="📦 Archived">
+                  {archivedVersions.filter(av => !versions.some(v => v.id === av.id)).map((v) => (
+                    <option key={`archived-${v.id}`} value={v.id}>
+                      V{v.versionNumber} {v.autoSaved ? '(auto)' : ''} (archived)
+                    </option>
+                  ))}
+                </optgroup>
+              )}
             </select>
 
             {/* Manual Save Button */}
@@ -2762,7 +2868,7 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
         <div className="w-px h-6 bg-gray-300 mx-1" />
 
         {/* Link */}
-        <button 
+        <button
           onClick={() => {
             const { from, to } = editor.state.selection;
             const selectedText = editor.state.doc.textBetween(from, to);
@@ -2906,8 +3012,8 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
               title="Reject all changes"
             >
               ✕ Reject All
-            </button>
-            
+        </button>
+
             {/* Batch operations */}
             {selectedChangeIds.size > 0 && (
               <>
@@ -2919,7 +3025,7 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
                   title="Accept selected changes"
                 >
                   ✓ Accept Selected
-                </button>
+        </button>
                 <button
                   onClick={batchRejectChanges}
                   className="px-2 py-1 text-xs font-medium text-white bg-purple-600 rounded hover:bg-purple-700 transition-colors"
@@ -2960,7 +3066,7 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
                 Select All
               </button>
             )}
-          </div>
+      </div>
         )}
         {editingMode === 'viewing' && (
           <span className="px-3 py-1.5 text-xs font-medium bg-slate-600 text-white rounded-md">
@@ -3239,6 +3345,31 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
                 border-radius: 2px;
               }
             `}</style>
+            
+            {/* Read-Only Banner when viewing old version */}
+            {viewingVersionId !== currentVersionId && (
+              <div className="sticky top-0 z-10 bg-yellow-100 border-b-2 border-yellow-400 px-4 py-2.5 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-yellow-800 font-semibold">🔒 Read-Only Mode</span>
+                  <span className="text-yellow-700 text-sm">
+                    Viewing V{versions.find(v => v.id === viewingVersionId)?.versionNumber || archivedVersions.find(v => v.id === viewingVersionId)?.versionNumber} 
+                    {' '}(not current version)
+                  </span>
+                </div>
+                <button
+                  onClick={() => {
+                    const version = versions.find(v => v.id === viewingVersionId) || archivedVersions.find(v => v.id === viewingVersionId);
+                    if (version) {
+                      loadVersion(version.id, true);
+                    }
+                  }}
+                  className="px-3 py-1 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700 transition-colors"
+                >
+                  Restore This Version
+                </button>
+              </div>
+            )}
+            
             <div ref={editorContainerRef}>
             <EditorContent editor={editor} />
           </div>
@@ -3265,15 +3396,15 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
                   {/* Header with navy banner */}
                   <div className="px-3 py-2 text-xs font-semibold text-white rounded-t-lg bg-blue-900">
                     💬 COMMENT
-                  </div>
-                  
+        </div>
+
                   {/* Content area */}
                   <div className="p-3">
-                    <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center justify-between mb-2">
                       <span className="text-xs text-slate-500">{formatTimestamp(new Date())}</span>
                       <div className="flex items-center gap-2">
                         <span className="text-xs font-medium text-slate-700">You</span>
-                        <button
+                <button
                           onClick={(e) => {
                             e.stopPropagation();
                             setShowCommentInput(false);
@@ -3283,10 +3414,10 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
                           className="text-xs text-slate-600 hover:text-slate-800 font-medium"
                         >
                           Cancel
-                        </button>
+                </button>
                       </div>
-                    </div>
-                    
+              </div>
+              
                     <textarea
                       value={commentInputValue}
                       onChange={(e) => setCommentInputValue(e.target.value)}
@@ -3302,14 +3433,14 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
                     
                     <div className="flex items-center justify-between mt-2">
                       <span className="text-xs text-slate-500">Cmd+Enter to submit</span>
-                      <button
+                <button
                         onClick={submitComment}
                         className="px-2 py-1 text-xs font-medium text-white bg-blue-900 rounded hover:bg-blue-800"
                       >
                         Add Comment
-                      </button>
-                    </div>
-                  </div>
+                </button>
+              </div>
+            </div>
                 </div>
               )}
               
@@ -3334,12 +3465,12 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
                         onChange={() => toggleChangeSelection(item.id)}
                         className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 cursor-pointer"
                       />
-                    </div>
+                        </div>
                   )}
                   
                   <div
                     className="cursor-pointer"
-                    onClick={() => {
+                      onClick={() => {
                       if (!editor) return;
                       
                       // Scroll to and select the text
@@ -3351,7 +3482,7 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
                     const validTo = Math.max(1, Math.min(to, docSize));
                     
                     // Set the selection
-                            editor.commands.focus();
+                          editor.commands.focus();
                     editor.commands.setTextSelection({ from: validFrom, to: validTo });
                     
                     // Scroll into view with smooth animation
@@ -3480,21 +3611,21 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
                           </button>
                       )}
                     </div>
-                    </div>
+                      </div>
 
                   <div className="text-sm text-black line-clamp-3 break-words">
                     {item.kind === 'change' && item.displayType === 'deletion' ? (
                       <span className="text-rose-600 line-through">"{item.summary}"</span>
                     ) : (
                       <span className={item.kind === 'change' ? 'text-emerald-600' : ''}>"{item.summary}"</span>
-                      )}
-                    </div>
+                        )}
                       </div>
+                        </div>
+                        </div>
                       </div>
-                  </div>
             ))}
-            </div>
-          )}
+          </div>
+        )}
         </div>
 
         {/* Old sidebar removed - using floating cards only */}
@@ -3616,173 +3747,243 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
           <div className="px-6 py-5 border-b border-gray-200">
             <div className="flex items-center justify-between mb-1">
               <h2 className="text-2xl font-bold text-gray-900">Version Tree</h2>
-              <button
-                onClick={() => setShowVersionHistory(false)}
+            <button
+              onClick={() => setShowVersionHistory(false)}
                 className="text-gray-400 hover:text-gray-600"
-              >
+            >
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
-              </button>
+            </button>
             </div>
             <p className="text-sm text-gray-500">{versions.length} versions</p>
           </div>
 
           {/* Version List */}
           <div className="flex-1 overflow-auto px-6 py-6">
-            <div className="space-y-4">
-              {[...versions].reverse().map((version, index) => {
-                const isOlderVersion = version.versionNumber < versions[versions.length - 1].versionNumber;
+            {/* Active Versions */}
+            <div className="space-y-3">
+              {[...versions].sort((a, b) => {
+                const timeA = a.timestamp instanceof Date ? a.timestamp.getTime() : new Date(a.timestamp).getTime();
+                const timeB = b.timestamp instanceof Date ? b.timestamp.getTime() : new Date(b.timestamp).getTime();
+                return timeB - timeA;
+              }).map((version) => {
                 const isCurrentVersion = version.id === currentVersionId;
+                const isViewingVersion = version.id === viewingVersionId && version.id !== currentVersionId;
+                const saveTypeIcons = {
+                  initial: '✏️',
+                  manual: '📝',
+                  auto: '⏰',
+                  ai: '🤖'
+                };
+                const saveTypeLabels = {
+                  initial: 'Initial version',
+                  manual: 'Manual save',
+                  auto: 'Auto save',
+                  ai: 'AI mode'
+                };
                 
                 return (
-                  <div key={version.id} className="relative">
-                    {/* Connection line to next version */}
-                    {index < versions.length - 1 && (
-                      <div className="absolute left-5 top-16 w-0.5 h-8 bg-gray-200"></div>
-                    )}
-                    
+                  <div key={`version-${version.id}`}>
                     <div
-                      className={`relative flex items-start gap-4 p-4 rounded-xl border-2 cursor-pointer transition-all ${
+                      onClick={() => !isCurrentVersion && loadVersion(version.id, false)}
+                      className={`p-4 rounded-lg border transition-all ${
                         isCurrentVersion
-                          ? 'border-blue-500 bg-blue-50 shadow-sm'
-                          : 'border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm'
+                          ? 'border-blue-400 bg-blue-50'
+                          : 'border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm cursor-pointer'
                       }`}
-                      onClick={() => loadVersion(version.id, false)}
                     >
-                      {/* Version Badge */}
-                      <div className={`flex-shrink-0 w-10 h-10 rounded-lg flex items-center justify-center font-bold text-white ${
-                        isCurrentVersion ? 'bg-blue-500' : 'bg-gray-400'
-                      }`}>
-                        v{version.versionNumber}
-                      </div>
-                      
-                      {/* Version Info */}
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between mb-1">
-                          <h3 className="font-semibold text-gray-900">
+                      {/* Header Row */}
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <div className={`flex-shrink-0 w-8 h-8 rounded-md flex items-center justify-center font-bold text-sm text-white ${
+                            isCurrentVersion ? 'bg-blue-500' : 'bg-gray-400'
+                          }`}>
+                            v{version.versionNumber}
+                          </div>
+                          <span className="font-semibold text-gray-900">
                             {version.versionNumber === 0 ? 'Original' : `Version ${version.versionNumber}`}
-                          </h3>
-                          {isCurrentVersion && (
-                            <span className="px-2 py-0.5 text-xs font-medium text-blue-600 bg-blue-100 rounded-full">
-                              Current
-                            </span>
-                          )}
-                        </div>
-                        
-                        <p className="text-sm text-gray-600 italic mb-2">
-                          {version.versionNumber === 0 ? '📝 Initial version' : 
-                           version.autoSaved ? '☁️ Auto-saved' : '💾 Manual save'}
-                        </p>
-                        
-                        <p className="text-xs text-gray-500">
-                          {new Date(version.timestamp).toLocaleString('en-US', {
-                            month: '2-digit',
-                            day: '2-digit',
-                            year: 'numeric',
-                            hour: '2-digit',
-                            minute: '2-digit',
-                            hour12: true
-                          })}
-                        </p>
-                        
-                        {/* Action Icons */}
-                        <div className="flex items-center gap-2 mt-3">
+                          </span>
+              </div>
+
+                        <div className="flex items-center gap-2">
+                          {/* Star Toggle */}
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              loadVersion(version.id, false);
+                              const updatedVersions = versions.map(v =>
+                                v.id === version.id ? { ...v, isStarred: !v.isStarred } : v
+                              );
+                              setVersions(updatedVersions);
                             }}
-                            className="p-1 hover:bg-gray-100 rounded"
-                            title="Preview version"
+                            className="p-1 hover:bg-gray-100 rounded transition-colors"
+                            title={version.isStarred ? "Unstar" : "Star version"}
                           >
-                            <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                            </svg>
+                            <span className="text-lg">{version.isStarred ? '⭐' : '☆'}</span>
                           </button>
                           
-                          {isOlderVersion && !isCurrentVersion && (
+                          {/* Badges and Restore Button */}
+                          {isCurrentVersion ? (
+                            <span className="px-2 py-1 text-xs font-semibold text-blue-600 bg-blue-100 rounded">
+                              CURRENT
+                            </span>
+                          ) : isViewingVersion ? (
+                            <>
+                              <span className="px-2 py-1 text-xs font-semibold text-gray-600 bg-gray-200 rounded">
+                                VIEWING
+                              </span>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  loadVersion(version.id, true);
+                                }}
+                                className="px-3 py-1 text-xs font-medium text-blue-600 border border-blue-300 rounded hover:bg-blue-50 transition-colors"
+                              >
+                                Restore
+                              </button>
+                            </>
+                          ) : (
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
                                 loadVersion(version.id, true);
                               }}
-                              className="p-1 hover:bg-gray-100 rounded"
-                              title="Restore this version"
+                              className="px-3 py-1 text-xs font-medium text-blue-600 border border-blue-300 rounded hover:bg-blue-50 transition-colors"
                             >
-                              <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                              </svg>
+                              Restore
                             </button>
                           )}
-                          
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              // Star/bookmark functionality could go here
-                            }}
-                            className="p-1 hover:bg-gray-100 rounded"
-                            title="Bookmark version"
-                          >
-                            <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
-                            </svg>
-                          </button>
-                          
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              // Archive functionality
-                            }}
-                            className="p-1 hover:bg-gray-100 rounded"
-                            title="Archive version"
-                          >
-                            <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
-                            </svg>
-                          </button>
-                          
-                          {isCurrentVersion && (
-                            <div className="ml-auto">
-                              <svg className="w-5 h-5 text-blue-500" fill="currentColor" viewBox="0 0 20 20">
-                                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                              </svg>
-                            </div>
-                          )}
                         </div>
-                      </div>
+            </div>
+                      
+                      {/* Save Type */}
+                      <div className="flex items-center gap-1.5 text-sm text-gray-600 mb-1">
+                        <span>{saveTypeIcons[(version.saveType || 'manual') as keyof typeof saveTypeIcons]}</span>
+                        <span>{saveTypeLabels[(version.saveType || 'manual') as keyof typeof saveTypeLabels]}</span>
+          </div>
+
+                      {/* Timestamp */}
+                      <p className="text-xs text-gray-500">
+                        {new Date(version.timestamp).toLocaleString('en-US', {
+                          month: '2-digit',
+                          day: '2-digit',
+                          year: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                          hour12: true
+                        })}
+                      </p>
                     </div>
                   </div>
                 );
               })}
             </div>
-            
-            {/* Archived Versions */}
+
+            {/* Archived Versions Section */}
             {archivedVersions.length > 0 && (
-              <div className="mt-6 pt-6 border-t border-gray-200">
-                <h4 className="text-sm font-semibold text-gray-700 mb-3">
-                  📦 Archived Versions
-                </h4>
-                <div className="space-y-2">
-                  {[...archivedVersions].reverse().map((version) => (
-                    <button
-                      key={version.id}
-                      onClick={() => {
-                        if (editor) {
-                          editor.commands.setContent(version.content);
-                          showToast(`Viewing archived V${version.versionNumber}`, 'info');
-                        }
-                      }}
-                      className="w-full text-left px-4 py-3 rounded-lg bg-gray-50 hover:bg-gray-100 border border-gray-200 transition-colors"
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-lg bg-gray-300 flex items-center justify-center font-bold text-white text-sm">
-                          v{version.versionNumber}
-                        </div>
-                        <div>
-                          <p className="text-sm font-medium text-gray-900">Version {version.versionNumber}</p>
-                          <p className="text-xs text-gray-500">
+              <>
+                {/* Divider */}
+                <div className="my-6 px-6">
+                  <div className="border-t border-gray-300"></div>
+                </div>
+
+                {/* Archived Header */}
+                <div className="px-6 mb-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-bold text-gray-500">ARCHIVED VERSIONS</span>
+                    <span className="text-xs text-gray-400">({archivedVersions.length})</span>
+                  </div>
+                  <p className="text-xs text-gray-400 mt-1">Read-only versions</p>
+                </div>
+
+                {/* Archived Version List */}
+                <div className="space-y-3 px-6">
+                  {[...archivedVersions].sort((a, b) => {
+                    const timeA = a.timestamp instanceof Date ? a.timestamp.getTime() : new Date(a.timestamp).getTime();
+                    const timeB = b.timestamp instanceof Date ? b.timestamp.getTime() : new Date(b.timestamp).getTime();
+                    return timeB - timeA;
+                  }).map((version) => {
+                    const isViewingVersion = version.id === viewingVersionId && version.id !== currentVersionId;
+                    const saveTypeIcons = {
+                      initial: '✏️',
+                      manual: '📝',
+                      auto: '⏰',
+                      ai: '🤖'
+                    };
+                    const saveTypeLabels = {
+                      initial: 'Initial version',
+                      manual: 'Manual save',
+                      auto: 'Auto save',
+                      ai: 'AI mode'
+                    };
+                    
+                    return (
+                      <div key={`archived-${version.id}`}>
+                        <div 
+                          onClick={() => loadVersion(version.id, false)}
+                          className="p-3 rounded-lg border border-gray-300 bg-gray-50/50 cursor-pointer hover:bg-gray-100 transition-colors"
+                        >
+                          {/* Header Row */}
+                          <div className="flex items-start justify-between gap-3 mb-2">
+                            <div className="flex items-center gap-2 flex-1 min-w-0">
+                              <div className="flex-shrink-0 w-8 h-8 rounded-md flex items-center justify-center font-bold text-sm text-white bg-gray-400">
+                                v{version.versionNumber}
+                              </div>
+                              <div className="flex flex-col gap-1 min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="font-semibold text-gray-600 text-sm">
+                                    Version {version.versionNumber}
+                                  </span>
+                                  <span className="px-1.5 py-0.5 text-xs font-medium text-gray-500 bg-gray-200 rounded flex items-center gap-1 whitespace-nowrap">
+                                    <span>🔒</span>
+                                    <span>Archived</span>
+                                  </span>
+                                  {isViewingVersion && (
+                                    <span className="px-1.5 py-0.5 text-xs font-semibold text-amber-700 bg-amber-100 rounded whitespace-nowrap">
+                                      VIEWING
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                            
+                            <div className="flex items-center gap-2">
+                              {/* Star Toggle */}
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  const updatedArchivedVersions = archivedVersions.map(v =>
+                                    v.id === version.id ? { ...v, isStarred: !v.isStarred } : v
+                                  );
+                                  setArchivedVersions(updatedArchivedVersions);
+                                }}
+                                className="p-1 hover:bg-gray-200 rounded transition-colors"
+                                title={version.isStarred ? "Unstar" : "Star version"}
+                              >
+                                <span className="text-lg">{version.isStarred ? '⭐' : '☆'}</span>
+                              </button>
+                              
+                              {/* Unarchive Button */}
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  loadVersion(version.id, true);
+                                }}
+                                className="flex-shrink-0 px-3 py-1.5 text-xs font-medium text-blue-600 border border-blue-300 rounded hover:bg-blue-50 transition-colors whitespace-nowrap"
+                              >
+                                Unarchive
+                              </button>
+                            </div>
+                          </div>
+                          
+                          {/* Save Type */}
+                          <div className="flex items-center gap-1.5 text-sm text-gray-500 mb-1">
+                            <span>{saveTypeIcons[(version.saveType || 'manual') as keyof typeof saveTypeIcons]}</span>
+                            <span>{saveTypeLabels[(version.saveType || 'manual') as keyof typeof saveTypeLabels]}</span>
+                  </div>
+                          
+                          {/* Timestamp */}
+                          <p className="text-xs text-gray-400">
                             {new Date(version.timestamp).toLocaleString('en-US', {
                               month: '2-digit',
                               day: '2-digit',
@@ -3792,13 +3993,173 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
                               hour12: true
                             })}
                           </p>
-                        </div>
+                    </div>
                       </div>
-                    </button>
-                  ))}
+                    );
+                  })}
                 </div>
+              </>
+                  )}
+                </div>
+        </div>
+      )}
+
+      {/* Restore Version Warning Modal */}
+      {showRestoreWarning && versionToRestore && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full mx-4 p-6">
+            {/* Header */}
+            <div className="flex items-start gap-3 mb-4">
+              <div className="flex-shrink-0 w-10 h-10 rounded-full bg-yellow-100 flex items-center justify-center">
+                <span className="text-2xl">⚠️</span>
               </div>
-            )}
+              <div className="flex-1">
+                <h3 className="text-lg font-bold text-gray-900">Restore Version {versionToRestore.versionNumber}?</h3>
+                <p className="text-sm text-gray-600 mt-1">
+                  {versionToRestore.archived ? 'This version is archived' : 'This will archive future versions'}
+                </p>
+              </div>
+            </div>
+
+            {/* Content */}
+            <div className="space-y-4 mb-6">
+              {versionToRestore.archived ? (
+                /* Unarchiving an archived version */
+                <>
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                    <p className="text-sm font-semibold text-blue-900 mb-2">
+                      ♻️ Unarchiving version:
+                    </p>
+                    <span className="px-2 py-1 bg-white border border-blue-300 rounded text-xs font-medium text-blue-800">
+                      v{versionToRestore.versionNumber}
+                    </span>
+                  </div>
+                  
+                  {/* Versions that will be archived */}
+                  {versions.filter(v => v.versionNumber > versionToRestore.versionNumber).length > 0 && (
+                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                      <p className="text-sm font-semibold text-amber-900 mb-2">
+                        📦 These versions will be archived:
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {versions.filter(v => v.versionNumber > versionToRestore.versionNumber).map(v => (
+                          <span key={v.id} className="px-2 py-1 bg-white border border-amber-300 rounded text-xs font-medium text-amber-800">
+                            v{v.versionNumber}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  
+                  <div className="space-y-2 text-sm text-gray-700">
+                    <p className="font-semibold">After unarchiving:</p>
+                    <ul className="space-y-1.5 ml-4">
+                      <li className="flex items-start gap-2">
+                        <span className="mt-0.5">•</span>
+                        <span>V{versionToRestore.versionNumber} moved from archive to active versions</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <span className="mt-0.5">•</span>
+                        <span>V{versionToRestore.versionNumber} becomes your current (editable) version</span>
+                      </li>
+                      {versions.filter(v => v.versionNumber > versionToRestore.versionNumber).length > 0 && (
+                        <li className="flex items-start gap-2">
+                          <span className="mt-0.5">•</span>
+                          <span>V{versionToRestore.versionNumber + 1}–V{versions[versions.length - 1].versionNumber} moved to archive</span>
+                        </li>
+                      )}
+                      <li className="flex items-start gap-2">
+                        <span className="mt-0.5">•</span>
+                        <span>Your next save creates V{highestVersionNumber + 1}</span>
+                      </li>
+                    </ul>
+                  </div>
+                </>
+              ) : (
+                /* Restoring an active version */
+                <>
+                  {/* Affected Versions Preview */}
+                  {versions.filter(v => v.versionNumber > versionToRestore.versionNumber).length > 0 && (
+                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                      <p className="text-sm font-semibold text-amber-900 mb-2">
+                        📦 Versions to be archived:
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {versions.filter(v => v.versionNumber > versionToRestore.versionNumber).map(v => (
+                          <span key={v.id} className="px-2 py-1 bg-white border border-amber-300 rounded text-xs font-medium text-amber-800">
+                            v{v.versionNumber}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* What Happens */}
+                  <div className="space-y-2 text-sm text-gray-700">
+                    <p className="font-semibold">After restoring:</p>
+                    <ul className="space-y-1.5 ml-4">
+                      <li className="flex items-start gap-2">
+                        <span className="mt-0.5">•</span>
+                        <span>V{versionToRestore.versionNumber} becomes your current version</span>
+                      </li>
+                      {versions.filter(v => v.versionNumber > versionToRestore.versionNumber).length > 0 && (
+                        <li className="flex items-start gap-2">
+                          <span className="mt-0.5">•</span>
+                          <span>V{versionToRestore.versionNumber + 1}–V{versions[versions.length - 1].versionNumber} moved to archive (read-only)</span>
+                        </li>
+                      )}
+                      <li className="flex items-start gap-2">
+                        <span className="mt-0.5">•</span>
+                        <span>Your next save creates V{highestVersionNumber + 1}</span>
+                      </li>
+                    </ul>
+                  </div>
+                </>
+              )}
+
+              {/* Confirmation Checkbox */}
+              <label className="flex items-start gap-3 p-3 bg-gray-50 rounded-lg cursor-pointer hover:bg-gray-100 transition-colors">
+                <input
+                  type="checkbox"
+                  checked={restoreConfirmChecked}
+                  onChange={(e) => setRestoreConfirmChecked(e.target.checked)}
+                  className="mt-0.5 w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                />
+                <span className="text-sm text-gray-700">
+                  I understand that {versionToRestore.archived ? 'this will unarchive V' + versionToRestore.versionNumber : 'archived versions cannot be edited'}
+                </span>
+              </label>
+            </div>
+
+            {/* Actions */}
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setShowRestoreWarning(false);
+                  setVersionToRestore(null);
+                  setRestoreConfirmChecked(false);
+                }}
+                className="flex-1 px-4 py-2.5 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  if (restoreConfirmChecked) {
+                    handleRestoreConfirm();
+                    setRestoreConfirmChecked(false);
+                  }
+                }}
+                disabled={!restoreConfirmChecked}
+                className={`flex-1 px-4 py-2.5 rounded-lg font-medium transition-colors ${
+                  restoreConfirmChecked
+                    ? 'bg-blue-600 text-white hover:bg-blue-700'
+                    : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                }`}
+              >
+                {versionToRestore.archived ? `Unarchive V${versionToRestore.versionNumber}` : `Restore V${versionToRestore.versionNumber}`}
+              </button>
+            </div>
           </div>
         </div>
       )}

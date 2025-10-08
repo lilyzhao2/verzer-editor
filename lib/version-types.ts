@@ -21,6 +21,8 @@ export interface DocumentVersion {
   createdBy: string;
   autoSaved: boolean; // true if auto-saved, false if manually saved
   archived?: boolean; // true if archived (when making older version active)
+  isStarred?: boolean; // true if user starred/bookmarked this version
+  saveType?: 'initial' | 'manual' | 'auto' | 'ai'; // Type of save that created this version
   changesSinceLastVersion?: number; // number of edits since last version
   pendingSuggestions?: TrackedChange[]; // Unresolved suggestions that carry over
   baselineContent?: string; // Previous version content (for showing diffs)
