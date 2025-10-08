@@ -543,11 +543,9 @@ export default function LiveDocEditor() {
     };
   }, []);
 
-  const [aiThoughts, setAIThoughts] = useState<string[]>([]);
   const [aiRewrites, setAIRewrites] = useState<string[]>([]);
   const [showAIResults, setShowAIResults] = useState(false);
-  const [aiResultType, setAIResultType] = useState<'thoughts' | 'rewrites'>('thoughts');
-  const [aiStreaming, setAIStreaming] = useState(false);
+  
   const [showCommentInput, setShowCommentInput] = useState(false);
   const [showRewriteInput, setShowRewriteInput] = useState(false);
   const [commentInputValue, setCommentInputValue] = useState('');
@@ -571,6 +569,150 @@ export default function LiveDocEditor() {
       hour12: true,
     });
   }, []);
+
+  // Floating notes (comments + edits) to the right of the page
+  const pageRef = useRef<HTMLDivElement | null>(null);
+  const scrollAreaRef = useRef<HTMLDivElement | null>(null);
+  const [overlayLeftPx, setOverlayLeftPx] = useState<number>(260);
+  const [floatingItems, setFloatingItems] = useState<{
+    id: string;
+    kind: 'comment' | 'change';
+    topPx: number;
+    summary: string;
+    userName: string;
+    timestamp: number | Date | string;
+    displayType?: 'insertion' | 'deletion';
+    from: number;
+    to: number;
+  }[]>([]);
+
+  // Memoize floating items to prevent unnecessary recalculations
+  const memoizedFloatingItems = useMemo(() => floatingItems, [floatingItems]);
+
+  const recomputeFloatingItems = useCallback(() => {
+    if (!editor || !pageRef.current || !scrollAreaRef.current) return;
+    
+    // Early return if no items to display
+    if (comments.length === 0 && trackedChanges.length === 0) {
+      setFloatingItems([]);
+      return;
+    }
+    
+    const parentRect = scrollAreaRef.current.getBoundingClientRect();
+    const pageRect = pageRef.current.getBoundingClientRect();
+
+    // Position overlay just to the right of the page
+    const leftOffset = pageRect.right - parentRect.left + 16; // 16px gap
+    setOverlayLeftPx(leftOffset);
+
+    const items: {
+      id: string;
+      kind: 'comment' | 'change';
+      topPx: number;
+      summary: string;
+      userName: string;
+      timestamp: number | Date | string;
+      displayType?: 'insertion' | 'deletion';
+      from: number;
+      to: number;
+    }[] = [];
+
+    // Map comments
+    comments.forEach((c) => {
+      try {
+        const coords = editor.view.coordsAtPos(Math.max(1, Math.min(c.from, editor.state.doc.content.size)));
+        const topPx = coords.top - parentRect.top;
+        items.push({
+          id: `comment-${c.id}`,
+          kind: 'comment',
+          topPx,
+          summary: c.text,
+          userName: c.userName,
+          timestamp: c.timestamp,
+          from: c.from,
+          to: c.to,
+        });
+      } catch {
+        // Ignore mapping errors
+      }
+    });
+
+    // Map tracked changes
+    trackedChanges.forEach((ch) => {
+      try {
+        const coords = editor.view.coordsAtPos(Math.max(1, Math.min(ch.from, editor.state.doc.content.size)));
+        const topPx = coords.top - parentRect.top;
+        items.push({
+          id: `change-${ch.id}`,
+          kind: 'change',
+          topPx,
+          summary: ch.text,
+          userName: ch.userName,
+          timestamp: ch.timestamp,
+          displayType: ch.type,
+          from: ch.from,
+          to: ch.to,
+        });
+      } catch {
+        // Ignore mapping errors
+      }
+    });
+
+    // Sort and prevent overlaps with improved stacking algorithm
+    const sorted = items.sort((a, b) => a.topPx - b.topPx);
+    const minGap = 20; // increased gap between cards
+    let lastBottom = 0;
+    const cardHeight = 140; // increased height to account for headers and content
+    const adjusted = sorted.map((it, index) => {
+      // For the first item, use its original position
+      if (index === 0) {
+        lastBottom = it.topPx + cardHeight + minGap;
+        return { ...it, topPx: it.topPx };
+      }
+      
+      // For subsequent items, ensure they don't overlap
+      const adjustedTop = Math.max(it.topPx, lastBottom);
+      lastBottom = adjustedTop + cardHeight + minGap;
+      return { ...it, topPx: adjustedTop };
+    });
+
+    setFloatingItems(adjusted);
+  }, [editor, comments, trackedChanges]);
+
+  // Recompute on lifecycle and events - with debouncing to prevent HMR issues
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      recomputeFloatingItems();
+    }, 100);
+    return () => clearTimeout(timeoutId);
+  }, [recomputeFloatingItems, zoomLevel]);
+
+  useEffect(() => {
+    if (!editor) return;
+    
+    let timeoutId: NodeJS.Timeout;
+    const debouncedRecompute = () => {
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => {
+        recomputeFloatingItems();
+      }, 50);
+    };
+    
+    const handleUpdate = debouncedRecompute;
+    const handleResize = debouncedRecompute;
+    const handleScroll = debouncedRecompute;
+    
+    editor.on('update', handleUpdate);
+    window.addEventListener('resize', handleResize);
+    scrollAreaRef.current?.addEventListener('scroll', handleScroll, { passive: true });
+    
+    return () => {
+      clearTimeout(timeoutId);
+      editor.off('update', handleUpdate);
+      window.removeEventListener('resize', handleResize);
+      scrollAreaRef.current?.removeEventListener('scroll', handleScroll as any);
+    };
+  }, [editor, recomputeFloatingItems]);
 
   // Custom confirm modal state (replaces window.confirm)
   const [confirmModal, setConfirmModal] = useState<{ open: boolean; action: 'acceptAll' | 'rejectAll' | null }>(
@@ -605,85 +747,7 @@ export default function LiveDocEditor() {
     setCommentInputValue('');
   };
 
-  const handleAskAI = useCallback(async () => {
-    setAIMenuVisible(false);
-    setAIResultType('thoughts');
-    setAIStreaming(true);
-    setShowAIResults(true);
-    
-    try {
-      // Streaming request
-      const response = await fetch('/api/anthropic', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          prompt: `Analyze this selected text and provide 3 brief, helpful thoughts or suggestions for improvement. Be specific and constructive.`,
-          content: aiMenuSelection.text,
-          model: 'claude-3-5-sonnet-20241022',
-          mode: 'chat',
-          maxTokens: 256,
-          stream: true,
-        })
-      });
-
-      if (!response.ok || !response.body) {
-        throw new Error('AI request failed');
-      }
-
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder('utf-8');
-      let buffer = '';
-      let assembled = '';
-
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed.startsWith('data:')) continue;
-          const json = trimmed.substring(5).trim();
-          if (json === '[DONE]') continue;
-          try {
-            const evt = JSON.parse(json);
-            if (evt.type === 'content_block_delta' && evt.delta && evt.delta.text) {
-              assembled += evt.delta.text;
-              // Show progressive preview
-              const preview = assembled
-                .split('\n')
-                .filter((t: string) => t.trim().length > 0)
-                .slice(0, 3)
-        .map((t: string) => t.replace(/^\d+\.\s*/, '').trim())
-        .filter((t: string) => t.length > 0);
-      if (preview.length > 0) setAIThoughts(preview);
-            }
-          } catch {}
-        }
-      }
-
-      const finalThoughts = assembled.split('\n')
-        .filter((t: string) => t.trim().length > 0)
-        .slice(0, 3)
-        .map((t: string) => t.replace(/^\d+\.\s*/, '').trim())
-        .filter((t: string) => t.length > 0);
-      setAIThoughts(finalThoughts.length ? finalThoughts : [
-        'This text looks good overall.',
-        'Consider adding more detail for clarity.',
-        'The tone is appropriate for the context.'
-      ]);
-    } catch (error) {
-      console.error('AI request failed:', error);
-      // Fallback to mock data
-      setAIThoughts([
-        `This text is clear and concise. Good job!`,
-        `Consider adding more context about "${aiMenuSelection.text.split(' ')[0]}" for clarity.`,
-        `The tone is appropriate, but you could strengthen the argument with examples.`,
-      ]);
-    }
-    setAIStreaming(false);
-  }, [aiMenuSelection.text]);
+  // Removed "Ask AI for thoughts" feature
 
   const handleRewriteText = async () => {
     setAIMenuVisible(false);
@@ -692,7 +756,6 @@ export default function LiveDocEditor() {
   };
 
   const submitRewritePrompt = useCallback(async () => {
-    setAIResultType('rewrites');
     
     try {
       const customPrompt = rewritePromptValue.trim();
@@ -883,24 +946,7 @@ export default function LiveDocEditor() {
     setRewritePromptValue('');
   }, [aiMenuSelection.text, rewritePromptValue, editor]);
 
-  const handleSelectAIThought = (thought: string) => {
-    const newComment: Comment = {
-      id: `comment-ai-${Date.now()}`,
-      userId: 'ai',
-      userName: 'Verzer AI',
-      userColor: '#9c27b0', // Purple for AI
-      text: thought,
-      from: aiMenuSelection.from,
-      to: aiMenuSelection.to,
-      timestamp: new Date(),
-      resolved: false,
-      replies: [],
-    };
-
-    setComments([...comments, newComment]);
-    setShowCommentSidebar(true);
-    setShowAIResults(false);
-  };
+  // Removed AI thoughts selection (converted to pure rewrite flow)
 
   const handleSelectAIRewrite = (rewrite: string) => {
     if (editor) {
@@ -1629,14 +1675,11 @@ export default function LiveDocEditor() {
         {/* Mode Status Indicator + Changes Sidebar Toggle */}
         {editingMode === 'suggesting' && (
           <div className="flex items-center gap-2">
-            <span className="px-3 py-1.5 text-xs font-medium bg-green-600 text-white rounded">
-              📝 Suggesting Mode
-            </span>
             {/* Bulk actions */}
             <button
               onClick={() => setConfirmModal({ open: true, action: 'acceptAll' })}
               disabled={trackedChanges.length === 0}
-              className="px-3 py-1.5 text-xs font-medium text-white bg-green-600 rounded hover:bg-green-700 disabled:opacity-30 disabled:cursor-not-allowed"
+              className="px-3 py-1.5 text-xs font-medium text-white bg-emerald-500 rounded hover:bg-emerald-600 disabled:opacity-30 disabled:cursor-not-allowed"
               title="Accept all changes"
             >
               ✓ Accept All
@@ -1644,7 +1687,7 @@ export default function LiveDocEditor() {
             <button
               onClick={() => setConfirmModal({ open: true, action: 'rejectAll' })}
               disabled={trackedChanges.length === 0}
-              className="px-3 py-1.5 text-xs font-medium text-white bg-red-600 rounded hover:bg-red-700 disabled:opacity-30 disabled:cursor-not-allowed"
+              className="px-3 py-1.5 text-xs font-medium text-white bg-rose-500 rounded hover:bg-rose-600 disabled:opacity-30 disabled:cursor-not-allowed"
               title="Reject all changes"
             >
               ✕ Reject All
@@ -1652,7 +1695,7 @@ export default function LiveDocEditor() {
           </div>
         )}
         {editingMode === 'viewing' && (
-          <span className="px-3 py-1.5 text-xs font-medium bg-gray-600 text-white rounded">
+          <span className="px-3 py-1.5 text-xs font-medium bg-slate-600 text-white rounded">
             👁️ Read-Only Mode
           </span>
         )}
@@ -1747,9 +1790,9 @@ export default function LiveDocEditor() {
       </div>
 
       {/* Document Area + Comments Sidebar */}
-      <div className="flex-1 overflow-auto flex">
+      <div ref={scrollAreaRef} className="flex-1 overflow-auto flex relative">
         {/* Page-like white container */}
-        <div className="flex-1">
+        <div className="flex-1 relative">
           {/* Old Version Warning Banner */}
           {isCurrentVersionLocked && (
             <div className="max-w-[8.5in] mx-auto mt-6 mb-2 px-4 py-3 bg-yellow-100 border-l-4 border-yellow-500 rounded-r">
@@ -1776,6 +1819,7 @@ export default function LiveDocEditor() {
           )}
 
           <div
+            ref={pageRef}
             className="max-w-[8.5in] mx-auto my-6 bg-white shadow-lg transition-transform duration-200"
             style={{ transform: `scale(${zoomLevel / 100})`, transformOrigin: 'top center' }}
           >
@@ -1793,191 +1837,118 @@ export default function LiveDocEditor() {
               
               /* Inline suggestion markup styles - visible in ALL modes */
               .suggestion-insertion {
-                background-color: #dcfce7;
-                border-bottom: 2px solid #16a34a;
+                background-color: #f0fdf4;
+                border-bottom: 2px solid #10b981;
                 padding: 1px 2px;
                 border-radius: 2px;
               }
               .suggestion-deletion {
-                background-color: #fee2e2;
+                background-color: #fdf2f8;
                 text-decoration: line-through;
-                color: #dc2626;
+                color: #e11d48;
                 padding: 1px 2px;
                 border-radius: 2px;
               }
               .suggestion-replacement {
-                background-color: #dbeafe;
-                border-bottom: 2px solid #2563eb;
+                background-color: #f1f5f9;
+                border-bottom: 2px solid #64748b;
                 padding: 1px 2px;
                 border-radius: 2px;
               }
             `}</style>
             <EditorContent editor={editor} />
           </div>
-        </div>
-
-        {/* Track Changes & Comments Sidebar (visible in BOTH editing and suggesting modes if there are changes OR comments) */}
-        {showCommentSidebar && (trackedChanges.length > 0 || comments.length > 0) && (
-          <div className="w-96 bg-white border-l border-gray-200 flex flex-col shadow-xl">
-            <div className="px-4 py-3 border-b border-gray-200 bg-gray-50">
-              {/* Intentionally minimal header (no explicit title) */}
-            </div>
-
-            <div className="flex-1 overflow-auto p-4 space-y-3">
-              {trackedChanges.length === 0 && comments.length === 0 && (
-                <p className="text-sm text-gray-500 text-center py-8">
-                  No changes or comments yet.
-                </p>
-              )}
-
-              {/* MIXED LIST: Changes + Comments sorted by POSITION in document (sequential) */}
-              {[
-                ...trackedChanges.map(c => ({ type: 'change' as const, data: c, position: c.from, timestamp: c.timestamp })),
-                ...comments.map(c => ({ type: 'comment' as const, data: c, position: c.from, timestamp: c.timestamp }))
-              ]
-                .sort((a, b) => a.position - b.position)
-                .map((item) => {
-                  if (item.type === 'comment') {
-                    const comment = item.data;
-                    return (
-                      <div
-                        key={`comment-${comment.id}`}
-                        className={`p-3 rounded-lg border cursor-pointer ${
-                          comment.resolved
-                            ? 'bg-gray-100 border-gray-300 opacity-60'
-                            : 'bg-blue-50 border-blue-300'
-                        }`}
-                        onClick={() => {
-                          if (editor) {
-                            // Jump cursor to this comment position
-                            editor.commands.focus();
-                            editor.commands.setTextSelection({ from: comment.from, to: comment.to });
-                            console.log('🎯 Jumped to comment at position', comment.from, '-', comment.to);
-                          }
-                        }}
-                      >
-                        <div className="flex items-start justify-between mb-2">
-                          <div className="flex items-center gap-2">
-                            <span className="px-2 py-0.5 text-xs font-semibold bg-blue-600 text-white rounded">
-                              💬 COMMENT
-                            </span>
-                            {comment.resolved && (
-                              <span className="text-xs text-gray-500">(Resolved)</span>
-                            )}
+          {/* Floating notes to the right of the page */}
+          {(trackedChanges.length > 0 || comments.length > 0) && (
+            <div
+              className="absolute top-0" 
+              style={{ left: overlayLeftPx, width: 300 }}
+            >
+              {memoizedFloatingItems.map(item => (
+                <div
+                  key={item.id}
+                  className={`absolute right-0 w-72 bg-white border rounded-lg shadow-md ${item.kind === 'change' ? (item.displayType === 'insertion' ? 'border-emerald-200' : 'border-rose-200') : 'border-blue-200'}`}
+                  style={{ top: item.topPx }}
+                >
+                  {/* Header with colored banner */}
+                  <div className={`px-3 py-2 text-xs font-semibold text-white rounded-t-lg ${
+                    item.kind === 'change' 
+                      ? (item.displayType === 'insertion' ? 'bg-emerald-500' : 'bg-rose-500')
+                      : 'bg-blue-900'
+                  }`}>
+                    {item.kind === 'change' 
+                      ? (item.displayType === 'insertion' ? '+ ADDED' : '- DELETED')
+                      : '💬 COMMENT'
+                    }
+                  </div>
+                  
+                  {/* Content area */}
+                  <div className="p-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs text-slate-500">{formatTimestamp(item.timestamp)}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-medium text-slate-700">{item.userName}</span>
+                        {item.kind === 'change' ? (
+                          <div className="flex gap-1">
+                            <button
+                              onClick={() => {
+                                editor.commands.focus();
+                                // @ts-ignore
+                                editor.commands.acceptChange(item.id.replace('change-',''));
+                                setTrackedChanges(prev => prev.filter(c => c.id !== item.id.replace('change-','')));
+                              }}
+                              className="text-emerald-600 hover:bg-emerald-100 p-1 rounded"
+                              title="Accept"
+                            >
+                              ✓
+                            </button>
+                            <button
+                              onClick={() => {
+                                editor.commands.focus();
+                                // @ts-ignore
+                                editor.commands.rejectChange(item.id.replace('change-',''));
+                                setTrackedChanges(prev => prev.filter(c => c.id !== item.id.replace('change-','')));
+                              }}
+                              className="text-rose-600 hover:bg-rose-100 p-1 rounded"
+                              title="Reject"
+                            >
+                              ✕
+                            </button>
                           </div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs font-medium text-gray-700">{comment.userName}</span>
-                            <span className="text-xs text-gray-500">{formatTimestamp(comment.timestamp)}</span>
-                          </div>
+                        ) : (
                           <button
-                            onClick={() => {
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const commentId = item.id.replace('comment-','');
                               const updatedComments = comments.map((c) =>
-                                c.id === comment.id ? { ...c, resolved: !c.resolved } : c
+                                c.id === commentId ? { ...c, resolved: !c.resolved } : c
                               );
                               setComments(updatedComments);
                             }}
-                            className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+                            className="text-blue-600 hover:bg-blue-100 p-1 rounded"
+                            title="Resolve"
                           >
-                            {comment.resolved ? 'Unresolve' : 'Resolve'}
+                            ✓
                           </button>
-                        </div>
-                        <p className="text-sm text-black mb-2">{comment.text}</p>
-                      </div>
-                    );
-                  }
-
-                  // Otherwise it's a tracked change
-                  const change = item.data;
-                  const userColor = change.userId === 'user-1' ? '#4285f4' : '#9c27b0';
-                  const displayType = change.type;
-                  
-                  return (
-                    <div
-                      key={`change-${change.id}`}
-                      className="p-3 bg-white border border-gray-200 rounded-lg hover:shadow-md transition-shadow cursor-pointer"
-                      onClick={() => {
-                        if (editor) {
-                          // Jump cursor to this change position
-                          editor.commands.focus();
-                          editor.commands.setTextSelection({ from: change.from, to: change.to });
-                          console.log('🎯 Jumped to change at position', change.from);
-                        }
-                      }}
-                    >
-                      <div className="flex items-start justify-between mb-2">
-                        <div className="flex items-center gap-2">
-                          <span
-                            className="text-xs text-gray-500"
-                          >
-                            {formatTimestamp(change.timestamp)}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs font-medium text-gray-700">{change.userName}</span>
-                          <div className="flex gap-1">
-                          <button
-                            onClick={() => {
-                              if (editor) {
-                                // @ts-ignore - Commands added by TrackChangesDecorationExtension
-                                editor.commands.acceptChange(change.id);
-                                setTrackedChanges(trackedChanges.filter(c => c.id !== change.id));
-                              }
-                            }}
-                            className="text-green-600 hover:bg-green-50 p-1 rounded"
-                            title="Accept this change"
-                          >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                            </svg>
-                          </button>
-                          <button
-                            onClick={() => {
-                              if (editor) {
-                                // @ts-ignore - Commands added by TrackChangesDecorationExtension
-                                editor.commands.rejectChange(change.id);
-                                setTrackedChanges(trackedChanges.filter(c => c.id !== change.id));
-                              }
-                            }}
-                            className="text-red-600 hover:bg-red-50 p-1 rounded"
-                            title="Reject this change"
-                          >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                            </svg>
-                          </button>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="text-sm">
-                        <span
-                          className={`px-2 py-0.5 text-xs font-semibold rounded ${
-                            displayType === 'insertion'
-                              ? 'bg-green-600 text-white'
-                              : 'bg-red-600 text-white'
-                          }`}
-                        >
-                          {displayType === 'insertion' ? '+ ADDED' : '- DELETED'}
-                        </span>
-                      </div>
-
-                      <div className="mt-2 text-sm text-black font-mono bg-gray-50 p-2 rounded">
-                        {displayType === 'insertion' ? (
-                          <span className="text-green-700 font-semibold">"{change.text}"</span>
-                        ) : (
-                          <span className="text-red-700 line-through">"{change.text}"</span>
                         )}
                       </div>
-
-                      {/* Removed position details from UI */}
-
-                      {/* timestamp now in header line, right-aligned with user */}
                     </div>
-                  );
-                })}
+                    
+                    <div className="text-sm text-black line-clamp-3 break-words">
+                      {item.kind === 'change' && item.displayType === 'deletion' ? (
+                        <span className="text-rose-600 line-through">"{item.summary}"</span>
+                      ) : (
+                        <span className={item.kind === 'change' ? 'text-emerald-600' : ''}>"{item.summary}"</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
-          </div>
-        )}
+          )}
+        </div>
+
+        {/* Old sidebar removed - using floating cards only */}
 
         {/* OLD Comments Sidebar - REMOVE THIS */}
         {false && showCommentSidebar && (editingMode !== 'suggesting' || trackedChanges.length === 0) && (
@@ -2208,13 +2179,7 @@ export default function LiveDocEditor() {
             <span>💬</span>
             <span>Comment</span>
           </button>
-          <button
-            onClick={handleAskAI}
-            className="w-full px-4 py-2 text-left text-sm text-black hover:bg-gray-100 flex items-center gap-2"
-          >
-            <span>🤔</span>
-            <span>Ask AI for thoughts</span>
-          </button>
+          {/* Removed Ask AI for thoughts */}
           <button
             onClick={handleRewriteText}
             className="w-full px-4 py-2 text-left text-sm text-black hover:bg-gray-100 flex items-center gap-2"
@@ -2225,22 +2190,29 @@ export default function LiveDocEditor() {
         </div>
       )}
 
-      {/* Comment Input Panel */}
+      {/* Comment Input Panel - Floating Card Style */}
       {showCommentInput && (
-        <div className="fixed right-4 top-1/2 -translate-y-1/2 w-96 bg-white border border-gray-300 rounded-lg shadow-2xl z-50">
-          <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between bg-blue-50">
-            <h3 className="text-sm font-semibold text-black flex items-center gap-2">
-              💬 Add Comment
-            </h3>
-            <button
-              onClick={() => setShowCommentInput(false)}
-              className="text-gray-500 hover:text-black text-xl"
-            >
-              ✕
-            </button>
+        <div className="fixed right-4 top-1/2 -translate-y-1/2 w-72 bg-white border border-gray-300 rounded-lg shadow-md z-50">
+          {/* Header with blueish-grey banner */}
+          <div className="px-3 py-2 text-xs font-semibold text-white rounded-t-lg bg-blue-900">
+            💬 COMMENT
           </div>
-
-          <div className="p-4">
+          
+          {/* Content area */}
+          <div className="p-3">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs text-slate-500">{formatTimestamp(new Date())}</span>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-medium text-slate-700">You</span>
+                <button
+                  onClick={() => setShowCommentInput(false)}
+                  className="text-xs text-slate-600 hover:text-slate-800 font-medium"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+            
             <textarea
               value={commentInputValue}
               onChange={(e) => setCommentInputValue(e.target.value)}
@@ -2250,25 +2222,18 @@ export default function LiveDocEditor() {
                 }
               }}
               placeholder="Type your comment..."
-              className="w-full px-3 py-2 text-sm text-black border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 min-h-[100px]"
+              className="w-full px-2 py-1 text-sm text-black border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-slate-400 min-h-[60px] resize-none"
               autoFocus
             />
-            <div className="flex items-center justify-between mt-3">
-              <span className="text-xs text-gray-500">Cmd+Enter to submit</span>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setShowCommentInput(false)}
-                  className="px-3 py-1.5 text-xs font-medium text-gray-700 bg-gray-100 rounded hover:bg-gray-200"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={submitComment}
-                  className="px-3 py-1.5 text-xs font-medium text-white bg-blue-600 rounded hover:bg-blue-700"
-                >
-                  Add Comment
-                </button>
-              </div>
+            
+            <div className="flex items-center justify-between mt-2">
+              <span className="text-xs text-slate-500">Cmd+Enter to submit</span>
+              <button
+                onClick={submitComment}
+                className="px-2 py-1 text-xs font-medium text-white bg-slate-500 rounded hover:bg-slate-600"
+              >
+                Add Comment
+              </button>
             </div>
           </div>
         </div>
@@ -2328,7 +2293,7 @@ export default function LiveDocEditor() {
         <div className="fixed right-4 top-1/2 -translate-y-1/2 w-96 bg-white border border-gray-300 rounded-lg shadow-2xl z-50">
           <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between bg-gradient-to-r from-purple-50 to-blue-50">
             <h3 className="text-sm font-semibold text-black flex items-center gap-2">
-              {aiResultType === 'thoughts' ? '🤔 AI Thoughts' : '✨ AI Rewrites'}
+              ✨ AI Rewrites
               <span className="text-xs text-gray-500">- Pick one</span>
             </h3>
             <button
@@ -2340,24 +2305,7 @@ export default function LiveDocEditor() {
           </div>
 
           <div className="p-4 space-y-3 max-h-[500px] overflow-auto">
-            {aiResultType === 'thoughts' ? (
-              aiThoughts.map((thought, index) => (
-                <div
-                  key={index}
-                  onClick={() => handleSelectAIThought(thought)}
-                  className="p-3 bg-purple-50 border border-purple-200 rounded-lg hover:bg-purple-100 cursor-pointer transition-all"
-                >
-                  <div className="flex items-start gap-2">
-                    <span className="text-lg">💡</span>
-                    <div className="flex-1">
-                      <p className="text-sm text-black">{thought}</p>
-                      <p className="text-xs text-purple-600 mt-2">Click to add as comment</p>
-                    </div>
-                  </div>
-                </div>
-              ))
-            ) : (
-              aiRewrites.map((rewrite, index) => (
+            {aiRewrites.map((rewrite, index) => (
                 <div
                   key={index}
                   onClick={() => handleSelectAIRewrite(rewrite)}
@@ -2371,8 +2319,7 @@ export default function LiveDocEditor() {
                     </div>
                   </div>
                 </div>
-              ))
-            )}
+            ))}
           </div>
         </div>
       )}
