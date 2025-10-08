@@ -41,6 +41,24 @@ declare module '@tiptap/core' {
 
 const aiRewriteKey = new PluginKey<AIRewriteState>('aiRewrite');
 
+// Helper function to get active rewrite templates from localStorage
+function getActiveRewriteTemplates(): string[] {
+  try {
+    const saved = localStorage.getItem('rewriteTemplates');
+    if (saved) {
+      const allTemplates = JSON.parse(saved);
+      const activeTemplates = allTemplates.filter((t: any) => t.isActive);
+      const labels = activeTemplates.map((t: any) => t.label);
+      console.log('📋 Active rewrite templates from localStorage:', labels);
+      return labels;
+    }
+  } catch (error) {
+    console.error('Failed to load rewrite templates:', error);
+  }
+  // Default to 3 variations if nothing is saved
+  return ['More concise', 'More formal', 'Simpler'];
+}
+
 export const AIRewriteExtension = Extension.create<AIRewriteOptions>({
   name: 'aiRewrite',
 
@@ -187,15 +205,26 @@ export const AIRewriteExtension = Extension.create<AIRewriteOptions>({
 
           try {
             console.log('🌐 Making API request');
-            const variations = await onRequestRewrites(selectedText, context);
+            const allVariations = await onRequestRewrites(selectedText, context);
             clearTimeout(timeoutId);
             
             if (abortController.signal.aborted) return;
 
-            console.log('✅ Received variations:', variations);
+            console.log('✅ Received variations:', allVariations);
+
+            // Get active template labels from settings
+            const activeLabels = getActiveRewriteTemplates();
+            console.log('🔍 Filtering to active templates:', activeLabels);
+
+            // Filter to only show variations that match active templates
+            const filteredVariations = allVariations.filter(v => 
+              activeLabels.includes(v.label)
+            );
+
+            console.log('✅ Filtered variations:', filteredVariations.map(v => v.label));
 
             // Validate and filter variations
-            const validVariations = variations.filter(v => 
+            const validVariations = filteredVariations.filter(v => 
               v && typeof v.label === 'string' && typeof v.text === 'string' && v.text.trim().length > 0
             );
 
@@ -622,6 +651,10 @@ export const AIRewriteExtension = Extension.create<AIRewriteOptions>({
 
               // Update menu content
               if (pluginState.isLoading) {
+                // Get active templates to show correct number of progress bars
+                const activeLabels = getActiveRewriteTemplates();
+                const numActive = activeLabels.length;
+                
                 menuElement.innerHTML = `
                   <div style="padding: 20px; font-family: -apple-system, system-ui, sans-serif;">
                     <div style="
@@ -639,7 +672,7 @@ export const AIRewriteExtension = Extension.create<AIRewriteOptions>({
                       Generating AI Rewrites
                     </div>
                     
-                    ${[1, 2, 3, 4, 5].map((num, idx) => `
+                    ${Array.from({ length: numActive }, (_, i) => i + 1).map((num, idx) => `
                       <div style="margin-bottom: 12px;">
                         <div style="
                           display: flex;
@@ -693,11 +726,11 @@ export const AIRewriteExtension = Extension.create<AIRewriteOptions>({
                   </style>
                 `;
                 
-                // Simulate progress animation
+                // Simulate progress animation (only for active variations)
                 let currentVariation = 0;
                 const progressInterval = setInterval(() => {
                   currentVariation++;
-                  if (currentVariation > 5) {
+                  if (currentVariation > numActive) {
                     clearInterval(progressInterval);
                     return;
                   }
