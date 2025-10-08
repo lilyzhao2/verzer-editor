@@ -274,6 +274,38 @@ export default function LiveDocEditor() {
     try {
       console.log('🔄 Requesting rewrites for:', selectedText.substring(0, 50) + '...');
       
+      // Load active templates from localStorage
+      let activeTemplates: any[] = [];
+      try {
+        const saved = localStorage.getItem('rewriteTemplates');
+        if (saved) {
+          const allTemplates = JSON.parse(saved);
+          activeTemplates = allTemplates.filter((t: any) => t.isActive);
+          console.log('📋 Loaded active templates:', activeTemplates.map(t => t.label));
+        }
+      } catch (e) {
+        console.error('Failed to load templates from localStorage:', e);
+      }
+      
+      // Fallback to default if no active templates
+      if (activeTemplates.length === 0) {
+        console.warn('⚠️ No active templates found, using defaults');
+        activeTemplates = [
+          {
+            label: 'More concise',
+            prompt: 'Rewrite this text to be more concise and direct, removing unnecessary words while preserving the core meaning.'
+          },
+          {
+            label: 'More formal',
+            prompt: 'Rewrite this text in a more formal, professional tone suitable for business or academic contexts.'
+          },
+          {
+            label: 'Simpler',
+            prompt: 'Rewrite this text to be simpler and easier to understand, using plain language and shorter sentences.'
+          }
+        ];
+      }
+      
       const response = await fetch('/api/rewrite', {
         method: 'POST',
         headers: {
@@ -283,6 +315,7 @@ export default function LiveDocEditor() {
           selectedText,
           context,
           model: 'claude-3-5-sonnet-20241022',
+          templates: activeTemplates, // Send only active templates
         }),
       });
 
@@ -319,6 +352,35 @@ export default function LiveDocEditor() {
   
   // AbortController for cancelling outdated requests
   const abortControllerRef = React.useRef<AbortController | null>(null);
+  
+  // Load autocomplete settings from localStorage
+  const [autocompleteSettings, setAutocompleteSettings] = React.useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('autocompleteSettings');
+        if (saved) {
+          return JSON.parse(saved);
+        }
+      } catch (e) {
+        console.error('Failed to load autocomplete settings:', e);
+      }
+    }
+    return {
+      enabled: true,
+      typingDelay: 2000,
+      styleAdaptation: true,
+      contextLength: 800
+    };
+  });
+  
+  // Toast notification state
+  const [toast, setToast] = React.useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
+  
+  // Helper function to show toast
+  const showToast = useCallback((message: string, type: 'success' | 'error' | 'info' = 'info') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3000);
+  }, []);
   
   // Save cache to localStorage when it changes
   React.useEffect(() => {
@@ -357,8 +419,10 @@ export default function LiveDocEditor() {
       timestamp: new Date(),
       createdBy: 'You',
       autoSaved: false,
+      archived: false,
     },
   ]);
+  const [archivedVersions, setArchivedVersions] = useState<DocumentVersion[]>([]);
   const [currentVersionId, setCurrentVersionId] = useState('v0');
   const [showVersionHistory, setShowVersionHistory] = useState(false);
   const [versionSettings, setVersionSettings] = useState<VersionHistorySettings>({
@@ -444,6 +508,9 @@ export default function LiveDocEditor() {
       }),
       TabAutocompleteExtension.configure({
         enabled: editingMode !== 'viewing', // Disable in viewing mode
+        typingDelay: autocompleteSettings.typingDelay || 2500,
+        contextLength: autocompleteSettings.contextLength || 800,
+        styleAdaptation: autocompleteSettings.styleAdaptation !== false,
         onRequestCompletion: async (context: string, styleHints: any) => {
           try {
             // Check cache first for instant response
@@ -465,8 +532,16 @@ export default function LiveDocEditor() {
             // Get project context for style matching
             const projectContext = getProjectContextForAI();
             
-            // Make sure we have some content to send (last 800 chars)
-            const contentToSend = context.trim() || 'Start of document';
+            // Use context length from settings
+            const contextLen = autocompleteSettings.contextLength || 800;
+            const recentContext = context.slice(-contextLen);
+            const contentToSend = recentContext.trim() || 'Start of document';
+            
+            // Validate content before sending
+            if (!contentToSend || contentToSend.trim().length === 0) {
+              console.warn('⚠️ No content to send, skipping autocomplete');
+              return '';
+            }
             
             // Check if we're at the end of a sentence (after punctuation + optional space)
             const lastFewChars = contentToSend.slice(-5); // Check last 5 chars instead of 3
@@ -540,6 +615,15 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
             if (!response.ok) {
               const errorText = await response.text();
               console.error('🚨 API Error:', response.status, errorText);
+              
+              // Try to parse error details
+              try {
+                const errorData = JSON.parse(errorText);
+                console.error('🔍 Error details:', errorData);
+              } catch (e) {
+                console.error('🔍 Raw error:', errorText);
+              }
+              
               throw new Error(`AI request failed: ${response.status} - ${errorText}`);
             }
 
@@ -662,6 +746,14 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
       editor.view.dispatch(tr);
     }
   }, [editor, editorEditable, isCurrentVersionLocked, isSuggestingMode]);
+ 
+  // Sync autocomplete enabled state with extension
+  React.useEffect(() => {
+    if (editor && (editor.storage as any).tabAutocomplete) {
+      (editor.storage as any).tabAutocomplete.enabled = autocompleteEnabled;
+      console.log('🔧 Autocomplete enabled state synced:', autocompleteEnabled);
+    }
+  }, [editor, autocompleteEnabled]);
 
   // Handle clicks outside editor to preserve selection
   React.useEffect(() => {
@@ -792,25 +884,27 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
       to: number;
     }[] = [];
 
-    // Map comments
-    comments.forEach((c) => {
-      try {
-        const coords = editor.view.coordsAtPos(Math.max(1, Math.min(c.from, editor.state.doc.content.size)));
-        const topPx = coords.top - parentRect.top;
-        items.push({
-          id: c.id, // Use the comment ID directly since it already has the prefix
-          kind: 'comment',
-          topPx,
-          summary: c.text,
-          userName: c.userName,
-          timestamp: c.timestamp,
-          from: c.from,
-          to: c.to,
-        });
-      } catch {
-        // Ignore mapping errors
-      }
-    });
+    // Map comments (only unresolved ones)
+    comments
+      .filter(c => !c.resolved) // Only show unresolved comments in floating pane
+      .forEach((c) => {
+        try {
+          const coords = editor.view.coordsAtPos(Math.max(1, Math.min(c.from, editor.state.doc.content.size)));
+          const topPx = coords.top - parentRect.top;
+          items.push({
+            id: c.id, // Use the comment ID directly since it already has the prefix
+            kind: 'comment',
+            topPx,
+            summary: c.text,
+            userName: c.userName,
+            timestamp: c.timestamp,
+            from: c.from,
+            to: c.to,
+          });
+        } catch {
+          // Ignore mapping errors
+        }
+      });
 
     // Map tracked changes
     trackedChanges.forEach((ch) => {
@@ -1173,7 +1267,7 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
     if (editor) {
       const content = editor.getHTML();
       createNewVersion(content, false);
-      alert('✓ Version saved!');
+      showToast('✓ Version saved!', 'success');
     }
   };
 
@@ -1185,7 +1279,7 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
       // Copy format from current selection
       const { from, to } = editor.state.selection;
       if (from === to) {
-        alert('Please select text to copy formatting from');
+        showToast('Please select text to copy formatting from', 'info');
         return;
       }
 
@@ -1286,8 +1380,8 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
       // Ignore
     }
 
-    alert('✓ Everything has been wiped. Starting fresh!');
-  }, [editor]);
+    showToast('✓ Everything has been wiped. Starting fresh!', 'success');
+  }, [editor, showToast]);
 
   // Memoized callbacks for sidebar components
   const handleAcceptChange = useCallback((changeId: string) => {
@@ -1323,13 +1417,22 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
     // Get current version for baseline
     const currentVersion = versions.find(v => v.id === currentVersionId);
     
+    // Get the highest version number from BOTH active and archived versions
+    const allVersionNumbers = [
+      ...versions.map(v => v.versionNumber),
+      ...archivedVersions.map(v => v.versionNumber)
+    ];
+    const maxVersionNumber = Math.max(...allVersionNumbers, -1);
+    const newVersionNumber = maxVersionNumber + 1;
+    
     const newVersion: DocumentVersion = {
-      id: `v${versions.length}`,
-      versionNumber: versions.length,
+      id: `v${Date.now()}`,
+      versionNumber: newVersionNumber,
       content,
       timestamp: new Date(),
       createdBy: 'You',
       autoSaved,
+      archived: false,
       changesSinceLastVersion: changesSinceLastSave,
       // OPTION C: Save pending suggestions to carry over
       pendingSuggestions: trackedChanges.length > 0 ? trackedChanges : undefined,
@@ -1337,7 +1440,7 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
       baselineContent: currentVersion?.content,
     };
 
-    console.log('📝 Creating new version with', trackedChanges.length, 'pending suggestions');
+    console.log('📝 Creating new version', newVersionNumber, 'with', trackedChanges.length, 'pending suggestions');
 
     setVersions([...versions, newVersion]);
     setCurrentVersionId(newVersion.id);
@@ -1347,30 +1450,59 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
     return newVersion;
   };
 
-  const loadVersion = (versionId: string) => {
+  const loadVersion = (versionId: string, makeActive: boolean = false) => {
     const version = versions.find((v) => v.id === versionId);
     const latestVersion = versions[versions.length - 1];
     
     if (version && editor) {
       // Check if trying to load an old version
       if (version.versionNumber < latestVersion.versionNumber) {
-        const confirmRevert = window.confirm(
-          `⚠️ Warning: You're viewing an older version (V${version.versionNumber}).\n\n` +
-          `This version is READ-ONLY. If you want to edit from this point:\n` +
-          `• All versions after V${version.versionNumber} will stay in history\n` +
-          `• Your next edit will create V${latestVersion.versionNumber + 1}\n` +
-          `• You'll continue from this version's content\n\n` +
-          `View this version?`
-        );
-        
-        if (!confirmRevert) return;
+        if (makeActive) {
+          // Making this version active - archive all future versions
+          const confirmRevert = window.confirm(
+            `⚠️ Make V${version.versionNumber} the active version?\n\n` +
+            `This will:\n` +
+            `• Archive all versions after V${version.versionNumber} (you can still view them)\n` +
+            `• Make this version your current working version\n` +
+            `• New versions will continue from V${version.versionNumber + 1}\n\n` +
+            `Continue?`
+          );
+          
+          if (!confirmRevert) return;
+          
+          // Move future versions to archived
+          const futureVersions = versions.filter(v => v.versionNumber > version.versionNumber);
+          const remainingVersions = versions.filter(v => v.versionNumber <= version.versionNumber);
+          
+          // Mark future versions as archived
+          const markedAsArchived = futureVersions.map(v => ({ ...v, archived: true }));
+          
+          console.log(`📦 Archiving ${futureVersions.length} future versions`);
+          console.log(`✅ Keeping ${remainingVersions.length} active versions up to V${version.versionNumber}`);
+          
+          // Update both lists
+          setVersions(remainingVersions);
+          setArchivedVersions([...archivedVersions, ...markedAsArchived]);
+          
+          showToast(`Made V${version.versionNumber} active. ${futureVersions.length} version(s) archived.`, 'success');
+        } else {
+          // Just viewing - show read-only warning
+          const confirmView = window.confirm(
+            `⚠️ Viewing older version (V${version.versionNumber}).\n\n` +
+            `This version is READ-ONLY for preview.\n` +
+            `To make it active and archive future versions, use the "Make Active" button.\n\n` +
+            `View this version?`
+          );
+          
+          if (!confirmView) return;
+        }
       }
       
       // Load the version content
       editor.commands.setContent(version.content);
       setCurrentVersionId(versionId);
       
-      // OPTION C: Restore pending suggestions if they exist
+      // Restore pending suggestions if they exist
       if (version.pendingSuggestions && version.pendingSuggestions.length > 0) {
         console.log('🔄 Restoring', version.pendingSuggestions.length, 'pending suggestions');
         
@@ -1756,24 +1888,24 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
             className="px-3 py-1.5 text-xs font-medium text-black bg-white border border-gray-300 rounded hover:bg-gray-50"
             title="Version History"
           >
-            📜 History
+            History
           </button>
           
-          {/* Context Page */}
+          {/* Settings Button */}
           <button 
             onClick={() => setShowContextPage(true)}
-            className="text-blue-600 px-3 py-1 rounded hover:bg-blue-50 transition-colors" 
-            title="Project Context & Settings"
+            className="px-3 py-1.5 text-xs font-medium text-black bg-white border border-gray-300 rounded hover:bg-gray-50" 
+            title="Settings"
           >
-            ⚙️ Context
+            Settings
           </button>
           
           {/* Placeholder for future modes */}
           <button className="text-gray-400 px-3 py-1 rounded cursor-not-allowed opacity-50" disabled title="Coming soon">
-            🤖 AI Mode <span className="text-xs">(Coming Soon)</span>
+            AI Mode <span className="text-xs">(Coming Soon)</span>
           </button>
           <button className="text-gray-400 px-3 py-1 rounded cursor-not-allowed opacity-50" disabled title="Coming soon">
-            🔀 Diff Mode <span className="text-xs">(Coming Soon)</span>
+            Diff Mode <span className="text-xs">(Coming Soon)</span>
           </button>
           
           <div className="flex-1" />
@@ -1805,7 +1937,7 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
                 if (editor) {
                   const content = editor.getHTML();
                   createNewVersion(content, false);
-                  alert('Version saved!');
+                  showToast('Version saved!', 'success');
                 }
               }}
               className="px-3 py-1.5 text-xs font-medium text-black bg-white border border-gray-300 rounded hover:bg-gray-50"
@@ -1817,8 +1949,13 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
             {/* Wipe Everything Button */}
             <button
               onClick={handleWipeEverything}
-              className="px-3 py-1.5 text-xs font-medium text-black bg-white border border-gray-300 rounded hover:bg-gray-50"
-              title="Wipe everything (reset to blank)"
+              disabled={editingMode === 'viewing'}
+              className={`px-3 py-1.5 text-xs font-medium border border-gray-300 rounded ${
+                editingMode === 'viewing'
+                  ? 'text-gray-400 bg-gray-100 cursor-not-allowed opacity-50'
+                  : 'text-black bg-white hover:bg-gray-50'
+              }`}
+              title={editingMode === 'viewing' ? 'Disabled in viewing mode' : 'Wipe everything (reset to blank)'}
             >
               🗑️ Wipe All
             </button>
@@ -1946,8 +2083,14 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
 
         {/* Font Size */}
         <select 
-          className="text-sm bg-white border border-gray-300 rounded-md px-3 py-1.5 hover:bg-gray-50 text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          disabled={editingMode === 'viewing'}
+          className={`text-sm border border-gray-300 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+            editingMode === 'viewing'
+              ? 'bg-gray-100 text-gray-400 cursor-not-allowed opacity-50'
+              : 'bg-white hover:bg-gray-50 text-gray-700'
+          }`}
           onChange={(e) => {
+            if (editingMode === 'viewing') return;
             const size = e.target.value;
             console.log('Setting font size to:', size);
             
@@ -1982,33 +2125,48 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
 
         {/* Bold */}
         <button
-          onClick={() => editor.chain().focus().toggleBold().run()}
-          className={`p-2 hover:bg-gray-200 rounded-md transition-colors font-bold ${
-            editor.isActive('bold') ? 'bg-gray-200 text-gray-900' : 'text-gray-600'
+          onClick={() => editingMode !== 'viewing' && editor.chain().focus().toggleBold().run()}
+          disabled={editingMode === 'viewing'}
+          className={`p-2 rounded-md transition-colors font-bold ${
+            editingMode === 'viewing' 
+              ? 'text-gray-400 cursor-not-allowed opacity-50'
+              : editor.isActive('bold') 
+                ? 'bg-gray-200 text-gray-900' 
+                : 'text-gray-600 hover:bg-gray-200'
           }`}
-          title="Bold (Ctrl+B)"
+          title={editingMode === 'viewing' ? 'Disabled in viewing mode' : 'Bold (Ctrl+B)'}
         >
           B
         </button>
 
         {/* Italic */}
         <button
-          onClick={() => editor.chain().focus().toggleItalic().run()}
-          className={`p-2 hover:bg-gray-200 rounded-md transition-colors italic ${
-            editor.isActive('italic') ? 'bg-gray-200 text-gray-900' : 'text-gray-600'
+          onClick={() => editingMode !== 'viewing' && editor.chain().focus().toggleItalic().run()}
+          disabled={editingMode === 'viewing'}
+          className={`p-2 rounded-md transition-colors italic ${
+            editingMode === 'viewing' 
+              ? 'text-gray-400 cursor-not-allowed opacity-50'
+              : editor.isActive('italic') 
+                ? 'bg-gray-200 text-gray-900' 
+                : 'text-gray-600 hover:bg-gray-200'
           }`}
-          title="Italic (Ctrl+I)"
+          title={editingMode === 'viewing' ? 'Disabled in viewing mode' : 'Italic (Ctrl+I)'}
         >
           I
         </button>
 
         {/* Underline */}
         <button
-          onClick={() => editor.chain().focus().toggleUnderline().run()}
-          className={`p-2 hover:bg-gray-200 rounded-md transition-colors underline ${
-            editor.isActive('underline') ? 'bg-gray-200 text-gray-900' : 'text-gray-600'
+          onClick={() => editingMode !== 'viewing' && editor.chain().focus().toggleUnderline().run()}
+          disabled={editingMode === 'viewing'}
+          className={`p-2 rounded-md transition-colors underline ${
+            editingMode === 'viewing' 
+              ? 'text-gray-400 cursor-not-allowed opacity-50'
+              : editor.isActive('underline') 
+                ? 'bg-gray-200 text-gray-900' 
+                : 'text-gray-600 hover:bg-gray-200'
           }`}
-          title="Underline (Ctrl+U)"
+          title={editingMode === 'viewing' ? 'Disabled in viewing mode' : 'Underline (Ctrl+U)'}
         >
           U
         </button>
@@ -2016,8 +2174,14 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
         {/* Text Color */}
         <div className="relative">
           <select 
-            className="text-sm bg-white border border-gray-300 rounded-md px-3 py-1.5 hover:bg-gray-50 text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none pr-8"
+            disabled={editingMode === 'viewing'}
+            className={`text-sm border border-gray-300 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none pr-8 ${
+              editingMode === 'viewing' 
+                ? 'bg-gray-100 text-gray-400 cursor-not-allowed opacity-50'
+                : 'bg-white hover:bg-gray-50 text-gray-700'
+            }`}
             onChange={(e) => {
+              if (editingMode === 'viewing') return;
               const color = e.target.value;
               if (color === 'default') {
                 editor.chain().focus().unsetColor().run();
@@ -2108,9 +2272,15 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
         {/* Comment */}
         <button
           onClick={() => {
+            if (editingMode === 'viewing') return;
+            if (!editor) {
+              console.error('Editor not available');
+              return;
+            }
+            
             const { from, to } = editor.state.selection;
             if (from === to) {
-              alert('Please select some text to comment on');
+              showToast('Please select some text to comment on', 'info');
               return;
             }
             
@@ -2118,8 +2288,13 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
             setAIMenuSelection({ text: editor.state.doc.textBetween(from, to), from, to });
             setShowCommentInput(true);
           }}
-          className="p-2 hover:bg-gray-200 rounded-md transition-colors text-gray-600"
-          title="Add comment (Ctrl+Alt+M)"
+          disabled={editingMode === 'viewing'}
+          className={`p-2 rounded-md transition-colors ${
+            editingMode === 'viewing' 
+              ? 'text-gray-400 cursor-not-allowed opacity-50' 
+              : 'text-gray-600 hover:bg-gray-200'
+          }`}
+          title={editingMode === 'viewing' ? 'Comments disabled in viewing mode' : 'Add comment (Ctrl+Alt+M)'}
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
@@ -2266,15 +2441,21 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
         {/* Rewrite Refresh Button */}
         <button
           onClick={() => {
+            if (editingMode === 'viewing') return;
             if (editor && !editor.state.selection.empty) {
               // @ts-ignore
               editor.commands.showRewriteMenu();
             } else {
-              alert('Please select text to rewrite');
+              showToast('Please select text to rewrite', 'info');
             }
           }}
-          className="p-2 hover:bg-gray-200 rounded-md transition-colors text-gray-600"
-          title="Generate AI rewrites for selected text (Cmd+4)"
+          disabled={editingMode === 'viewing'}
+          className={`p-2 rounded-md transition-colors ${
+            editingMode === 'viewing' 
+              ? 'text-gray-400 cursor-not-allowed opacity-50' 
+              : 'text-gray-600 hover:bg-gray-200'
+          }`}
+          title={editingMode === 'viewing' ? 'Rewrite disabled in viewing mode' : 'Generate AI rewrites for selected text (Cmd+4)'}
         >
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/>
@@ -2534,6 +2715,7 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
                           <button
                             onClick={(e) => {
                               if (editingMode === 'viewing') return;
+                              e.preventDefault();
                               e.stopPropagation();
                               const commentId = item.id;
                               const updatedComments = comments.map((c) =>
@@ -2744,39 +2926,97 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
 
           {/* Version List */}
           <div className="flex-1 overflow-auto px-6 py-4">
+            {/* Active Versions */}
             <div className="space-y-3">
-              {[...versions].reverse().map((version) => (
-                <div
-                  key={version.id}
-                  className={`p-3 rounded-lg border-2 cursor-pointer transition-all ${
-                    version.id === currentVersionId
-                      ? 'border-blue-500 bg-blue-50'
-                      : 'border-gray-200 bg-white hover:bg-gray-50'
-                  }`}
-                  onClick={() => loadVersion(version.id)}
-                >
-                  <div className="flex items-start justify-between mb-2">
-                    <span className="font-semibold text-black">
-                      Version {version.versionNumber}
-                    </span>
-                    <span className="text-xs text-gray-500">
-                      {version.autoSaved ? '☁️ Auto' : '💾 Manual'}
-                    </span>
-                  </div>
-                  <div className="text-xs text-gray-600">
-                    {version.timestamp.toLocaleString()}
-                  </div>
-                  <div className="text-xs text-gray-500 mt-1">
-                    By {version.createdBy}
-                  </div>
-                  {version.changesSinceLastVersion !== undefined && (
-                    <div className="text-xs text-gray-500 mt-1">
-                      {version.changesSinceLastVersion} edits
+              {[...versions].reverse().map((version) => {
+                const isOlderVersion = version.versionNumber < versions[versions.length - 1].versionNumber;
+                const isCurrentVersion = version.id === currentVersionId;
+                
+                return (
+                  <div key={version.id}>
+                    <div
+                      className={`p-3 rounded-lg border-2 cursor-pointer transition-all ${
+                        isCurrentVersion
+                          ? 'border-blue-500 bg-blue-50'
+                          : 'border-gray-200 bg-white hover:bg-gray-50'
+                      }`}
+                      onClick={() => loadVersion(version.id, false)}
+                    >
+                      <div className="flex items-start justify-between mb-2">
+                        <span className="font-semibold text-black">
+                          {version.autoSaved ? '☁️' : '💾'} V{version.versionNumber}
+                        </span>
+                        {isCurrentVersion && (
+                          <span className="text-xs text-blue-600 font-semibold">Current</span>
+                        )}
+                      </div>
+                      
+                      {version.changesSinceLastVersion !== undefined && (
+                        <p className="text-xs text-gray-600 truncate">
+                          {version.changesSinceLastVersion} edits
+                        </p>
+                      )}
+                      
+                      <p className="text-xs text-gray-400 mt-1">
+                        {new Date(version.timestamp).toLocaleTimeString()}
+                      </p>
                     </div>
-                  )}
-                </div>
-              ))}
+                    
+                    {/* Make Active button for older versions */}
+                    {isOlderVersion && !isCurrentVersion && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          loadVersion(version.id, true);
+                        }}
+                        className="mt-1 w-full px-3 py-1.5 text-xs font-medium text-white bg-[#1e3a8a] rounded hover:bg-[#1e40af] transition-colors"
+                      >
+                        🔄 Make Active & Archive Future
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
             </div>
+            
+            {/* Archived Versions */}
+            {archivedVersions.length > 0 && (
+              <div className="mt-4 pt-4 border-t border-gray-200">
+                <h4 className="text-xs font-medium text-gray-500 px-2 mb-2">
+                  📦 Archived Alternatives
+                </h4>
+                <div className="space-y-1">
+                  {[...archivedVersions].reverse().map((version) => (
+                    <button
+                      key={version.id}
+                      onClick={() => {
+                        if (editor) {
+                          editor.commands.setContent(version.content);
+                          showToast(`Viewing archived V${version.versionNumber} (read-only)`, 'info');
+                        }
+                      }}
+                      className="w-full text-left px-3 py-2 rounded-lg transition-colors bg-gray-50 hover:bg-gray-100 border-2 border-transparent opacity-60"
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-sm font-medium text-gray-900">
+                          {version.autoSaved ? '☁️' : '💾'} V{version.versionNumber}
+                        </span>
+                      </div>
+                      
+                      {version.changesSinceLastVersion !== undefined && (
+                        <p className="text-xs text-gray-600 truncate">
+                          {version.changesSinceLastVersion} edits
+                        </p>
+                      )}
+                      
+                      <p className="text-xs text-gray-400 mt-1">
+                        {new Date(version.timestamp).toLocaleTimeString()}
+                      </p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -2804,7 +3044,7 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
             className="w-full px-4 py-2 text-left text-sm text-black hover:bg-gray-100 flex items-center gap-2"
           >
             <span>✨</span>
-            <span>Rewrite (5 variations)</span>
+            <span>Rewrite</span>
           </button>
         </div>
       )}
@@ -3106,6 +3346,24 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
       >
         🐛
       </button>
+ 
+      {/* Toast Notification */}
+      {toast && (
+        <div 
+          className={`fixed top-4 right-4 px-6 py-3 rounded-lg shadow-lg z-50 animate-in fade-in slide-in-from-top-2 duration-300 ${
+            toast.type === 'success' ? 'bg-emerald-500 text-white' :
+            toast.type === 'error' ? 'bg-rose-500 text-white' :
+            'bg-blue-500 text-white'
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            <span className="text-lg">
+              {toast.type === 'success' ? '✓' : toast.type === 'error' ? '✕' : 'ℹ'}
+            </span>
+            <span className="text-sm font-medium">{toast.message}</span>
+          </div>
+        </div>
+      )}
       </div>
     </EditorErrorBoundary>
   );
