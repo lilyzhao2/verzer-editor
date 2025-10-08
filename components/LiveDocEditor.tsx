@@ -1465,16 +1465,6 @@ export default function LiveDocEditor() {
           </svg>
         </button>
 
-        {/* Manual Save (Checkmark) */}
-        <button
-          onClick={handleManualSave}
-          className="p-2 hover:bg-blue-100 rounded-md transition-colors"
-          title="Save new version"
-        >
-          <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-        </button>
 
         <div className="w-px h-6 bg-gray-300 mx-2" />
 
@@ -1551,7 +1541,7 @@ export default function LiveDocEditor() {
             onClick={() => {
               const currentSize = editor.getAttributes('textStyle').fontSize || '11px';
               const newSize = Math.max(8, parseInt(currentSize) - 1);
-              editor.chain().focus().setFontSize(`${newSize}px`).run();
+              editor.chain().focus().setMark('textStyle', { fontSize: `${newSize}px` }).run();
             }}
             className="p-1.5 hover:bg-gray-100 rounded-l-md transition-colors" 
             title="Decrease font size"
@@ -1564,7 +1554,7 @@ export default function LiveDocEditor() {
             onChange={(e) => {
               const size = parseInt(e.target.value);
               if (size >= 8 && size <= 72) {
-                editor.chain().focus().setFontSize(`${size}px`).run();
+                editor.chain().focus().setMark('textStyle', { fontSize: `${size}px` }).run();
               }
             }}
             className="w-8 text-center text-sm border-none bg-transparent px-1 py-1.5 text-gray-700 focus:outline-none"
@@ -1573,7 +1563,7 @@ export default function LiveDocEditor() {
             onClick={() => {
               const currentSize = editor.getAttributes('textStyle').fontSize || '11px';
               const newSize = Math.min(72, parseInt(currentSize) + 1);
-              editor.chain().focus().setFontSize(`${newSize}px`).run();
+              editor.chain().focus().setMark('textStyle', { fontSize: `${newSize}px` }).run();
             }}
             className="p-1.5 hover:bg-gray-100 rounded-r-md transition-colors" 
             title="Increase font size"
