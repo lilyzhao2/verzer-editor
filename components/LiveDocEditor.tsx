@@ -733,6 +733,12 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
           const { state } = view;
           const { selection } = state;
           
+          // Allow clicks on buttons, inputs, and other UI elements
+          const target = event.target as Element;
+          if (target.closest('button') || target.closest('input') || target.closest('textarea') || target.closest('select')) {
+            return false; // Let the click through
+          }
+          
           // If there's a selection, check if click is outside it
           if (!selection.empty) {
             const pos = view.posAtCoords({ left: event.clientX, top: event.clientY });

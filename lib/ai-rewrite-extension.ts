@@ -672,7 +672,7 @@ export const AIRewriteExtension = Extension.create<AIRewriteOptions>({
                       Generating AI Rewrites
                     </div>
                     
-                    ${Array.from({ length: numActive }, (_, i) => i + 1).map((num, idx) => `
+                    ${activeLabels.map((label, idx) => `
                       <div style="margin-bottom: 12px;">
                         <div style="
                           display: flex;
@@ -680,8 +680,8 @@ export const AIRewriteExtension = Extension.create<AIRewriteOptions>({
                           align-items: center;
                           margin-bottom: 4px;
                         ">
-                          <span style="font-size: 13px; color: #6b7280; font-weight: 500;">Variation ${num}</span>
-                          <span style="font-size: 11px; color: #9ca3af;" id="status-${num}">
+                          <span style="font-size: 13px; color: #6b7280; font-weight: 500;">${label}</span>
+                          <span style="font-size: 11px; color: #9ca3af;" id="status-${idx + 1}">
                             ${idx === 0 ? '⏳ Generating...' : '⏱️ Waiting...'}
                           </span>
                         </div>
@@ -693,7 +693,7 @@ export const AIRewriteExtension = Extension.create<AIRewriteOptions>({
                           overflow: hidden;
                         ">
                           <div 
-                            id="progress-${num}" 
+                            id="progress-${idx + 1}" 
                             style="
                               width: ${idx === 0 ? '60%' : '0%'};
                               height: 100%;
@@ -716,6 +716,27 @@ export const AIRewriteExtension = Extension.create<AIRewriteOptions>({
                     ">
                       Usually takes 3-5 seconds
                     </div>
+                    
+                    <button
+                      id="cancel-rewrite-btn"
+                      style="
+                        width: 100%;
+                        margin-top: 12px;
+                        padding: 10px;
+                        background: #fee;
+                        color: #dc2626;
+                        border: 1px solid #fca5a5;
+                        border-radius: 6px;
+                        font-size: 14px;
+                        font-weight: 600;
+                        cursor: pointer;
+                        transition: all 0.2s;
+                      "
+                      onmouseover="this.style.background='#fecaca'; this.style.borderColor='#f87171';"
+                      onmouseout="this.style.background='#fee2e2'; this.style.borderColor='#fca5a5';"
+                    >
+                      ✕ Cancel
+                    </button>
                   </div>
                   
                   <style>
@@ -725,6 +746,22 @@ export const AIRewriteExtension = Extension.create<AIRewriteOptions>({
                     }
                   </style>
                 `;
+                
+                // Add cancel button event listener
+                const cancelBtn = document.getElementById('cancel-rewrite-btn');
+                if (cancelBtn) {
+                  cancelBtn.onclick = () => {
+                    console.log('🚫 User cancelled rewrite request');
+                    
+                    // Abort the request
+                    if (extension.storage.abortController) {
+                      extension.storage.abortController.abort();
+                    }
+                    
+                    // Hide the menu
+                    extension.editor.commands.hideRewriteMenu();
+                  };
+                }
                 
                 // Simulate progress animation (only for active variations)
                 let currentVariation = 0;
