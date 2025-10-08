@@ -364,22 +364,26 @@ export default function LiveDocEditor() {
       }),
       CommentsExtension.configure({
         comments,
+        enabled: editingMode !== 'viewing', // Disable adding comments in viewing mode
         onAddComment: (comment) => {
+          if (editingMode === 'viewing') return; // Extra safety check
           setComments([...comments, comment]);
           setShowCommentSidebar(true);
         },
         onResolveComment: (commentId) => {
+          if (editingMode === 'viewing') return; // Extra safety check
           setComments(comments.map(c => 
             c.id === commentId ? { ...c, resolved: true } : c
           ));
         },
         onAddReply: (commentId, reply) => {
+          if (editingMode === 'viewing') return; // Extra safety check
           setComments(comments.map(c =>
             c.id === commentId ? { ...c, replies: [...c.replies, reply] } : c
           ));
         },
       }),
-      AIInlineExtension,
+      ...(editingMode !== 'viewing' ? [AIInlineExtension] : []), // Disable AI inline in viewing mode
       TrackChangesDecorationExtension.configure({
         enabled: isSuggestingMode,
         userId: 'user-1',
@@ -389,13 +393,14 @@ export default function LiveDocEditor() {
         },
       }),
       TabAutocompleteExtension.configure({
-        enabled: true, // Enable tab autocomplete
-        onRequestCompletion: async (context: string) => {
+        enabled: editingMode !== 'viewing', // Disable in viewing mode
+        onRequestCompletion: async (context: string, styleHints: any) => {
           try {
             // Check cache first for instant response
             const cacheKey = context.slice(-50); // Use last 50 chars as key
             if (completionCache.has(cacheKey)) {
-              return completionCache.get(cacheKey) || ['...'];
+              const cached = completionCache.get(cacheKey);
+              return Array.isArray(cached) ? cached[0] || '' : cached || '';
             }
 
             // Cancel any pending request
@@ -410,24 +415,76 @@ export default function LiveDocEditor() {
             // Get project context for style matching
             const projectContext = getProjectContextForAI();
             
-            // Make sure we have some content to send
+            // Make sure we have some content to send (last 800 chars)
             const contentToSend = context.trim() || 'Start of document';
+            
+            // Check if we're at the end of a sentence (after punctuation + optional space)
+            const lastFewChars = contentToSend.slice(-5); // Check last 5 chars instead of 3
+            const trimmedEnd = contentToSend.trimEnd(); // Remove trailing spaces
+            const lastChar = trimmedEnd.slice(-1);
+            const isAfterSentenceEnd = /[.!?]/.test(lastChar);
+            
+            console.log('📝 Last few chars:', JSON.stringify(lastFewChars));
+            console.log('🔤 Last character:', JSON.stringify(lastChar));
+            console.log('📏 Content length:', contentToSend.length);
+            console.log('🔚 Is after sentence end:', isAfterSentenceEnd);
+            
+            // Adapt prompt based on user's writing style AND sentence position
+            let stylePrompt = '';
+            let basePrompt = '';
+            let maxTokens = 50;
+            let stopSequences = ['\n\n'];
+            
+            if (isAfterSentenceEnd) {
+              // Start a new sentence
+              basePrompt = `Continue the following text by starting a new sentence. Provide ONLY the new sentence, no explanation or preamble.`;
+              maxTokens = styleHints?.preferredLength === 'short' ? 40 : styleHints?.preferredLength === 'long' ? 100 : 60;
+              stopSequences = ['.', '!', '?', '\n\n'];
+            } else {
+              // Complete current sentence
+              basePrompt = `Continue the following text by completing the current sentence. Do NOT start a new sentence. Provide ONLY the words needed to complete the current sentence naturally. Do not add punctuation unless the sentence is truly complete.`;
+              maxTokens = styleHints?.preferredLength === 'short' ? 30 : styleHints?.preferredLength === 'long' ? 80 : 50;
+              stopSequences = ['.', '!', '?', '\n\n'];
+            }
+            
+            if (styleHints) {
+              const { complexity, tone, preferredLength } = styleHints;
+              
+              if (tone === 'formal') {
+                stylePrompt += ' Use formal, professional language.';
+              } else if (tone === 'casual') {
+                stylePrompt += ' Use casual, conversational language.';
+              } else if (tone === 'technical') {
+                stylePrompt += ' Use precise, technical terminology.';
+              } else if (tone === 'creative') {
+                stylePrompt += ' Use vivid, descriptive language.';
+              }
+              
+              if (complexity === 'simple') {
+                stylePrompt += ' Use simple sentence structures.';
+              } else if (complexity === 'complex') {
+                stylePrompt += ' Use sophisticated sentence structures.';
+              }
+            }
             
             const response = await fetch('/api/anthropic', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
-                prompt: `Complete this text naturally in 3 different ways. Provide ONLY the completion text, no numbering, no explanations. Format as:
-[completion 1]
-[completion 2]
-[completion 3]`,
+                prompt: `${basePrompt}${stylePrompt}
+
+Text to continue: ${contentToSend}
+
+${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with just the missing words:'}`,
                 content: contentToSend,
-                model: 'claude-3-5-haiku-20241022', // Faster model for autocomplete
+                model: 'claude-3-5-haiku-20241022',
                 mode: 'chat',
-                maxTokens: 128,
+                maxTokens: maxTokens,
+                temperature: 0.5,
+                stopSequences: stopSequences,
                 projectConfig: projectContext
               }),
-              signal: abortController.signal // Add abort signal
+              signal: abortController.signal
             });
 
             if (!response.ok) {
@@ -439,38 +496,54 @@ export default function LiveDocEditor() {
             const data = await response.json();
             const aiResponse = data.response?.trim() || '';
             
-            // Parse AI response into multiple suggestions
-            let suggestions = aiResponse.split('\n')
-              .filter((line: string) => {
-                const trimmed = line.trim();
-                return trimmed.length > 0 && 
-                       !trimmed.startsWith('[') && 
-                       !trimmed.startsWith('completion');
-              })
-              .slice(0, 3) // Max 3 suggestions
-              .map((line: string) => {
-                // Remove numbering, quotes, and extra formatting
-                let clean = line.replace(/^\d+\.\s*/, '').replace(/^[-•*]\s*/, '').trim();
-                clean = clean.replace(/^["']|["']$/g, '').trim();
-                return clean;
-              })
-              .filter((s: string) => s.length > 0);
+            // Clean up the response based on whether we're completing or starting
+            let suggestion = aiResponse
+              .replace(/^\d+\.\s*/, '')
+              .replace(/^[-•*]\s*/, '')
+              .replace(/^["']|["']$/g, '')
+              .trim();
             
-            // If we didn't get good suggestions, try splitting by double newlines
-            if (suggestions.length === 0) {
-              suggestions = aiResponse.split(/\n\s*\n/)
-                .filter((line: string) => line.trim().length > 0)
-                .slice(0, 3)
-                .map((line: string) => line.replace(/^\d+\.\s*/, '').replace(/^["']|["']$/g, '').trim())
-                .filter((s: string) => s.length > 0);
+            if (isAfterSentenceEnd) {
+              // Starting a new sentence - ensure it starts with capital letter and has space before
+              console.log('🆕 Processing as NEW SENTENCE');
+              suggestion = suggestion.charAt(0).toUpperCase() + suggestion.slice(1);
+              
+              // Add space before if not already there
+              if (suggestion && !contentToSend.endsWith(' ') && !suggestion.startsWith(' ')) {
+                suggestion = ' ' + suggestion;
+              }
+              
+              // Ensure it ends with punctuation if it doesn't already
+              if (suggestion && !/[.!?]$/.test(suggestion.trim())) {
+                suggestion = suggestion.trim() + '.';
+              }
+            } else {
+              // Completing current sentence - ensure lowercase start and proper spacing
+              console.log('➕ Processing as SENTENCE COMPLETION');
+              suggestion = suggestion.replace(/^[A-Z]/, (match: string) => match.toLowerCase());
+              suggestion = suggestion.replace(/^\.\s*/, '');
+              
+              // Ensure it starts with a space if it doesn't already (for natural continuation)
+              if (suggestion && !suggestion.startsWith(' ') && !suggestion.startsWith(',') && !suggestion.startsWith('.')) {
+                suggestion = ' ' + suggestion;
+              }
             }
             
-            const finalSuggestions = suggestions.length > 0 ? suggestions : ['...'];
+            // Stop at paragraph breaks
+            const paragraphBreak = suggestion.indexOf('\n\n');
+            if (paragraphBreak !== -1) {
+              suggestion = suggestion.substring(0, paragraphBreak).trim();
+            }
+            
+            // Ensure we have a meaningful suggestion (at least one word)
+            if (!suggestion || suggestion.trim().length < 2) {
+              suggestion = '';
+            }
             
             // Cache the result
             setCompletionCache(prev => {
               const newCache = new Map(prev);
-              newCache.set(cacheKey, finalSuggestions);
+              newCache.set(cacheKey, suggestion);
               // Keep only last 50 entries to prevent memory bloat
               if (newCache.size > 50) {
                 const firstKey = newCache.keys().next().value;
@@ -481,15 +554,15 @@ export default function LiveDocEditor() {
               return newCache;
             });
             
-            return finalSuggestions;
+            return suggestion;
           } catch (error: any) {
             // Ignore abort errors (user typed more, request was cancelled)
             if (error.name === 'AbortError') {
-              return [];
+              return '';
             }
             console.error('Tab autocomplete failed:', error);
-            // Return simple fallback while debugging
-            return ['...', 'continue typing', 'keep writing'];
+            // Return empty string on error
+            return '';
           }
         },
       }),
@@ -531,6 +604,9 @@ export default function LiveDocEditor() {
   // Listen for AI menu events
   React.useEffect(() => {
     const handleShowAIMenu = (event: CustomEvent) => {
+      // Don't show AI menu in viewing mode
+      if (editingMode === 'viewing') return;
+      
       const { selectedText, from, to, x, y } = event.detail;
       if (selectedText.trim().length > 0) {
         setAIMenuSelection({ text: selectedText, from, to });
@@ -2211,24 +2287,32 @@ export default function LiveDocEditor() {
                           <div className="flex gap-1">
                             <button
                               onClick={() => {
+                                if (editingMode === 'viewing') return;
                                 editor.commands.focus();
                                 // @ts-ignore
                                 editor.commands.acceptChange(item.id);
                                 setTrackedChanges(prev => prev.filter(c => c.id !== item.id));
                               }}
-                              className="text-emerald-600 hover:bg-emerald-100 p-1 rounded"
+                              disabled={editingMode === 'viewing'}
+                              className={`text-emerald-600 hover:bg-emerald-100 p-1 rounded ${
+                                editingMode === 'viewing' ? 'opacity-50 cursor-not-allowed' : ''
+                              }`}
                               title="Accept"
                             >
                               ✓
                             </button>
                             <button
                               onClick={() => {
+                                if (editingMode === 'viewing') return;
                                 editor.commands.focus();
                                 // @ts-ignore
                                 editor.commands.rejectChange(item.id);
                                 setTrackedChanges(prev => prev.filter(c => c.id !== item.id));
                               }}
-                              className="text-rose-600 hover:bg-rose-100 p-1 rounded"
+                              disabled={editingMode === 'viewing'}
+                              className={`text-rose-600 hover:bg-rose-100 p-1 rounded ${
+                                editingMode === 'viewing' ? 'opacity-50 cursor-not-allowed' : ''
+                              }`}
                               title="Reject"
                             >
                               ✕
@@ -2237,6 +2321,7 @@ export default function LiveDocEditor() {
                         ) : (
                           <button
                             onClick={(e) => {
+                              if (editingMode === 'viewing') return;
                               e.stopPropagation();
                               const commentId = item.id;
                               const updatedComments = comments.map((c) =>
@@ -2244,7 +2329,10 @@ export default function LiveDocEditor() {
                               );
                               setComments(updatedComments);
                             }}
-                            className="text-blue-600 hover:bg-blue-100 p-1 rounded"
+                            disabled={editingMode === 'viewing'}
+                            className={`text-blue-600 hover:bg-blue-100 p-1 rounded ${
+                              editingMode === 'viewing' ? 'opacity-50 cursor-not-allowed' : ''
+                            }`}
                             title="Resolve"
                           >
                             ✓

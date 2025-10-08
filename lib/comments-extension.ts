@@ -25,6 +25,7 @@ export interface CommentReply {
 
 export interface CommentsOptions {
   comments: Comment[];
+  enabled?: boolean;
   onAddComment?: (comment: Comment) => void;
   onResolveComment?: (commentId: string) => void;
   onAddReply?: (commentId: string, reply: CommentReply) => void;
@@ -40,6 +41,7 @@ export const CommentsExtension = Extension.create<CommentsOptions>({
   addOptions() {
     return {
       comments: [],
+      enabled: true,
       onAddComment: undefined,
       onResolveComment: undefined,
       onAddReply: undefined,
@@ -47,7 +49,7 @@ export const CommentsExtension = Extension.create<CommentsOptions>({
   },
 
   addProseMirrorPlugins() {
-    const { comments } = this.options;
+    const { comments, enabled } = this.options;
 
     return [
       new Plugin({
@@ -59,6 +61,11 @@ export const CommentsExtension = Extension.create<CommentsOptions>({
           },
           
           apply(tr, decorationSet) {
+            // If disabled, return empty decoration set
+            if (!enabled) {
+              return DecorationSet.empty;
+            }
+
             // Map decorations through transaction
             decorationSet = decorationSet.map(tr.mapping, tr.doc);
 
@@ -114,6 +121,11 @@ export const CommentsExtension = Extension.create<CommentsOptions>({
           
           handleDOMEvents: {
             click(view, event) {
+              // If disabled, don't handle click events
+              if (!enabled) {
+                return false;
+              }
+
               const target = event.target as HTMLElement;
               const commentId = target.getAttribute('data-comment-id');
               

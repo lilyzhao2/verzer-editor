@@ -2,29 +2,86 @@ import { Extension } from '@tiptap/core';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
 
-// Helper function to get current paragraph for context
-function getCurrentParagraph(state: any, from: number): string {
-  try {
-    const $from = state.doc.resolve(from);
-    const paragraph = $from.parent;
-    if (paragraph && paragraph.type.name === 'paragraph') {
-      return paragraph.textContent;
-    }
-    return '';
-  } catch {
-    return '';
+interface TabAutocompleteOptions {
+  enabled?: boolean;
+  onRequestCompletion?: (context: string, styleHints: StyleAnalysis) => Promise<string>;
+}
+
+interface TabAutocompleteState {
+  suggestion: string;
+  suggestionFrom: number;
+  showSuggestion: boolean;
+  isLoading: boolean;
+  showHint: boolean;
+}
+
+interface StyleAnalysis {
+  avgSentenceLength: number;
+  complexity: 'simple' | 'moderate' | 'complex';
+  tone: 'formal' | 'casual' | 'technical' | 'creative';
+  preferredLength: 'short' | 'medium' | 'long';
+}
+
+const tabAutocompleteKey = new PluginKey<TabAutocompleteState>('tabAutocomplete');
+
+// Analyze user's writing style from context
+function analyzeWritingStyle(text: string): StyleAnalysis {
+  const sentences = text.split(/[.!?]+/).filter(s => s.trim().length > 0);
+  const words = text.split(/\s+/).filter(w => w.length > 0);
+  
+  // Calculate average sentence length
+  const avgSentenceLength = sentences.length > 0 
+    ? words.length / sentences.length 
+    : 10;
+  
+  // Determine complexity based on sentence length and vocabulary
+  let complexity: 'simple' | 'moderate' | 'complex' = 'moderate';
+  if (avgSentenceLength < 8) complexity = 'simple';
+  else if (avgSentenceLength > 15) complexity = 'complex';
+  
+  // Analyze tone based on word patterns
+  const formalWords = /\b(therefore|furthermore|consequently|nevertheless|however|moreover|thus|hence)\b/gi;
+  const casualWords = /\b(yeah|ok|cool|awesome|pretty|really|kinda|gonna|wanna)\b/gi;
+  const technicalWords = /\b(implement|configure|optimize|analyze|framework|algorithm|protocol|interface)\b/gi;
+  const creativeWords = /\b(beautiful|magnificent|whispered|danced|shimmered|embraced|mysterious)\b/gi;
+  
+  const formalCount = (text.match(formalWords) || []).length;
+  const casualCount = (text.match(casualWords) || []).length;
+  const technicalCount = (text.match(technicalWords) || []).length;
+  const creativeCount = (text.match(creativeWords) || []).length;
+  
+  let tone: 'formal' | 'casual' | 'technical' | 'creative' = 'casual';
+  const maxCount = Math.max(formalCount, casualCount, technicalCount, creativeCount);
+  if (maxCount > 0) {
+    if (formalCount === maxCount) tone = 'formal';
+    else if (technicalCount === maxCount) tone = 'technical';
+    else if (creativeCount === maxCount) tone = 'creative';
+    else tone = 'casual';
   }
+  
+  // Determine preferred suggestion length
+  let preferredLength: 'short' | 'medium' | 'long' = 'medium';
+  if (avgSentenceLength < 10) preferredLength = 'short';
+  else if (avgSentenceLength > 18) preferredLength = 'long';
+  
+  console.log('📊 Style analysis:', { avgSentenceLength, complexity, tone, preferredLength });
+  return { avgSentenceLength, complexity, tone, preferredLength };
 }
 
-export interface TabAutocompleteOptions {
-  enabled: boolean;
-  onRequestCompletion?: (context: string) => Promise<string[]>;
+// Helper function to get current paragraph context (last 800 characters)
+function getCurrentParagraph(state: any, position: number): string {
+  const { doc } = state;
+  
+  // Get text from start of document to cursor position
+  const textContent = doc.textBetween(0, position, '\n', ' ');
+  
+  // Take last 800 characters for context
+  const textBefore = textContent.slice(-800);
+  
+  console.log('📖 Current context (800 chars):', textBefore.substring(Math.max(0, textBefore.length - 100)));
+  return textBefore;
 }
 
-/**
- * Tab Autocomplete Extension for Live Doc
- * Shows AI-generated completions as dropdown, accept with Tab
- */
 export const TabAutocompleteExtension = Extension.create<TabAutocompleteOptions>({
   name: 'tabAutocomplete',
 
@@ -35,405 +92,447 @@ export const TabAutocompleteExtension = Extension.create<TabAutocompleteOptions>
     };
   },
 
+  addGlobalAttributes() {
+    return [
+      {
+        types: ['textStyle'],
+        attributes: {
+          ghostText: {
+            default: null,
+            renderHTML: () => ({}),
+          },
+        },
+      },
+    ];
+  },
+
+  addStorage() {
+    return {
+      abortController: null as AbortController | null,
+      typingTimer: null as NodeJS.Timeout | null,
+      lastRequestTime: 0,
+      lastRequestPosition: 0,
+      requireNewInput: false,
+    };
+  },
+
   addProseMirrorPlugins() {
     const { enabled, onRequestCompletion } = this.options;
+    const extension = this;
 
     if (!enabled) {
       return [];
     }
 
-    const pluginKey = new PluginKey('tabAutocomplete');
-    // Cooldown + gating
-    let lastAcceptTimestamp = 0;
-    let lastAcceptPosition = 0;
-    let requireNewInput = false;
+    const REQUEST_COOLDOWN = 1000; // 1 second cooldown between requests
+    const TYPING_DELAY = 2500; // 2.5 seconds after stopping typing
+    
+    // Store view reference at plugin level
+    let editorView: any = null;
+    
+    // Function to show hint box
+    function showHintBox() {
+      console.log('🎯 showHintBox called!');
+      
+      // Remove any existing hint box first
+      const existingHint = document.querySelector('.autocomplete-hint-box');
+      if (existingHint) {
+        console.log('🗑️ Removing existing hint box');
+        document.body.removeChild(existingHint);
+      }
+      
+      console.log('✨ Creating new hint box');
+      const hintBox = document.createElement('div');
+      hintBox.className = 'autocomplete-hint-box';
+      hintBox.innerHTML = `
+        <div class="hint-content">
+          <div class="hint-icon">✨</div>
+          <div class="hint-message">
+            <span class="hint-text">Press</span>
+            <span class="hint-key">Tab</span>
+            <span class="hint-text">to accept suggestion</span>
+          </div>
+        </div>
+      `;
+      hintBox.style.cssText = `
+        position: fixed !important;
+        top: 20px !important;
+        left: 50% !important;
+        transform: translateX(-50%) !important;
+        background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%) !important;
+        color: white !important;
+        padding: 12px 20px !important;
+        border-radius: 12px !important;
+        font-size: 13px !important;
+        font-weight: 500 !important;
+        box-shadow: 0 8px 25px rgba(79, 70, 229, 0.3) !important;
+        z-index: 9999 !important;
+        animation: slideInDown 0.4s ease-out !important;
+        pointer-events: none !important;
+        backdrop-filter: blur(10px) !important;
+        border: 1px solid rgba(255, 255, 255, 0.1) !important;
+        visibility: visible !important;
+        opacity: 1 !important;
+        display: block !important;
+      `;
+      
+      // Add to document body
+      console.log('📌 Adding hint box to document body');
+      document.body.appendChild(hintBox);
+      console.log('✅ Hint box added, should be visible now');
+      
+      // Remove after 4 seconds
+      setTimeout(() => {
+        console.log('⏰ Auto-removing hint box after 4 seconds');
+        if (document.body.contains(hintBox)) {
+          hintBox.style.animation = 'slideOutUp 0.3s ease-in forwards';
+          setTimeout(() => {
+            if (document.body.contains(hintBox)) {
+              document.body.removeChild(hintBox);
+              console.log('🗑️ Hint box removed');
+            }
+          }, 300);
+        }
+      }, 4000);
+    }
+    
+    // Function to hide hint box
+    function hideHintBox() {
+      const existingHint = document.querySelector('.autocomplete-hint-box') as HTMLElement;
+      if (existingHint) {
+        existingHint.style.animation = 'slideOutUp 0.3s ease-in forwards';
+        setTimeout(() => {
+          if (document.body.contains(existingHint)) {
+            document.body.removeChild(existingHint);
+          }
+        }, 300);
+      }
+    }
 
     return [
       new Plugin({
-        key: pluginKey,
+        key: tabAutocompleteKey,
         
         state: {
-          init() {
+          init(): TabAutocompleteState {
             return {
-              suggestions: [],
-              selectedIndex: 0,
+              suggestion: '',
               suggestionFrom: 0,
-              showSuggestions: false,
-              decorations: DecorationSet.empty,
+              showSuggestion: false,
+              isLoading: false,
+              showHint: false,
             };
           },
           
-          apply(tr, state) {
-            // Check if there's a meta update for this plugin
-            const meta = tr.getMeta(pluginKey);
-            if (meta) {
-              console.log('📝 Plugin state update:', meta);
+          apply(tr, oldState): TabAutocompleteState {
+            // Clear suggestions if document changed (user is typing)
+            if (tr.docChanged && !tr.getMeta('tabAutocomplete')) {
+              console.log('📝 Document changed, clearing ghost text');
               
-              // Calculate decorations for the new state
-              let decorations = DecorationSet.empty;
-              if (meta.showSuggestions && meta.suggestions && meta.suggestions.length > 0) {
-                const dropdown = document.createElement('div');
-                dropdown.style.cssText = `
-                  position: absolute;
-                  background: white;
-                  border: 1px solid #e5e7eb;
-                  border-radius: 8px;
-                  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
-                  padding: 8px;
-                  z-index: 1000;
-                  min-width: 200px;
-                  max-width: 400px;
-                  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-                `;
-
-                // Add instructions
-                const instructions = document.createElement('div');
-                instructions.style.cssText = `
-                  font-size: 11px;
-                  color: #6b7280;
-                  margin-bottom: 6px;
-                  padding: 4px 8px;
-                  background: #f9fafb;
-                  border-radius: 4px;
-                  text-align: center;
-                `;
-                instructions.textContent = '↑↓ to navigate • Tab to accept • Esc to dismiss';
-                dropdown.appendChild(instructions);
-
-                // Add suggestions
-                meta.suggestions.forEach((suggestion, index) => {
-                  const item = document.createElement('div');
-                  item.style.cssText = `
-                    padding: 8px 12px;
-                    margin: 2px 0;
-                    border-radius: 6px;
-                    cursor: pointer;
-                    font-size: 14px;
-                    line-height: 1.4;
-                    transition: all 0.15s ease;
-                    display: flex;
-                    align-items: center;
-                    gap: 8px;
-                    ${index === meta.selectedIndex ? 'background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;' : 'background: #f8fafc; color: #374151;'}
-                  `;
-
-                  const number = document.createElement('div');
-                  number.style.cssText = `
-                    width: 20px;
-                    height: 20px;
-                    border-radius: 50%;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    font-size: 11px;
-                    font-weight: 600;
-                    ${index === meta.selectedIndex ? 'background: rgba(255,255,255,0.3); color: white;' : 'background: #e5e7eb; color: #6b7280;'}
-                  `;
-                  number.textContent = (index + 1).toString();
-                  item.appendChild(number);
-
-                  const text = document.createElement('span');
-                  text.textContent = suggestion;
-                  item.appendChild(text);
-
-                  dropdown.appendChild(item);
-                });
-
-                decorations = DecorationSet.create(tr.doc, [
-                  Decoration.widget(meta.suggestionFrom, dropdown, {
-                    side: 1,
-                    ignoreSelection: true,
-                  })
-                ]);
+              // Hide hint box when user starts typing
+              hideHintBox();
+              
+              // Clear any existing typing timer
+              if (extension.storage.typingTimer) {
+                clearTimeout(extension.storage.typingTimer);
               }
               
+              // Set new typing timer for auto-trigger
+              extension.storage.typingTimer = setTimeout(() => {
+                console.log('⏰ Typing stopped, requesting completion...');
+                if (editorView) {
+                  requestCompletion(editorView, onRequestCompletion);
+                }
+              }, TYPING_DELAY);
+              
               return {
-                ...state,
-                ...meta,
-                decorations,
+                ...oldState,
+                suggestion: '',
+                showSuggestion: false,
+                isLoading: false,
+                showHint: false,
+              };
+            }
+
+            // Clear suggestions if selection changed (cursor moved)
+            if (tr.selectionSet && !tr.getMeta('tabAutocomplete')) {
+              console.log('👆 Selection changed, clearing ghost text');
+              return {
+                ...oldState,
+                suggestion: '',
+                showSuggestion: false,
+                isLoading: false,
+                showHint: false,
               };
             }
             
-            // Get current state
-            let { suggestions, selectedIndex, suggestionFrom, showSuggestions } = state;
-            let decorations = DecorationSet.empty;
-            
-            // Check if we should show suggestions
-            if (showSuggestions && suggestions.length > 0 && suggestionFrom < tr.doc.content.size) {
-              const dropdown = document.createElement('div');
-              dropdown.style.cssText = `
-                position: absolute;
-                background: white;
-                border: 1px solid #e5e7eb;
-                border-radius: 8px;
-                box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
-                padding: 8px;
-                z-index: 1000;
-                min-width: 200px;
-                max-width: 400px;
-                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-              `;
-
-              // Add instructions
-              const instructions = document.createElement('div');
-              instructions.style.cssText = `
-                font-size: 11px;
-                color: #6b7280;
-                margin-bottom: 6px;
-                padding: 4px 8px;
-                background: #f9fafb;
-                border-radius: 4px;
-                text-align: center;
-              `;
-              instructions.textContent = '↑↓ to navigate • Tab to accept • Esc to dismiss';
-              dropdown.appendChild(instructions);
-
-              // Add suggestions
-              suggestions.forEach((suggestion, index) => {
-                const item = document.createElement('div');
-                item.style.cssText = `
-                  padding: 8px 12px;
-                  margin: 2px 0;
-                  border-radius: 6px;
-                  cursor: pointer;
-                  font-size: 14px;
-                  line-height: 1.4;
-                  transition: all 0.15s ease;
-                  display: flex;
-                  align-items: center;
-                  gap: 8px;
-                  ${index === selectedIndex ? 'background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;' : 'background: #f8fafc; color: #374151;'};
-                  max-width: 560px;
-                  white-space: nowrap;
-                  overflow: hidden;
-                  text-overflow: ellipsis;
-                `;
-
-                // Add number circle
-                const number = document.createElement('div');
-                number.style.cssText = `
-                  width: 20px;
-                  height: 20px;
-                  border-radius: 50%;
-                  display: flex;
-                  align-items: center;
-                  justify-content: center;
-                  font-size: 11px;
-                  font-weight: 600;
-                  ${index === selectedIndex ? 'background: rgba(255,255,255,0.3); color: white;' : 'background: #e5e7eb; color: #6b7280;'}
-                `;
-                number.textContent = (index + 1).toString();
-                item.appendChild(number);
-
-                // Add suggestion text
-                const text = document.createElement('span');
-                text.textContent = suggestion;
-                item.appendChild(text);
-
-                dropdown.appendChild(item);
-              });
-
-              decorations = DecorationSet.create(tr.doc, [
-                Decoration.widget(suggestionFrom, dropdown, {
-                  side: 1,
-                  ignoreSelection: true,
-                })
-              ]);
+            // Return new state if set via meta
+            const newState = tr.getMeta('tabAutocomplete');
+            if (newState) {
+              console.log('🔄 Tab autocomplete state updated:', newState);
+              return { ...oldState, ...newState };
             }
-
-            return {
-              suggestions,
-              selectedIndex,
-              suggestionFrom,
-              showSuggestions,
-              decorations,
-            };
+            
+            return oldState;
           },
         },
 
         props: {
           decorations(state) {
-            return this.getState(state).decorations || DecorationSet.empty;
+            const pluginState = tabAutocompleteKey.getState(state);
+            if (!pluginState?.showSuggestion || !pluginState.suggestion) {
+              return null;
+            }
+
+            const decorations: Decoration[] = [];
+            
+            // Create ghost text span that wraps properly
+            const ghostTextSpan = document.createElement('span');
+            ghostTextSpan.className = 'ghost-text-container';
+            ghostTextSpan.setAttribute('data-ghost-text', pluginState.suggestion);
+            ghostTextSpan.style.cssText = `
+              display: inline;
+              word-wrap: break-word;
+              max-width: 100%;
+            `;
+            
+            const decoration = Decoration.widget(
+              pluginState.suggestionFrom,
+              ghostTextSpan,
+              {
+                side: 1,
+                key: 'tab-autocomplete-ghost-text'
+              }
+            );
+            
+            decorations.push(decoration);
+            return DecorationSet.create(state.doc, decorations);
           },
 
           handleKeyDown(view, event) {
+            const state = tabAutocompleteKey.getState(view.state);
+            
             console.log('🔍 Tab autocomplete keydown:', event.key);
+            console.log('📊 Plugin state:', state);
+            console.log('🔧 Extension enabled:', enabled);
+            console.log('🎯 onRequestCompletion available:', !!onRequestCompletion);
             
-            const pluginState = pluginKey.getState(view.state);
-            console.log('📊 Plugin state:', pluginState);
-            let { suggestions, selectedIndex, suggestionFrom, showSuggestions } = pluginState;
+            if (!state) return false;
             
-            // Tab key to accept selected suggestion OR request new ones
+            // Handle Tab key
             if (event.key === 'Tab') {
-            if (showSuggestions && suggestions.length > 0) {
-              // Accept selected suggestion
-              event.preventDefault();
-              event.stopPropagation();
-              
-              const selectedSuggestion = suggestions[selectedIndex];
-              console.log('✅ Accepting suggestion:', selectedSuggestion);
-              const { state } = view;
-              
-              // Create a single transaction that both inserts text and clears suggestions
-              const tr = state.tr
-                .insertText(selectedSuggestion, suggestionFrom)
-                .setMeta('addToHistory', true)
-                .setMeta(pluginKey, {
-                  suggestions: [],
-                  selectedIndex: 0,
-                  suggestionFrom: 0,
-                  showSuggestions: false,
+              if (state.showSuggestion && state.suggestion) {
+                // Accept current suggestion
+                event.preventDefault();
+                console.log('✅ Accepting ghost text:', state.suggestion);
+                
+                // Hide hint box
+                hideHintBox();
+                
+                const tr = view.state.tr;
+                tr.insertText(state.suggestion, state.suggestionFrom);
+                tr.setMeta('tabAutocomplete', {
+                  suggestion: '',
+                  showSuggestion: false,
+                  isLoading: false,
+                  showHint: false,
                 });
-              
-              view.dispatch(tr);
-
-                // Set cooldown + gating
-                lastAcceptTimestamp = Date.now();
-                lastAcceptPosition = suggestionFrom;
-                requireNewInput = true;
+                tr.setMeta('addToHistory', true);
+                
+                view.dispatch(tr);
+                extension.storage.requireNewInput = true;
                 return true;
               } else {
-                // Request new suggestions (don't prevent default Tab behavior)
-                console.log('🔄 Requesting new suggestions');
-                const { state } = view;
-                const { from } = state.selection;
-                const textBefore = state.doc.textBetween(0, from, ' ');
-                
-                // Cooldown: if last accept at same position and < 400ms, ignore
-                if (from === lastAcceptPosition && Date.now() - lastAcceptTimestamp < 400) {
-                  return false;
-                }
-                // Require new input: must type after last accept
-                if (requireNewInput) {
-                  return false;
-                }
-
-                if (textBefore.trim().length > 0 && onRequestCompletion) {
-                  // Get only current paragraph for faster autocomplete
-                  const currentParagraph = getCurrentParagraph(state, from);
-                  const context = currentParagraph || textBefore.slice(-200); // Last 200 chars max
-                  
-                  onRequestCompletion(context).then(completions => {
-                    if (completions && completions.length > 0) {
-                      const tr = view.state.tr;
-                      tr.setMeta(pluginKey, {
-                        suggestions: completions,
-                        selectedIndex: 0,
-                        suggestionFrom: from,
-                        showSuggestions: true,
-                      });
-                      view.dispatch(tr);
-                      console.log('💡 Got suggestions:', completions);
-                    }
-                  }).catch(error => {
-                    console.error('Tab autocomplete error:', error);
-                  });
-                }
-                // Don't prevent default - let Tab work normally
-                return false;
+                // Manual trigger - request new completion immediately
+                console.log('🔄 Manual trigger - requesting completion...');
+                event.preventDefault();
+                requestCompletion(view, onRequestCompletion);
+                return true;
               }
             }
 
-            // Arrow keys to navigate suggestions
-            if (event.key === 'ArrowDown' && showSuggestions) {
-              event.preventDefault();
-              const newIndex = Math.min(selectedIndex + 1, suggestions.length - 1);
-              const tr = view.state.tr;
-              tr.setMeta(pluginKey, {
-                ...pluginState,
-                selectedIndex: newIndex,
-              });
-              view.dispatch(tr);
-              return true;
-            }
-
-            if (event.key === 'ArrowUp' && showSuggestions) {
-              event.preventDefault();
-              const newIndex = Math.max(selectedIndex - 1, 0);
-              const tr = view.state.tr;
-              tr.setMeta(pluginKey, {
-                ...pluginState,
-                selectedIndex: newIndex,
-              });
-              view.dispatch(tr);
-              return true;
-            }
-
-            // Escape to dismiss suggestions
-            if (event.key === 'Escape' && showSuggestions) {
-              console.log('❌ Dismissing suggestions');
-              event.preventDefault();
-              const tr = view.state.tr;
-              tr.setMeta(pluginKey, {
-                suggestions: [],
-                selectedIndex: 0,
-                suggestionFrom: 0,
-                showSuggestions: false,
-              });
-              view.dispatch(tr);
-              return true;
+            // Handle Escape key
+            if (event.key === 'Escape') {
+              if (state.showSuggestion || state.isLoading) {
+                console.log('❌ Dismissing ghost text');
+                
+                // Hide hint box
+                hideHintBox();
+                
+                const tr = view.state.tr;
+                tr.setMeta('tabAutocomplete', {
+                  suggestion: '',
+                  showSuggestion: false,
+                  isLoading: false,
+                  showHint: false,
+                });
+                view.dispatch(tr);
+                return true;
+              }
             }
 
             return false;
-          },
-
-          handleDOMEvents: {
-            keydown(view, event) {
-              // Handle tab at DOM level (same logic as handleKeyDown)
-              if (event.key === 'Tab') {
-                const pluginState = pluginKey.getState(view.state);
-                const { suggestions, selectedIndex, suggestionFrom, showSuggestions } = pluginState;
-                
-                if (showSuggestions && suggestions.length > 0) {
-                  // Accept selected suggestion
-                  event.preventDefault();
-                  event.stopPropagation();
-                  
-                  const selectedSuggestion = suggestions[selectedIndex];
-                  const { state } = view;
-                  
-                  // Create a single transaction that both inserts text and clears suggestions
-                  const tr = state.tr
-                    .insertText(selectedSuggestion, suggestionFrom)
-                    .setMeta(pluginKey, {
-                      suggestions: [],
-                      selectedIndex: 0,
-                      suggestionFrom: 0,
-                      showSuggestions: false,
-                    });
-                  
-                  view.dispatch(tr);
-                  return true;
-                } else {
-                  // Don't prevent default - let Tab work normally
-                  return false;
-                }
-              }
-              return false;
-            },
           },
 
           handleTextInput(view, from, to, text) {
-            // Clear any existing suggestions when typing
-            const pluginState = pluginKey.getState(view.state);
-            if (pluginState.showSuggestions) {
+            // Clear ghost text when user types
+            const pluginState = tabAutocompleteKey.getState(view.state);
+            if (pluginState && (pluginState.showSuggestion || pluginState.isLoading)) {
               const tr = view.state.tr;
-              tr.setMeta(pluginKey, {
-                suggestions: [],
-                selectedIndex: 0,
-                suggestionFrom: 0,
-                showSuggestions: false,
+              tr.setMeta('tabAutocomplete', {
+                suggestion: '',
+                showSuggestion: false,
+                isLoading: false,
+                showHint: false,
               });
               view.dispatch(tr);
             }
-            // User typed → allow new suggestions
-            requireNewInput = false;
             
-            // Don't auto-trigger - user must press Tab to request completion
+            // User typed → allow new suggestions
+            extension.storage.requireNewInput = false;
             return false;
           },
         },
+
+        view(view) {
+          // Store view reference for timer callbacks
+          editorView = view;
+          return {};
+        },
       }),
     ];
+
+    async function requestCompletion(view: any, onRequestCompletion?: (context: string, styleHints: StyleAnalysis) => Promise<string>) {
+      console.log('🚀 requestCompletion called!');
+      console.log('📋 View available:', !!view);
+      console.log('🎯 Callback available:', !!onRequestCompletion);
+      
+      if (!onRequestCompletion) {
+        console.log('❌ No completion callback provided');
+        return;
+      }
+
+      const now = Date.now();
+      const currentPosition = view.state.selection.from;
+      
+      console.log('📍 Current position:', currentPosition);
+      console.log('⏰ Time since last request:', now - extension.storage.lastRequestTime);
+      console.log('🚫 Require new input:', extension.storage.requireNewInput);
+      
+      // Check if we need new input after accepting a suggestion
+      if (extension.storage.requireNewInput) {
+        console.log('🚫 Requiring new input before next suggestion');
+        return;
+      }
+
+      // Implement cooldown - same position within 1 second
+      if (now - extension.storage.lastRequestTime < REQUEST_COOLDOWN && currentPosition === extension.storage.lastRequestPosition) {
+        console.log('⏳ Request blocked by cooldown');
+        return;
+      }
+      
+      extension.storage.lastRequestTime = now;
+      extension.storage.lastRequestPosition = currentPosition;
+
+      // Cancel any in-flight request
+      if (extension.storage.abortController) {
+        extension.storage.abortController.abort();
+        console.log('🛑 Cancelled previous request');
+      }
+
+      // Create new abort controller
+      const abortController = new AbortController();
+      extension.storage.abortController = abortController;
+
+      // Set loading state
+      console.log('⏳ Setting loading state...');
+      const loadingTr = view.state.tr;
+      loadingTr.setMeta('tabAutocomplete', {
+        suggestion: '',
+        showSuggestion: false,
+        isLoading: true,
+        showHint: false,
+      });
+      view.dispatch(loadingTr);
+
+      try {
+        console.log('🚀 Making completion request...');
+        const context = getCurrentParagraph(view.state, currentPosition);
+        const styleAnalysis = analyzeWritingStyle(context);
+        
+        console.log('📝 Context length:', context.length);
+        console.log('🎨 Style analysis:', styleAnalysis);
+        
+        // Add timeout
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          setTimeout(() => reject(new Error('Request timeout')), 5000);
+        });
+
+        const suggestion = await Promise.race([
+          onRequestCompletion(context, styleAnalysis),
+          timeoutPromise
+        ]);
+        
+        // Check if request was aborted
+        if (abortController.signal.aborted) {
+          console.log('🛑 Request was aborted');
+          return;
+        }
+
+        console.log('✅ Received suggestion:', suggestion);
+        
+        // Validate suggestion
+        const trimmedSuggestion = suggestion?.trim();
+        if (trimmedSuggestion && trimmedSuggestion.length > 0) {
+          console.log('💫 Showing ghost text:', trimmedSuggestion);
+          console.log('📞 About to call showHintBox...');
+          const tr = view.state.tr;
+          tr.setMeta('tabAutocomplete', {
+            suggestion: trimmedSuggestion,
+            suggestionFrom: currentPosition,
+            showSuggestion: true,
+            isLoading: false,
+            showHint: true, // Show hint for auto-triggered suggestions
+          });
+          view.dispatch(tr);
+          
+          // Show the hint box
+          console.log('🎯 Calling showHintBox now!');
+          showHintBox();
+          console.log('✅ showHintBox call completed');
+        } else {
+          console.log('📭 No valid suggestion received');
+          // Clear loading state
+          const tr = view.state.tr;
+          tr.setMeta('tabAutocomplete', {
+            suggestion: '',
+            showSuggestion: false,
+            isLoading: false,
+            showHint: false,
+          });
+          view.dispatch(tr);
+        }
+      } catch (error) {
+        if (error instanceof Error && error.name === 'AbortError') {
+          console.log('🛑 Request aborted');
+          return;
+        }
+        
+        console.error('❌ Error requesting completion:', error);
+        
+        // Clear loading state on error
+        const tr = view.state.tr;
+        tr.setMeta('tabAutocomplete', {
+          suggestion: '',
+          showSuggestion: false,
+          isLoading: false,
+          showHint: false,
+        });
+        view.dispatch(tr);
+      } finally {
+        // Clear abort controller
+        extension.storage.abortController = null;
+      }
+    }
   },
 });
