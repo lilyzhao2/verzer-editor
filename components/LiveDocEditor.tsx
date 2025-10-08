@@ -210,6 +210,23 @@ const usePerformanceMonitor = () => {
   };
 };
 
+// Helper component for keyboard shortcuts display
+const ShortcutRow = ({ keys, action }: { keys: string[]; action: string }) => (
+  <div className="flex items-center justify-between py-1.5 px-2 rounded hover:bg-gray-50">
+    <span className="text-sm text-gray-700">{action}</span>
+    <div className="flex items-center gap-1">
+      {keys.map((key, i) => (
+        <React.Fragment key={i}>
+          {i > 0 && <span className="text-gray-400 text-xs">+</span>}
+          <kbd className="px-2 py-1 text-xs font-semibold text-gray-800 bg-gray-100 border border-gray-300 rounded shadow-sm">
+            {key}
+          </kbd>
+        </React.Fragment>
+      ))}
+    </div>
+  </div>
+);
+
 export default function LiveDocEditor() {
   // Get EditorContext for project configs
   const { state: editorState, updateProjectConfig } = useEditor();
@@ -824,6 +841,228 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
   const [linkUrl, setLinkUrl] = useState('');
   const [versionStartContent, setVersionStartContent] = useState<string>('');
   const [suggestingModeContent, setSuggestingModeContent] = useState<string>(''); // Tracks changes during suggesting
+  
+  // Search & Replace
+  const [showSearchReplace, setShowSearchReplace] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [replaceQuery, setReplaceQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<{from: number; to: number}[]>([]);
+  const [currentSearchIndex, setCurrentSearchIndex] = useState(0);
+  const [caseSensitive, setCaseSensitive] = useState(false);
+  
+  // Batch operations & filtering for track changes
+  const [selectedChangeIds, setSelectedChangeIds] = useState<Set<string>>(new Set());
+  const [changeFilter, setChangeFilter] = useState<'all' | 'insertion' | 'deletion' | 'comment'>('all');
+  const [userFilter, setUserFilter] = useState<string>('all');
+  const [showFilters, setShowFilters] = useState(false);
+  
+  // UI: Ruler and Page Numbers
+  const [showRuler, setShowRuler] = useState(true);
+  const [showPageNumbers, setShowPageNumbers] = useState(true);
+  
+  // Keyboard Shortcuts Panel
+  const [showShortcutsPanel, setShowShortcutsPanel] = useState(false);
+  
+  // Enhanced Auto-recovery
+  const [showRecoveryModal, setShowRecoveryModal] = useState(false);
+  const [recoveryBackups, setRecoveryBackups] = useState<Array<{id: string; timestamp: Date; content: string; changes: number}>>([]);
+
+  // Search & Replace Functions
+  const performSearch = useCallback(() => {
+    if (!editor || !searchQuery) {
+      setSearchResults([]);
+      return;
+    }
+
+    const doc = editor.state.doc;
+    const text = doc.textBetween(0, doc.content.size, '\n', '\n');
+    const results: {from: number; to: number}[] = [];
+    
+    const searchText = caseSensitive ? searchQuery : searchQuery.toLowerCase();
+    const docText = caseSensitive ? text : text.toLowerCase();
+    
+    let pos = 0;
+    while (pos < docText.length) {
+      const index = docText.indexOf(searchText, pos);
+      if (index === -1) break;
+      
+      results.push({
+        from: index,
+        to: index + searchQuery.length
+      });
+      
+      pos = index + 1;
+    }
+    
+    setSearchResults(results);
+    setCurrentSearchIndex(0);
+    
+    // Highlight first result
+    if (results.length > 0) {
+      editor.commands.setTextSelection(results[0]);
+      editor.commands.scrollIntoView();
+    }
+  }, [editor, searchQuery, caseSensitive]);
+
+  const nextSearchResult = useCallback(() => {
+    if (searchResults.length === 0 || !editor) return;
+    
+    const newIndex = (currentSearchIndex + 1) % searchResults.length;
+    setCurrentSearchIndex(newIndex);
+    
+    const result = searchResults[newIndex];
+    editor.commands.setTextSelection(result);
+    editor.commands.scrollIntoView();
+  }, [editor, searchResults, currentSearchIndex]);
+
+  const previousSearchResult = useCallback(() => {
+    if (searchResults.length === 0 || !editor) return;
+    
+    const newIndex = currentSearchIndex === 0 ? searchResults.length - 1 : currentSearchIndex - 1;
+    setCurrentSearchIndex(newIndex);
+    
+    const result = searchResults[newIndex];
+    editor.commands.setTextSelection(result);
+    editor.commands.scrollIntoView();
+  }, [editor, searchResults, currentSearchIndex]);
+
+  const replaceOne = useCallback(() => {
+    if (searchResults.length === 0 || !editor) return;
+    
+    const result = searchResults[currentSearchIndex];
+    editor.chain()
+      .focus()
+      .setTextSelection(result)
+      .insertContent(replaceQuery)
+      .run();
+    
+    // Refresh search after replace
+    setTimeout(() => performSearch(), 10);
+  }, [editor, searchResults, currentSearchIndex, replaceQuery, performSearch]);
+
+  const replaceAll = useCallback(() => {
+    if (searchResults.length === 0 || !editor) return;
+    
+    // Replace from end to start to maintain positions
+    const sortedResults = [...searchResults].sort((a, b) => b.from - a.from);
+    
+    editor.chain().focus();
+    sortedResults.forEach(result => {
+      editor.commands.setTextSelection(result);
+      editor.commands.insertContent(replaceQuery);
+    });
+    editor.chain().run();
+    
+    showToast(`Replaced ${searchResults.length} occurrence(s)`, 'success');
+    
+    // Refresh search
+    setTimeout(() => performSearch(), 10);
+  }, [editor, searchResults, replaceQuery, performSearch, showToast]);
+
+  // Keyboard shortcuts for Search & Replace and Help
+  React.useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      // Ctrl+H or Cmd+H for Search & Replace
+      if ((event.ctrlKey || event.metaKey) && event.key === 'h') {
+        event.preventDefault();
+        setShowSearchReplace(true);
+      }
+      // Cmd+? (Cmd+Shift+/) for Help/Shortcuts
+      if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key === '?') {
+        event.preventDefault();
+        setShowShortcutsPanel(true);
+      }
+      // Escape to close modals
+      if (event.key === 'Escape') {
+        if (showSearchReplace) {
+          setShowSearchReplace(false);
+          setSearchQuery('');
+          setSearchResults([]);
+        }
+        if (showShortcutsPanel) {
+          setShowShortcutsPanel(false);
+        }
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [showSearchReplace, showShortcutsPanel]);
+
+  // Perform search when query changes
+  React.useEffect(() => {
+    if (searchQuery && showSearchReplace) {
+      performSearch();
+    }
+  }, [searchQuery, caseSensitive, performSearch, showSearchReplace]);
+
+  // Batch operations for track changes
+  const toggleChangeSelection = useCallback((changeId: string) => {
+    setSelectedChangeIds(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(changeId)) {
+        newSet.delete(changeId);
+      } else {
+        newSet.add(changeId);
+      }
+      return newSet;
+    });
+  }, []);
+
+  const selectAllVisibleChanges = useCallback(() => {
+    const visibleIds = new Set<string>();
+    
+    trackedChanges.forEach(change => {
+      const matchesFilter = 
+        (changeFilter === 'all') ||
+        (changeFilter === 'insertion' && change.type === 'insertion') ||
+        (changeFilter === 'deletion' && change.type === 'deletion');
+      
+      const matchesUser = userFilter === 'all' || change.userId === userFilter;
+      
+      if (matchesFilter && matchesUser) {
+        visibleIds.add(change.id);
+      }
+    });
+    
+    setSelectedChangeIds(visibleIds);
+  }, [trackedChanges, changeFilter, userFilter]);
+
+  const clearSelection = useCallback(() => {
+    setSelectedChangeIds(new Set());
+  }, []);
+
+  const batchAcceptChanges = useCallback(() => {
+    if (selectedChangeIds.size === 0) return;
+    
+    const idsArray = Array.from(selectedChangeIds);
+    idsArray.forEach(id => {
+      handleAcceptChange(id);
+    });
+    
+    clearSelection();
+    showToast(`Accepted ${idsArray.length} change(s)`, 'success');
+  }, [selectedChangeIds, clearSelection, showToast]);
+
+  const batchRejectChanges = useCallback(() => {
+    if (selectedChangeIds.size === 0) return;
+    
+    const idsArray = Array.from(selectedChangeIds);
+    idsArray.forEach(id => {
+      handleRejectChange(id);
+    });
+    
+    clearSelection();
+    showToast(`Rejected ${idsArray.length} change(s)`, 'success');
+  }, [selectedChangeIds, clearSelection, showToast]);
+
+  // Get unique users from changes and comments
+  const uniqueUsers = useMemo(() => {
+    const users = new Set<string>();
+    trackedChanges.forEach(change => users.add(change.userName || 'Unknown'));
+    comments.forEach(comment => users.add(comment.userName || 'Unknown'));
+    return Array.from(users);
+  }, [trackedChanges, comments]);
 
   // Consistent timestamp formatting for comments and edits
   const formatTimestamp = useCallback((value: Date | string | number) => {
@@ -885,9 +1124,11 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
       to: number;
     }[] = [];
 
-    // Map comments (only unresolved ones)
+    // Map comments (only unresolved ones) with filters
     comments
       .filter(c => !c.resolved) // Only show unresolved comments in floating pane
+      .filter(c => changeFilter === 'all' || changeFilter === 'comment') // Apply type filter
+      .filter(c => userFilter === 'all' || c.userName === userFilter) // Apply user filter
       .forEach((c) => {
         try {
           const coords = editor.view.coordsAtPos(Math.max(1, Math.min(c.from, editor.state.doc.content.size)));
@@ -907,8 +1148,11 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
         }
       });
 
-    // Map tracked changes
-    trackedChanges.forEach((ch) => {
+    // Map tracked changes with filters
+    trackedChanges
+      .filter(ch => changeFilter === 'all' || ch.type === changeFilter) // Apply type filter
+      .filter(ch => userFilter === 'all' || ch.userName === userFilter) // Apply user filter
+      .forEach((ch) => {
       try {
         const coords = editor.view.coordsAtPos(Math.max(1, Math.min(ch.from, editor.state.doc.content.size)));
         const topPx = coords.top - parentRect.top;
@@ -947,27 +1191,33 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
     });
 
     setFloatingItems(adjusted);
-  }, [editor, comments, trackedChanges]);
+  }, [editor, comments, trackedChanges, changeFilter, userFilter]);
 
-  // Recompute on lifecycle and events - with debouncing to prevent HMR issues
-  useEffect(() => {
-    const timeoutId = setTimeout(() => {
+  // Enhanced debouncing for floating items recalculation
+  const debouncedRecomputeRef = useRef<NodeJS.Timeout | undefined>(undefined);
+  
+  const debouncedRecompute = useCallback(() => {
+    if (debouncedRecomputeRef.current) {
+      clearTimeout(debouncedRecomputeRef.current);
+    }
+    debouncedRecomputeRef.current = setTimeout(() => {
       recomputeFloatingItems();
-    }, 100);
-    return () => clearTimeout(timeoutId);
-  }, [recomputeFloatingItems, zoomLevel]);
+    }, 100); // Increased to 100ms for better performance
+  }, [recomputeFloatingItems]);
+
+  // Recompute on lifecycle and events - with enhanced debouncing
+  useEffect(() => {
+    debouncedRecompute();
+    return () => {
+      if (debouncedRecomputeRef.current) {
+        clearTimeout(debouncedRecomputeRef.current);
+      }
+    };
+  }, [debouncedRecompute, zoomLevel]);
 
   useEffect(() => {
     if (!editor) return;
-    
-    let timeoutId: NodeJS.Timeout;
-    const debouncedRecompute = () => {
-      clearTimeout(timeoutId);
-      timeoutId = setTimeout(() => {
-        recomputeFloatingItems();
-      }, 50);
-    };
-    
+
     const handleUpdate = debouncedRecompute;
     const handleResize = debouncedRecompute;
     const handleScroll = debouncedRecompute;
@@ -977,12 +1227,14 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
     scrollAreaRef.current?.addEventListener('scroll', handleScroll, { passive: true });
     
     return () => {
-      clearTimeout(timeoutId);
+      if (debouncedRecomputeRef.current) {
+        clearTimeout(debouncedRecomputeRef.current);
+      }
       editor.off('update', handleUpdate);
       window.removeEventListener('resize', handleResize);
       scrollAreaRef.current?.removeEventListener('scroll', handleScroll as any);
     };
-  }, [editor, recomputeFloatingItems]);
+  }, [editor, debouncedRecompute]);
 
   // Custom confirm modal state (replaces window.confirm)
   const [confirmModal, setConfirmModal] = useState<{ open: boolean; action: 'acceptAll' | 'rejectAll' | null }>(
@@ -1581,8 +1833,29 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
             currentVersionId,
             lastSaved: new Date().toISOString(),
           };
+          // Enhanced recovery: Keep multiple backup points (up to 5)
           localStorage.setItem('verzer-document-backup', JSON.stringify(documentData));
-          console.log('📦 Document auto-saved to localStorage');
+          
+          // Save to rotating backups
+          try {
+            const backupsKey = 'verzer-document-backups';
+            const existingBackups = JSON.parse(localStorage.getItem(backupsKey) || '[]');
+            const newBackup = {
+              id: `backup-${Date.now()}`,
+              timestamp: new Date().toISOString(),
+              content,
+              versions: versions.length,
+              comments: comments.length,
+              changes: trackedChanges.length
+            };
+            
+            // Keep only last 5 backups
+            const updatedBackups = [newBackup, ...existingBackups].slice(0, 5);
+            localStorage.setItem(backupsKey, JSON.stringify(updatedBackups));
+            console.log('📦 Document auto-saved to localStorage (+ rotating backups)');
+          } catch (e) {
+            console.warn('Failed to save rotating backups:', e);
+          }
         }
       } catch (error) {
         console.error('Failed to save to localStorage:', error);
@@ -1630,9 +1903,48 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
     };
   }, [editor, documentName, versions, comments, trackedChanges, currentVersionId]);
 
+  // Check for crash/unclean shutdown on mount
+  useEffect(() => {
+    const wasCleanShutdown = sessionStorage.getItem('verzer-clean-shutdown');
+    
+    if (!wasCleanShutdown && typeof window !== 'undefined') {
+      // Unclean shutdown detected - check for backups
+      try {
+        const backupsKey = 'verzer-document-backups';
+        const existingBackups = JSON.parse(localStorage.getItem(backupsKey) || '[]');
+        
+        if (existingBackups.length > 0) {
+          const formattedBackups = existingBackups.map((b: any) => ({
+            id: b.id,
+            timestamp: new Date(b.timestamp),
+            content: b.content,
+            changes: b.changes || 0
+          }));
+          setRecoveryBackups(formattedBackups);
+          setShowRecoveryModal(true);
+          console.log('⚠️ Crash detected, showing recovery options');
+        }
+      } catch (e) {
+        console.error('Failed to check for crash recovery:', e);
+      }
+    }
+    
+    // Mark session as active
+    sessionStorage.setItem('verzer-clean-shutdown', 'false');
+    
+    // Set clean shutdown flag on unload
+    const handleBeforeUnload = () => {
+      sessionStorage.setItem('verzer-clean-shutdown', 'true');
+    };
+    
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, []);
+
   // Load from localStorage on mount (SILENTLY - no popup)
   useEffect(() => {
     if (!editor) return; // Wait for editor to be ready
+    if (showRecoveryModal) return; // Don't auto-restore if showing recovery modal
     
     try {
       const savedData = localStorage.getItem('verzer-document-backup');
@@ -2065,6 +2377,28 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
         </div>
 
         <div className="w-px h-6 bg-gray-300 mx-1" />
+        
+        {/* View Options: Ruler and Page Numbers */}
+        <button
+          onClick={() => setShowRuler(!showRuler)}
+          className={`px-2 py-1 text-xs font-medium rounded transition-colors ${
+            showRuler ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+          }`}
+          title={showRuler ? 'Hide ruler' : 'Show ruler'}
+        >
+          📏
+        </button>
+        <button
+          onClick={() => setShowPageNumbers(!showPageNumbers)}
+          className={`px-2 py-1 text-xs font-medium rounded transition-colors ${
+            showPageNumbers ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+          }`}
+          title={showPageNumbers ? 'Hide page numbers' : 'Show page numbers'}
+        >
+          #
+        </button>
+
+        <div className="w-px h-6 bg-gray-300 mx-1" />
 
         {/* Style Dropdown */}
         <select
@@ -2408,7 +2742,7 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
               title="Accept all changes"
             >
               ✓ Accept All
-        </button>
+            </button>
             <button
               onClick={() => setConfirmModal({ open: true, action: 'rejectAll' })}
               disabled={trackedChanges.length === 0}
@@ -2417,6 +2751,59 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
             >
               ✕ Reject All
             </button>
+            
+            {/* Batch operations */}
+            {selectedChangeIds.size > 0 && (
+              <>
+                <div className="h-6 w-px bg-gray-300"></div>
+                <span className="text-xs text-gray-600">{selectedChangeIds.size} selected</span>
+                <button
+                  onClick={batchAcceptChanges}
+                  className="px-2 py-1 text-xs font-medium text-white bg-blue-600 rounded hover:bg-blue-700 transition-colors"
+                  title="Accept selected changes"
+                >
+                  ✓ Accept Selected
+                </button>
+                <button
+                  onClick={batchRejectChanges}
+                  className="px-2 py-1 text-xs font-medium text-white bg-purple-600 rounded hover:bg-purple-700 transition-colors"
+                  title="Reject selected changes"
+                >
+                  ✕ Reject Selected
+                </button>
+                <button
+                  onClick={clearSelection}
+                  className="px-2 py-1 text-xs font-medium text-gray-700 bg-gray-100 rounded hover:bg-gray-200 transition-colors"
+                  title="Clear selection"
+                >
+                  Clear
+                </button>
+              </>
+            )}
+            
+            {/* Filter toggle */}
+            <div className="h-6 w-px bg-gray-300"></div>
+            <button
+              onClick={() => setShowFilters(!showFilters)}
+              className={`px-2 py-1 text-xs font-medium rounded transition-colors ${
+                showFilters ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+              title="Filter changes"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+              </svg>
+            </button>
+            
+            {selectedChangeIds.size === 0 && (
+              <button
+                onClick={selectAllVisibleChanges}
+                className="px-2 py-1 text-xs font-medium text-gray-700 bg-gray-100 rounded hover:bg-gray-200 transition-colors"
+                title="Select all visible changes"
+              >
+                Select All
+              </button>
+            )}
           </div>
         )}
         {editingMode === 'viewing' && (
@@ -2546,6 +2933,63 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
         </div>
 
       </div>
+      
+      {/* Filter Panel */}
+      {showFilters && editingMode === 'suggesting' && (
+        <div className="bg-gray-50 border-b border-gray-200 px-4 py-3">
+          <div className="flex items-center gap-4">
+            <span className="text-xs font-medium text-gray-700">Filter by:</span>
+            
+            {/* Type Filter */}
+            <div className="flex items-center gap-2">
+              <label className="text-xs text-gray-600">Type:</label>
+              <select
+                value={changeFilter}
+                onChange={(e) => setChangeFilter(e.target.value as any)}
+                className="text-xs border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="all">All</option>
+                <option value="insertion">Additions</option>
+                <option value="deletion">Deletions</option>
+                <option value="comment">Comments</option>
+              </select>
+            </div>
+            
+            {/* User Filter */}
+            <div className="flex items-center gap-2">
+              <label className="text-xs text-gray-600">User:</label>
+              <select
+                value={userFilter}
+                onChange={(e) => setUserFilter(e.target.value)}
+                className="text-xs border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="all">All Users</option>
+                {uniqueUsers.map(user => (
+                  <option key={user} value={user}>{user}</option>
+                ))}
+              </select>
+            </div>
+            
+            {/* Results Count */}
+            <div className="text-xs text-gray-500">
+              Showing {floatingItems.length} item(s)
+            </div>
+            
+            {/* Reset Filters */}
+            {(changeFilter !== 'all' || userFilter !== 'all') && (
+              <button
+                onClick={() => {
+                  setChangeFilter('all');
+                  setUserFilter('all');
+                }}
+                className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+              >
+                Reset Filters
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Document Area + Comments Sidebar */}
       <div ref={scrollAreaRef} className={`flex-1 overflow-auto flex relative transition-all duration-300 ${showVersionHistory ? 'ml-96' : 'ml-0'}`}>
@@ -2576,10 +3020,38 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
             </div>
           )}
 
+          {/* Ruler (if enabled) */}
+          {showRuler && (
+            <div className="max-w-[8.5in] mx-auto mb-0">
+              <div className="bg-gray-100 border-b border-gray-300 h-6 flex items-end text-xs text-gray-600 relative">
+                {Array.from({ length: 17 }, (_, i) => i * 0.5).map((inch) => (
+                  <div
+                    key={inch}
+                    className="absolute"
+                    style={{ left: `${(inch / 8.5) * 100}%` }}
+                  >
+                    {inch % 1 === 0 ? (
+                      <>
+                        <div className="h-3 w-px bg-gray-500"></div>
+                        <span className="absolute -top-0.5 -left-1.5 text-[9px] text-gray-600">{inch}</span>
+                      </>
+                    ) : (
+                      <div className="h-2 w-px bg-gray-400"></div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div
             ref={pageRef}
-            className="max-w-[8.5in] mx-auto my-6 bg-white shadow-lg transition-transform duration-200"
-            style={{ transform: `scale(${zoomLevel / 100})`, transformOrigin: 'top center' }}
+            className="max-w-[8.5in] mx-auto bg-white shadow-lg transition-transform duration-200 relative"
+            style={{ 
+              transform: `scale(${zoomLevel / 100})`, 
+              transformOrigin: 'top center',
+              marginTop: showRuler ? '0' : '1.5rem'
+            }}
           >
             <style jsx global>{`
               .ProseMirror {
@@ -2617,6 +3089,13 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
             <div ref={editorContainerRef}>
             <EditorContent editor={editor} />
           </div>
+          
+          {/* Page Number (if enabled) */}
+          {showPageNumbers && (
+            <div className="absolute bottom-4 right-4 text-xs text-gray-500">
+              Page 1
+            </div>
+          )}
         </div>
           {/* Floating notes to the right of the page */}
           {(trackedChanges.length > 0 || comments.length > 0) && (
@@ -2684,12 +3163,33 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
               {memoizedFloatingItems.map(item => (
                 <div
                   key={item.id}
-                  className={`absolute right-0 w-72 bg-white border rounded-lg shadow-md cursor-pointer hover:shadow-lg transition-shadow ${item.kind === 'change' ? (item.displayType === 'insertion' ? 'border-emerald-200' : 'border-rose-200') : 'border-blue-200'}`}
+                  className={`absolute right-0 w-72 bg-white border rounded-lg shadow-md hover:shadow-lg transition-shadow ${item.kind === 'change' ? (item.displayType === 'insertion' ? 'border-emerald-200' : 'border-rose-200') : 'border-blue-200'} ${selectedChangeIds.has(item.id) ? 'ring-2 ring-blue-500' : ''}`}
                   style={{ top: item.topPx }}
-                  onClick={() => {
-                    if (!editor) return;
-                    
-                    // Scroll to and select the text
+                >
+                  {/* Selection checkbox for changes */}
+                  {item.kind === 'change' && editingMode === 'suggesting' && (
+                    <div 
+                      className="absolute top-2 left-2 z-10"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleChangeSelection(item.id);
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedChangeIds.has(item.id)}
+                        onChange={() => toggleChangeSelection(item.id)}
+                        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 cursor-pointer"
+                      />
+                    </div>
+                  )}
+                  
+                  <div
+                    className="cursor-pointer"
+                    onClick={() => {
+                      if (!editor) return;
+                      
+                      // Scroll to and select the text
                     const { from, to } = item;
                     
                     // Validate positions
@@ -2825,22 +3325,23 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
                           >
                             ✓
                           </button>
-                        )}
-                      </div>
-                      </div>
+                      )}
+                    </div>
+                    </div>
 
-                    <div className="text-sm text-black line-clamp-3 break-words">
-                      {item.kind === 'change' && item.displayType === 'deletion' ? (
-                        <span className="text-rose-600 line-through">"{item.summary}"</span>
-                      ) : (
-                        <span className={item.kind === 'change' ? 'text-emerald-600' : ''}>"{item.summary}"</span>
-                        )}
+                  <div className="text-sm text-black line-clamp-3 break-words">
+                    {item.kind === 'change' && item.displayType === 'deletion' ? (
+                      <span className="text-rose-600 line-through">"{item.summary}"</span>
+                    ) : (
+                      <span className={item.kind === 'change' ? 'text-emerald-600' : ''}>"{item.summary}"</span>
+                      )}
+                    </div>
                       </div>
-                        </div>
-                        </div>
-              ))}
-          </div>
-        )}
+                      </div>
+                  </div>
+            ))}
+            </div>
+          )}
         </div>
 
         {/* Old sidebar removed - using floating cards only */}
@@ -3393,7 +3894,331 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
       >
         🐛
       </button>
+      
+      {/* Help/Shortcuts Button */}
+      <button
+        onClick={() => setShowShortcutsPanel(true)}
+        className="fixed bottom-4 left-16 bg-blue-600 text-white p-2 rounded-full shadow-lg hover:bg-blue-700 text-xs"
+        title="Keyboard Shortcuts (Ctrl+?)"
+      >
+        ❓
+      </button>
  
+      {/* Crash Recovery Modal */}
+      {showRecoveryModal && recoveryBackups.length > 0 && (
+        <div className="fixed inset-0 bg-black bg-opacity-70 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-hidden">
+            {/* Header */}
+            <div className="px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-orange-50 to-red-50">
+              <div className="flex items-center gap-3">
+                <span className="text-3xl">🛟</span>
+                <div>
+                  <h2 className="text-xl font-bold text-gray-900">Document Recovery</h2>
+                  <p className="text-sm text-gray-600">We detected an unexpected shutdown. Would you like to recover your work?</p>
+                </div>
+              </div>
+            </div>
+            
+            {/* Content */}
+            <div className="p-6 overflow-y-auto max-h-[calc(90vh-180px)]">
+              <p className="text-sm text-gray-700 mb-4">
+                Select a backup to restore. The most recent backup is shown first:
+              </p>
+              
+              <div className="space-y-3">
+                {recoveryBackups.map((backup, index) => (
+                  <div
+                    key={backup.id}
+                    className="border border-gray-200 rounded-lg p-4 hover:border-blue-400 hover:shadow-md transition-all cursor-pointer"
+                    onClick={() => {
+                      if (editor) {
+                        editor.commands.setContent(backup.content);
+                        setShowRecoveryModal(false);
+                        showToast('Document recovered successfully!', 'success');
+                      }
+                    }}
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        {index === 0 && (
+                          <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs font-semibold rounded">
+                            LATEST
+                          </span>
+                        )}
+                        <span className="text-sm font-semibold text-gray-900">
+                          {backup.timestamp.toLocaleString('en-US', {
+                            month: 'short',
+                            day: 'numeric',
+                            hour: 'numeric',
+                            minute: '2-digit',
+                            hour12: true
+                          })}
+                        </span>
+                      </div>
+                      <button
+                        className="px-3 py-1 text-xs font-medium text-white bg-blue-600 rounded hover:bg-blue-700"
+                      >
+                        Restore
+                      </button>
+                    </div>
+                    
+                    <div className="text-xs text-gray-500 flex items-center gap-4">
+                      <span>📝 {backup.content.length} chars</span>
+                      {backup.changes > 0 && <span>📊 {backup.changes} tracked changes</span>}
+                    </div>
+                    
+                    <div className="mt-2 text-xs text-gray-600 line-clamp-2">
+                      {backup.content.replace(/<[^>]*>/g, '').substring(0, 150)}...
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            
+            {/* Footer */}
+            <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex justify-between items-center">
+              <button
+                onClick={() => setShowRecoveryModal(false)}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50"
+              >
+                Start Fresh
+              </button>
+              <p className="text-xs text-gray-500">
+                Backups are kept for 24 hours
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Keyboard Shortcuts Panel */}
+      {showShortcutsPanel && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden">
+            {/* Header */}
+            <div className="px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-purple-50">
+              <div className="flex items-center justify-between">
+                <h2 className="text-xl font-bold text-gray-900">⌨️ Keyboard Shortcuts</h2>
+                <button
+                  onClick={() => setShowShortcutsPanel(false)}
+                  className="text-gray-500 hover:text-gray-700 p-1"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+            
+            {/* Content */}
+            <div className="p-6 overflow-y-auto max-h-[calc(90vh-80px)]">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Editing */}
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                    <span className="text-lg">✏️</span> Text Editing
+                  </h3>
+                  <div className="space-y-2">
+                    <ShortcutRow keys={['Ctrl', 'B']} action="Bold" />
+                    <ShortcutRow keys={['Ctrl', 'I']} action="Italic" />
+                    <ShortcutRow keys={['Ctrl', 'U']} action="Underline" />
+                    <ShortcutRow keys={['Ctrl', 'Z']} action="Undo" />
+                    <ShortcutRow keys={['Ctrl', 'Shift', 'Z']} action="Redo" />
+                    <ShortcutRow keys={['Ctrl', 'A']} action="Select All" />
+                    <ShortcutRow keys={['Ctrl', 'C']} action="Copy" />
+                    <ShortcutRow keys={['Ctrl', 'X']} action="Cut" />
+                    <ShortcutRow keys={['Ctrl', 'V']} action="Paste" />
+                  </div>
+                </div>
+                
+                {/* Document */}
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                    <span className="text-lg">📄</span> Document
+                  </h3>
+                  <div className="space-y-2">
+                    <ShortcutRow keys={['Ctrl', 'H']} action="Find & Replace" />
+                    <ShortcutRow keys={['Ctrl', 'S']} action="Save Version" />
+                    <ShortcutRow keys={['Ctrl', '?']} action="Show Shortcuts (this panel)" />
+                    <ShortcutRow keys={['Esc']} action="Close Modal/Panel" />
+                    <ShortcutRow keys={['Tab']} action="Accept Autocomplete" />
+                  </div>
+                </div>
+                
+                {/* AI Features */}
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                    <span className="text-lg">✨</span> AI Features
+                  </h3>
+                  <div className="space-y-2">
+                    <ShortcutRow keys={['Ctrl', '4']} action="AI Rewrite (with selection)" />
+                    <ShortcutRow keys={['Tab']} action="Accept AI Suggestion" />
+                    <ShortcutRow keys={['Enter']} action="Accept AI Rewrite Variation" />
+                    <ShortcutRow keys={['↑', '↓']} action="Navigate Rewrite Options" />
+                  </div>
+                </div>
+                
+                {/* Comments & Changes */}
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                    <span className="text-lg">💬</span> Comments & Track Changes
+                  </h3>
+                  <div className="space-y-2">
+                    <ShortcutRow keys={['Cmd', 'Enter']} action="Submit Comment" />
+                    <ShortcutRow keys={['Click']} action="Jump to Change/Comment" />
+                    <ShortcutRow keys={['Checkbox']} action="Select Multiple Changes" />
+                  </div>
+                </div>
+                
+                {/* Navigation */}
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                    <span className="text-lg">🧭</span> Navigation
+                  </h3>
+                  <div className="space-y-2">
+                    <ShortcutRow keys={['Ctrl', 'Home']} action="Go to Start" />
+                    <ShortcutRow keys={['Ctrl', 'End']} action="Go to End" />
+                    <ShortcutRow keys={['←', '→', '↑', '↓']} action="Move Cursor" />
+                    <ShortcutRow keys={['Ctrl', '←', '→']} action="Move by Word" />
+                  </div>
+                </div>
+                
+                {/* Formatting */}
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                    <span className="text-lg">🎨</span> Formatting
+                  </h3>
+                  <div className="space-y-2">
+                    <ShortcutRow keys={['Ctrl', 'Shift', 'L']} action="Align Left" />
+                    <ShortcutRow keys={['Ctrl', 'Shift', 'E']} action="Align Center" />
+                    <ShortcutRow keys={['Ctrl', 'Shift', 'R']} action="Align Right" />
+                    <ShortcutRow keys={['Ctrl', 'Shift', 'J']} action="Justify" />
+                  </div>
+                </div>
+              </div>
+              
+              {/* Tips Section */}
+              <div className="mt-8 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                <h3 className="text-sm font-semibold text-blue-900 mb-2">💡 Pro Tips</h3>
+                <ul className="text-sm text-blue-800 space-y-1">
+                  <li>• Use <kbd className="px-2 py-0.5 bg-white border border-blue-300 rounded text-xs">Ctrl+H</kbd> to quickly find and replace text across your document</li>
+                  <li>• Select multiple changes with checkboxes to accept or reject them in batch</li>
+                  <li>• Press <kbd className="px-2 py-0.5 bg-white border border-blue-300 rounded text-xs">Tab</kbd> to accept AI autocomplete suggestions as you type</li>
+                  <li>• Click on floating change/comment cards to jump directly to that location in your document</li>
+                  <li>• Use filters (funnel icon) to show only specific types of changes or comments</li>
+                </ul>
+              </div>
+              
+              {/* Footer Note */}
+              <div className="mt-6 text-center text-xs text-gray-500">
+                <p>On Mac, use <kbd className="px-1.5 py-0.5 bg-gray-100 border border-gray-300 rounded text-xs">⌘ Cmd</kbd> instead of <kbd className="px-1.5 py-0.5 bg-gray-100 border border-gray-300 rounded text-xs">Ctrl</kbd></p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Search & Replace Modal */}
+      {showSearchReplace && (
+        <div className="fixed top-20 right-4 w-96 bg-white border border-gray-300 rounded-lg shadow-2xl z-50">
+          <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between bg-gradient-to-r from-blue-50 to-purple-50">
+            <h3 className="text-sm font-semibold text-gray-900">Search & Replace</h3>
+            <button
+              onClick={() => {
+                setShowSearchReplace(false);
+                setSearchQuery('');
+                setSearchResults([]);
+              }}
+              className="text-gray-500 hover:text-gray-700"
+            >
+              ✕
+            </button>
+          </div>
+          
+          <div className="p-4 space-y-3">
+            {/* Search Input */}
+            <div>
+              <label className="text-xs font-medium text-gray-700 mb-1 block">Find</label>
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search..."
+                className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                autoFocus
+              />
+            </div>
+            
+            {/* Replace Input */}
+            <div>
+              <label className="text-xs font-medium text-gray-700 mb-1 block">Replace with</label>
+              <input
+                type="text"
+                value={replaceQuery}
+                onChange={(e) => setReplaceQuery(e.target.value)}
+                placeholder="Replace..."
+                className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+              />
+            </div>
+            
+            {/* Options */}
+            <div className="flex items-center gap-2">
+              <label className="flex items-center gap-1.5 text-xs text-gray-700 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={caseSensitive}
+                  onChange={(e) => setCaseSensitive(e.target.checked)}
+                  className="rounded"
+                />
+                Case sensitive
+              </label>
+            </div>
+            
+            {/* Results */}
+            {searchResults.length > 0 && (
+              <div className="text-xs text-gray-600">
+                {currentSearchIndex + 1} of {searchResults.length} results
+              </div>
+            )}
+            
+            {/* Action Buttons */}
+            <div className="flex gap-2">
+              <button
+                onClick={previousSearchResult}
+                disabled={searchResults.length === 0}
+                className="px-3 py-1.5 text-xs font-medium text-gray-700 bg-gray-100 rounded hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                ← Previous
+              </button>
+              <button
+                onClick={nextSearchResult}
+                disabled={searchResults.length === 0}
+                className="px-3 py-1.5 text-xs font-medium text-gray-700 bg-gray-100 rounded hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Next →
+              </button>
+            </div>
+            
+            <div className="flex gap-2 pt-2 border-t">
+              <button
+                onClick={replaceOne}
+                disabled={searchResults.length === 0}
+                className="flex-1 px-3 py-2 text-xs font-medium text-white bg-blue-600 rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Replace
+              </button>
+              <button
+                onClick={replaceAll}
+                disabled={searchResults.length === 0}
+                className="flex-1 px-3 py-2 text-xs font-medium text-white bg-purple-600 rounded hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Replace All
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Toast Notification */}
       {toast && (
         <div 

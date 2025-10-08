@@ -531,6 +531,16 @@ Be specific about the tone, audience, syntax style, and intended outcome based o
           >
             Autocomplete Settings
           </button>
+          <button
+            onClick={() => setActiveTab('view')}
+            className={`px-4 py-2 text-sm font-medium transition-colors ${
+              activeTab === 'view'
+                ? 'text-[#1e3a8a] border-b-2 border-[#1e3a8a]'
+                : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            View Options
+          </button>
         </div>
 
         {/* Success Message */}
