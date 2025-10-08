@@ -399,6 +399,38 @@ export default function LiveDocEditor() {
     setTimeout(() => setToast(null), 3000);
   }, []);
   
+  // Helper function to merge consecutive single-character deletions from backspace
+  const mergeBackspaceDeletions = useCallback((changes: TrackedChange[]): TrackedChange[] => {
+    if (changes.length === 0) return changes;
+    
+    // CRITICAL: Sort by timestamp first to get chronological order
+    const chronological = [...changes].sort((a, b) => a.timestamp - b.timestamp);
+    
+    const merged: TrackedChange[] = [];
+    let currentDeletion: TrackedChange | null = null;
+    
+    chronological.forEach(change => {
+      if (change.type === 'deletion' && 
+          change.text.length === 1 && 
+          currentDeletion &&
+          currentDeletion.type === 'deletion' &&
+          currentDeletion.userId === change.userId &&
+          change.timestamp - currentDeletion.timestamp < 2000 &&
+          change.from === currentDeletion.from - 1) { // Backspace pattern
+        // Prepend this character (it was deleted before the previous one)
+        currentDeletion.text = change.text + currentDeletion.text;
+        currentDeletion.from = change.from;
+        currentDeletion.timestamp = change.timestamp;
+      } else {
+        if (currentDeletion) merged.push(currentDeletion);
+        currentDeletion = { ...change };
+      }
+    });
+    
+    if (currentDeletion) merged.push(currentDeletion);
+    return merged;
+  }, []);
+  
   // Save cache to localStorage when it changes
   React.useEffect(() => {
     if (typeof window !== 'undefined' && completionCache.size > 0) {
@@ -519,8 +551,10 @@ export default function LiveDocEditor() {
         enabled: isSuggestingMode,
         userId: 'user-1',
         userName: 'You',
-        onChangesUpdate: (changes) => {
-          setTrackedChanges(changes);
+        onChangesUpdate: (changes: TrackedChange[]) => {
+          // Merge consecutive backspace deletions before updating state
+          const mergedChanges = mergeBackspaceDeletions(changes);
+          setTrackedChanges(mergedChanges);
         },
       }),
       TabAutocompleteExtension.configure({
@@ -4017,10 +4051,10 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
       {/* Help/Shortcuts Button */}
       <button
         onClick={() => setShowShortcutsPanel(true)}
-        className="fixed bottom-4 left-16 bg-blue-600 text-white p-2 rounded-full shadow-lg hover:bg-blue-700 text-xs"
-        title="Keyboard Shortcuts (Ctrl+?)"
+        className="fixed bottom-6 left-6 bg-blue-600 text-white p-3 rounded-full shadow-lg hover:bg-blue-700 transition-all hover:scale-110 z-40"
+        title="Keyboard Shortcuts (Cmd+Shift+?)"
       >
-        ❓
+        <span className="text-lg">⌨️</span>
       </button>
       
       {/* Skeleton Loader - Initial Loading */}
