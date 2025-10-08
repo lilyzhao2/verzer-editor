@@ -735,11 +735,23 @@ Be specific about the tone, audience, syntax style, and intended outcome based o
             {/* Add Custom Rewrite Button */}
             <button
               onClick={addNewTemplate}
-              className="w-full py-3 border-2 border-dashed border-gray-300 rounded-lg hover:border-[#1e3a8a] hover:bg-blue-50 text-gray-600 hover:text-[#1e3a8a] transition-all flex items-center justify-center gap-2"
+              className="w-full py-4 border-2 border-dashed border-[#1e3a8a] rounded-lg bg-blue-50 hover:bg-blue-100 text-[#1e3a8a] font-semibold transition-all flex items-center justify-center gap-2 shadow-sm"
             >
               <Plus className="w-5 h-5" />
-              Add Custom Rewrite
+              Add Custom Rewrite Template
             </button>
+            
+            {/* Instructions */}
+            <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+              <h3 className="text-sm font-semibold text-black mb-2">💡 How to Use Custom Rewrites:</h3>
+              <ul className="text-sm text-gray-700 space-y-1 list-disc list-inside">
+                <li>Click "Add Custom Rewrite Template" above to create a new rewrite style</li>
+                <li>Edit any template by clicking the pencil icon</li>
+                <li>Customize the label, description, and AI prompt</li>
+                <li>Check/uncheck to enable up to 3 active rewrites</li>
+                <li>Delete custom templates using the X button</li>
+              </ul>
+            </div>
           </div>
         )}
       </div>
