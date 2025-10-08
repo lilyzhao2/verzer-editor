@@ -505,9 +505,6 @@ export default function LiveDocEditor() {
       }
     }
   }, [currentVersionId, versions, archivedVersions]);
-  const [showRestoreWarning, setShowRestoreWarning] = useState(false);
-  const [versionToRestore, setVersionToRestore] = useState<DocumentVersion | null>(null);
-  const [restoreConfirmChecked, setRestoreConfirmChecked] = useState(false);
   const [versionSettings, setVersionSettings] = useState<VersionHistorySettings>({
     autoSaveFrequency: 10, // minutes
     autoSaveByLineCount: 50,
@@ -1881,91 +1878,38 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
     return newVersion;
   };
 
-  const handleRestoreConfirm = () => {
-    if (!versionToRestore || !editor) return;
-    
-    const version = versionToRestore;
-    const latestVersion = versions[versions.length - 1];
-    
-    // Check if restoring an archived version
-    const isRestoringArchived = archivedVersions.some(v => v.id === version.id);
-    
-    // Move future versions to archived (from active versions)
-    const futureVersions = versions.filter(v => v.versionNumber > version.versionNumber);
-    
-    // Keep active versions up to and including the restored version
-    let remainingVersions = versions.filter(v => v.versionNumber < version.versionNumber);
-    
-    // Always add the restored version to active versions (whether it was archived or active)
-    remainingVersions = [...remainingVersions, { ...version, archived: false }].sort((a, b) => a.versionNumber - b.versionNumber);
-    
-    // Mark future versions as archived
-    const markedAsArchived = futureVersions.map(v => ({ ...v, archived: true }));
-    
-    // Remove the restored version from archived list (if it was archived)
-    const updatedArchivedVersions = archivedVersions.filter(v => v.id !== version.id);
-    
-    console.log(`📦 Archiving ${futureVersions.length} future versions`);
-    console.log(`✅ Keeping ${remainingVersions.length} active versions up to V${version.versionNumber}`);
-    if (isRestoringArchived) {
-      console.log(`♻️ Unarchiving V${version.versionNumber}`);
-    }
-    
-    // Update both lists
-    setVersions(remainingVersions);
-    setArchivedVersions([...updatedArchivedVersions, ...markedAsArchived]);
-    
-    // Load the version content
-    editor.commands.setContent(version.content);
-    setCurrentVersionId(version.id);
-    setViewingVersionId(version.id); // Also update viewing state
-    
-    // Re-enable editing when restoring - switch to editing mode if in viewing mode
-    if (editingMode === 'viewing') {
-      setEditingMode('editing');
-    }
-    editor.setEditable(true);
-    
-    // Restore pending suggestions if they exist
-    if (version.pendingSuggestions && version.pendingSuggestions.length > 0) {
-      console.log('🔄 Restoring', version.pendingSuggestions.length, 'pending suggestions');
-      const tr = editor.state.tr;
-      tr.setMeta('trackChangesUpdate', version.pendingSuggestions);
-      editor.view.dispatch(tr);
-      setTrackedChanges(version.pendingSuggestions);
-      
-      if (editingMode === 'suggesting') {
-        setShowCommentSidebar(true);
-      }
-    } else {
-      console.log('🧹 No pending suggestions for this version');
-      // @ts-ignore
-      editor.commands.clearAllChanges();
-      setTrackedChanges([]);
-    }
-    
-    showToast(`Made V${version.versionNumber} active. ${futureVersions.length} version(s) archived.`, 'success');
-    
-    // Close modal
-    setShowRestoreWarning(false);
-    setVersionToRestore(null);
-  };
-  
   const loadVersion = (versionId: string, makeActive: boolean = false) => {
     const version = versions.find((v) => v.id === versionId) || archivedVersions.find((v) => v.id === versionId);
-    const latestVersion = versions[versions.length - 1];
     
     if (version && editor) {
-      // Check if trying to make an old version active
-      // If there are future versions or if this is an archived version, show warning
+      // Check if trying to make an old version active (restore)
       const hasFutureVersions = versions.some(v => v.versionNumber > version.versionNumber);
       const isArchived = archivedVersions.some(v => v.id === versionId);
       
       if (makeActive && (hasFutureVersions || isArchived)) {
-        // Show warning modal before making active
-        setVersionToRestore(version);
-        setShowRestoreWarning(true);
-        return; // Wait for user confirmation
+        // Directly restore without modal - archive future versions
+        const futureVersions = versions.filter(v => v.versionNumber > version.versionNumber);
+        let remainingVersions = versions.filter(v => v.versionNumber < version.versionNumber);
+        
+        // Always add the restored version to active versions
+        remainingVersions = [...remainingVersions, { ...version, archived: false }].sort((a, b) => a.versionNumber - b.versionNumber);
+        
+        // Mark future versions as archived
+        const markedAsArchived = futureVersions.map(v => ({ ...v, archived: true }));
+        
+        // Remove the restored version from archived list (if it was archived)
+        const updatedArchivedVersions = archivedVersions.filter(v => v.id !== version.id);
+        
+        // Update both lists
+        setVersions(remainingVersions);
+        setArchivedVersions([...updatedArchivedVersions, ...markedAsArchived]);
+        
+        // Show toast notification
+        if (isArchived) {
+          showToast(`Unarchived V${version.versionNumber}. ${futureVersions.length} version(s) archived.`, 'success');
+        } else {
+          showToast(`Restored V${version.versionNumber}. ${futureVersions.length} version(s) archived.`, 'success');
+        }
       }
       
       // Load the version content
@@ -1977,6 +1921,10 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
       // Only update current if making active
       if (makeActive) {
         setCurrentVersionId(versionId);
+        // Switch to editing mode if in viewing mode
+        if (editingMode === 'viewing') {
+          setEditingMode('editing');
+        }
         // Enable editing when making active
         editor.setEditable(true);
       } else {
@@ -4001,166 +3949,6 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
               </>
                   )}
                 </div>
-        </div>
-      )}
-
-      {/* Restore Version Warning Modal */}
-      {showRestoreWarning && versionToRestore && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full mx-4 p-6">
-            {/* Header */}
-            <div className="flex items-start gap-3 mb-4">
-              <div className="flex-shrink-0 w-10 h-10 rounded-full bg-yellow-100 flex items-center justify-center">
-                <span className="text-2xl">⚠️</span>
-              </div>
-              <div className="flex-1">
-                <h3 className="text-lg font-bold text-gray-900">Restore Version {versionToRestore.versionNumber}?</h3>
-                <p className="text-sm text-gray-600 mt-1">
-                  {versionToRestore.archived ? 'This version is archived' : 'This will archive future versions'}
-                </p>
-              </div>
-            </div>
-
-            {/* Content */}
-            <div className="space-y-4 mb-6">
-              {versionToRestore.archived ? (
-                /* Unarchiving an archived version */
-                <>
-                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                    <p className="text-sm font-semibold text-blue-900 mb-2">
-                      ♻️ Unarchiving version:
-                    </p>
-                    <span className="px-2 py-1 bg-white border border-blue-300 rounded text-xs font-medium text-blue-800">
-                      v{versionToRestore.versionNumber}
-                    </span>
-                  </div>
-                  
-                  {/* Versions that will be archived */}
-                  {versions.filter(v => v.versionNumber > versionToRestore.versionNumber).length > 0 && (
-                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
-                      <p className="text-sm font-semibold text-amber-900 mb-2">
-                        📦 These versions will be archived:
-                      </p>
-                      <div className="flex flex-wrap gap-2">
-                        {versions.filter(v => v.versionNumber > versionToRestore.versionNumber).map(v => (
-                          <span key={v.id} className="px-2 py-1 bg-white border border-amber-300 rounded text-xs font-medium text-amber-800">
-                            v{v.versionNumber}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  
-                  <div className="space-y-2 text-sm text-gray-700">
-                    <p className="font-semibold">After unarchiving:</p>
-                    <ul className="space-y-1.5 ml-4">
-                      <li className="flex items-start gap-2">
-                        <span className="mt-0.5">•</span>
-                        <span>V{versionToRestore.versionNumber} moved from archive to active versions</span>
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <span className="mt-0.5">•</span>
-                        <span>V{versionToRestore.versionNumber} becomes your current (editable) version</span>
-                      </li>
-                      {versions.filter(v => v.versionNumber > versionToRestore.versionNumber).length > 0 && (
-                        <li className="flex items-start gap-2">
-                          <span className="mt-0.5">•</span>
-                          <span>V{versionToRestore.versionNumber + 1}–V{versions[versions.length - 1].versionNumber} moved to archive</span>
-                        </li>
-                      )}
-                      <li className="flex items-start gap-2">
-                        <span className="mt-0.5">•</span>
-                        <span>Your next save creates V{highestVersionNumber + 1}</span>
-                      </li>
-                    </ul>
-                  </div>
-                </>
-              ) : (
-                /* Restoring an active version */
-                <>
-                  {/* Affected Versions Preview */}
-                  {versions.filter(v => v.versionNumber > versionToRestore.versionNumber).length > 0 && (
-                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
-                      <p className="text-sm font-semibold text-amber-900 mb-2">
-                        📦 Versions to be archived:
-                      </p>
-                      <div className="flex flex-wrap gap-2">
-                        {versions.filter(v => v.versionNumber > versionToRestore.versionNumber).map(v => (
-                          <span key={v.id} className="px-2 py-1 bg-white border border-amber-300 rounded text-xs font-medium text-amber-800">
-                            v{v.versionNumber}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  
-                  {/* What Happens */}
-                  <div className="space-y-2 text-sm text-gray-700">
-                    <p className="font-semibold">After restoring:</p>
-                    <ul className="space-y-1.5 ml-4">
-                      <li className="flex items-start gap-2">
-                        <span className="mt-0.5">•</span>
-                        <span>V{versionToRestore.versionNumber} becomes your current version</span>
-                      </li>
-                      {versions.filter(v => v.versionNumber > versionToRestore.versionNumber).length > 0 && (
-                        <li className="flex items-start gap-2">
-                          <span className="mt-0.5">•</span>
-                          <span>V{versionToRestore.versionNumber + 1}–V{versions[versions.length - 1].versionNumber} moved to archive (read-only)</span>
-                        </li>
-                      )}
-                      <li className="flex items-start gap-2">
-                        <span className="mt-0.5">•</span>
-                        <span>Your next save creates V{highestVersionNumber + 1}</span>
-                      </li>
-                    </ul>
-                  </div>
-                </>
-              )}
-
-              {/* Confirmation Checkbox */}
-              <label className="flex items-start gap-3 p-3 bg-gray-50 rounded-lg cursor-pointer hover:bg-gray-100 transition-colors">
-                <input
-                  type="checkbox"
-                  checked={restoreConfirmChecked}
-                  onChange={(e) => setRestoreConfirmChecked(e.target.checked)}
-                  className="mt-0.5 w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                />
-                <span className="text-sm text-gray-700">
-                  I understand that {versionToRestore.archived ? 'this will unarchive V' + versionToRestore.versionNumber : 'archived versions cannot be edited'}
-                </span>
-              </label>
-            </div>
-
-            {/* Actions */}
-            <div className="flex gap-3">
-              <button
-                onClick={() => {
-                  setShowRestoreWarning(false);
-                  setVersionToRestore(null);
-                  setRestoreConfirmChecked(false);
-                }}
-                className="flex-1 px-4 py-2.5 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => {
-                  if (restoreConfirmChecked) {
-                    handleRestoreConfirm();
-                    setRestoreConfirmChecked(false);
-                  }
-                }}
-                disabled={!restoreConfirmChecked}
-                className={`flex-1 px-4 py-2.5 rounded-lg font-medium transition-colors ${
-                  restoreConfirmChecked
-                    ? 'bg-blue-600 text-white hover:bg-blue-700'
-                    : 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                }`}
-              >
-                {versionToRestore.archived ? `Unarchive V${versionToRestore.versionNumber}` : `Restore V${versionToRestore.versionNumber}`}
-              </button>
-            </div>
-          </div>
         </div>
       )}
 
