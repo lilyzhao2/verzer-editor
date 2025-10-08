@@ -1284,6 +1284,8 @@ export default function LiveDocEditor() {
 
   // Load from localStorage on mount (SILENTLY - no popup)
   useEffect(() => {
+    if (!editor) return; // Wait for editor to be ready
+    
     try {
       const savedData = localStorage.getItem('verzer-document-backup');
       if (savedData) {
@@ -1292,8 +1294,8 @@ export default function LiveDocEditor() {
         const now = new Date();
         const timeDiff = now.getTime() - lastSaved.getTime();
         
-        // Only restore if data is less than 1 hour old and silently
-        if (timeDiff < 60 * 60 * 1000 && data.content && data.content !== '<p></p>') {
+        // Only restore if data is less than 24 hours old and has meaningful content
+        if (timeDiff < 24 * 60 * 60 * 1000 && data.content && data.content !== '<p></p>' && data.content.trim() !== '') {
           console.log('📥 Silently restoring backup data from:', lastSaved.toLocaleString());
           
           // Restore silently without asking user
@@ -1311,17 +1313,13 @@ export default function LiveDocEditor() {
             setCurrentVersionId(data.currentVersionId);
           }
           
-          // Set content after editor is ready
-          setTimeout(() => {
-            if (editor && data.content) {
-              editor.commands.setContent(data.content);
-            }
-          }, 100);
-          
+          // Set content immediately since editor is ready
+          editor.commands.setContent(data.content);
           console.log('✅ Document silently restored from backup');
-        } else {
+        } else if (timeDiff >= 24 * 60 * 60 * 1000) {
           // Remove old backup data
           localStorage.removeItem('verzer-document-backup');
+          console.log('🗑️ Removed old backup data');
         }
       }
     } catch (error) {
@@ -1620,25 +1618,6 @@ export default function LiveDocEditor() {
             >
               🗑️ Wipe All
             </button>
-          </div>
-          
-          {/* Mode Selector - Google Docs Style */}
-          <div className="relative">
-            <select
-              value={editingMode}
-              onChange={(e) => setEditingMode(e.target.value as EditingMode)}
-              className="px-3 py-1.5 pr-8 text-sm text-black bg-white border border-gray-300 rounded hover:bg-gray-50 cursor-pointer appearance-none"
-              style={{
-                backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3E%3C/svg%3E")`,
-                backgroundPosition: 'right 0.5rem center',
-                backgroundRepeat: 'no-repeat',
-                backgroundSize: '1.5em 1.5em',
-              }}
-            >
-              <option value="editing">✏️ Editing</option>
-              <option value="suggesting">📝 Suggesting</option>
-              <option value="viewing">👁️ Viewing</option>
-            </select>
           </div>
           
           {/* Share Button */}
@@ -2051,6 +2030,25 @@ export default function LiveDocEditor() {
         </button>
 
         <div className="flex-1" />
+
+        {/* Editing Mode Selector */}
+        <div className="relative">
+          <select
+            value={editingMode}
+            onChange={(e) => setEditingMode(e.target.value as EditingMode)}
+            className="text-sm bg-white border border-gray-300 rounded-md px-3 py-1.5 hover:bg-gray-50 text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none pr-8"
+            style={{
+              backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3E%3C/svg%3E")`,
+              backgroundPosition: 'right 0.5rem center',
+              backgroundRepeat: 'no-repeat',
+              backgroundSize: '1.5em 1.5em',
+            }}
+          >
+            <option value="editing">✏️ Editing</option>
+            <option value="suggesting">📝 Suggesting</option>
+            <option value="viewing">👁️ Viewing</option>
+          </select>
+        </div>
 
         {/* Mode Status Indicator + Changes Sidebar Toggle */}
         {editingMode === 'suggesting' && (
@@ -2657,7 +2655,7 @@ export default function LiveDocEditor() {
 
       {/* Link Modal */}
       {showLinkModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg shadow-xl w-96 p-6">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold text-black">Insert Link</h3>
@@ -2728,7 +2726,7 @@ export default function LiveDocEditor() {
 
       {/* Context Page Modal */}
       {showContextPage && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg shadow-xl w-full h-full max-w-6xl max-h-[90vh] overflow-hidden">
             <div className="flex items-center justify-between p-4 border-b border-gray-200">
               <h2 className="text-xl font-semibold text-black">Project Context & Settings</h2>
