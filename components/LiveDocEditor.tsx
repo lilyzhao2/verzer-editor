@@ -228,6 +228,19 @@ export default function LiveDocEditor() {
   const [comments, setComments] = useState<Comment[]>([]);
   const [showCommentSidebar, setShowCommentSidebar] = useState(false);
   const [showContextPage, setShowContextPage] = useState(false);
+  
+  // Load autocomplete enabled state from localStorage
+  const [autocompleteEnabled, setAutocompleteEnabled] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('autocompleteEnabled');
+      return saved === null ? true : saved === 'true'; // Default to true
+    } catch {
+      return true;
+    }
+  });
+  
+  // Track if we should preserve selection
+  const editorContainerRef = useRef<HTMLDivElement>(null);
 
   // Helper function to get project context for AI
   const getProjectContextForAI = () => {
@@ -613,6 +626,18 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
         class: 'focus:outline-none',
         style: 'min-height: 11in; padding: 1in 1in; font-family: Arial, sans-serif; font-size: 11pt; line-height: 1.5; color: #000000;',
       },
+      handleDOMEvents: {
+        // Prevent selection from being cleared when clicking inside editor on non-text areas
+        mousedown: (view, event) => {
+          const target = event.target as Element;
+          // If clicking on editor but not on text, preserve the current selection
+          if (target.classList.contains('ProseMirror') && !view.state.selection.empty) {
+            event.preventDefault();
+            return true;
+          }
+          return false;
+        },
+      },
     },
   });
 
@@ -637,6 +662,31 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
       editor.view.dispatch(tr);
     }
   }, [editor, editorEditable, isCurrentVersionLocked, isSuggestingMode]);
+
+  // Handle clicks outside editor to preserve selection
+  React.useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (!editor) return;
+      
+      const target = event.target as Element;
+      // If clicking outside the editor content, allow normal selection clearing
+      if (editorContainerRef.current && !editorContainerRef.current.contains(target)) {
+        // Only clear if not clicking on toolbar or other UI elements
+        if (!target.closest('.toolbar-area') && !target.closest('.ai-rewrite-menu')) {
+          // Allow normal ProseMirror selection clearing
+          // This is handled by the editor naturally
+        }
+      }
+    };
+    
+    if (editor) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [editor]);
 
   // Listen for AI menu events
   React.useEffect(() => {
@@ -2213,6 +2263,51 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
           </span>
         )}
 
+        {/* Rewrite Refresh Button */}
+        <button
+          onClick={() => {
+            if (editor && !editor.state.selection.empty) {
+              // @ts-ignore
+              editor.commands.showRewriteMenu();
+            } else {
+              alert('Please select text to rewrite');
+            }
+          }}
+          className="p-2 hover:bg-gray-200 rounded-md transition-colors text-gray-600"
+          title="Generate AI rewrites for selected text (Cmd+4)"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/>
+          </svg>
+        </button>
+
+        {/* Autocomplete Toggle */}
+        <button
+          onClick={() => {
+            const newState = !autocompleteEnabled;
+            setAutocompleteEnabled(newState);
+            // Update editor storage
+            if (editor && (editor.storage as any).tabAutocomplete) {
+              (editor.storage as any).tabAutocomplete.enabled = newState;
+            }
+            // Save to localStorage
+            try {
+              localStorage.setItem('autocompleteEnabled', newState.toString());
+            } catch (error) {
+              console.error('Failed to save autocomplete setting:', error);
+            }
+          }}
+          className={`p-2 hover:opacity-80 rounded-md transition-all ${
+            autocompleteEnabled ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'
+          }`}
+          title={autocompleteEnabled ? 'Autocomplete: ON (click to disable)' : 'Autocomplete: OFF (click to enable)'}
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 2a10 10 0 1 0 10 10H12V2z"/>
+            <path d="M12 12h10a10 10 0 0 1-10 10V12z" opacity="0.5"/>
+          </svg>
+        </button>
+
         {/* Editing Mode Selector - Always on the right */}
         <div className="relative ml-2">
           <select
@@ -2301,7 +2396,9 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
                 border-radius: 2px;
               }
             `}</style>
-            <EditorContent editor={editor} />
+            <div ref={editorContainerRef}>
+              <EditorContent editor={editor} />
+            </div>
           </div>
           {/* Floating notes to the right of the page */}
           {(trackedChanges.length > 0 || comments.length > 0) && (
@@ -2312,8 +2409,73 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
               {memoizedFloatingItems.map(item => (
                 <div
                   key={item.id}
-                  className={`absolute right-0 w-72 bg-white border rounded-lg shadow-md ${item.kind === 'change' ? (item.displayType === 'insertion' ? 'border-emerald-200' : 'border-rose-200') : 'border-blue-200'}`}
+                  className={`absolute right-0 w-72 bg-white border rounded-lg shadow-md cursor-pointer hover:shadow-lg transition-shadow ${item.kind === 'change' ? (item.displayType === 'insertion' ? 'border-emerald-200' : 'border-rose-200') : 'border-blue-200'}`}
                   style={{ top: item.topPx }}
+                  onClick={() => {
+                    if (!editor) return;
+                    
+                    // Scroll to and select the text
+                    const { from, to } = item;
+                    
+                    // Validate positions
+                    const docSize = editor.state.doc.content.size;
+                    const validFrom = Math.max(1, Math.min(from, docSize));
+                    const validTo = Math.max(1, Math.min(to, docSize));
+                    
+                    // Set the selection
+                    editor.commands.focus();
+                    editor.commands.setTextSelection({ from: validFrom, to: validTo });
+                    
+                    // Scroll into view with smooth animation
+                    try {
+                      const coords = editor.view.coordsAtPos(validFrom);
+                      const editorContainer = editor.view.dom.closest('.overflow-y-auto');
+                      if (editorContainer) {
+                        const containerRect = editorContainer.getBoundingClientRect();
+                        const relativeTop = coords.top - containerRect.top;
+                        
+                        // Scroll so the selection is in the upper third of the viewport
+                        editorContainer.scrollBy({
+                          top: relativeTop - containerRect.height / 3,
+                          behavior: 'smooth'
+                        });
+                      }
+                    } catch (error) {
+                      console.error('Error scrolling to position:', error);
+                    }
+                    
+                    // Flash effect: Create a temporary overlay at the selection position
+                    setTimeout(() => {
+                      try {
+                        const startCoords = editor.view.coordsAtPos(validFrom);
+                        const endCoords = editor.view.coordsAtPos(validTo);
+                        
+                        // Create a temporary highlight overlay
+                        const flashOverlay = document.createElement('div');
+                        flashOverlay.style.cssText = `
+                          position: fixed;
+                          left: ${startCoords.left}px;
+                          top: ${startCoords.top}px;
+                          width: ${endCoords.right - startCoords.left}px;
+                          height: ${endCoords.bottom - startCoords.top}px;
+                          background-color: rgba(59, 130, 246, 0.3);
+                          pointer-events: none;
+                          z-index: 9999;
+                          border-radius: 3px;
+                          animation: fadeOutFlash 0.8s ease-out forwards;
+                        `;
+                        
+                        document.body.appendChild(flashOverlay);
+                        
+                        // Remove after animation
+                        setTimeout(() => {
+                          flashOverlay.remove();
+                        }, 800);
+                      } catch (error) {
+                        // Silently fail if we can't add the flash effect
+                      }
+                    }, 300);
+                  }}
                 >
                   {/* Header with colored banner */}
                   <div className={`px-3 py-2 text-xs font-semibold text-white rounded-t-lg ${

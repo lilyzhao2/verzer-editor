@@ -629,3 +629,39 @@ body {
     transform: translateY(0);
   }
 }
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Flash animation for highlighting selections */
+@keyframes flash {
+  0% {
+    background-color: rgba(59, 130, 246, 0);
+  }
+  50% {
+    background-color: rgba(59, 130, 246, 0.3);
+  }
+  100% {
+    background-color: rgba(59, 130, 246, 0);
+  }
+}
+
+.flash-highlight {
+  animation: flash 0.8s ease-in-out;
+}
+
+/* Fade out flash animation for overlay */
+@keyframes fadeOutFlash {
+  0% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}

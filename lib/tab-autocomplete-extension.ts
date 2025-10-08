@@ -107,12 +107,26 @@ export const TabAutocompleteExtension = Extension.create<TabAutocompleteOptions>
   },
 
   addStorage() {
+    // Load autocomplete enabled state from localStorage
+    let enabled = true; // Default to enabled
+    try {
+      const saved = localStorage.getItem('autocompleteEnabled');
+      if (saved !== null) {
+        enabled = saved === 'true';
+      }
+    } catch (error) {
+      console.error('Failed to load autocomplete setting:', error);
+    }
+    
     return {
       abortController: null as AbortController | null,
       typingTimer: null as NodeJS.Timeout | null,
       lastRequestTime: 0,
       lastRequestPosition: 0,
       requireNewInput: false,
+      tabAutocomplete: {
+        enabled,
+      },
     };
   },
 
@@ -433,6 +447,13 @@ export const TabAutocompleteExtension = Extension.create<TabAutocompleteOptions>
           
           if (!onRequestCompletion) {
             console.log('❌ No completion callback provided');
+            return;
+          }
+
+          // Check if autocomplete is enabled
+          const isEnabled = extension.storage.tabAutocomplete?.enabled !== false;
+          if (!isEnabled) {
+            console.log('🚫 Autocomplete is disabled');
             return;
           }
 

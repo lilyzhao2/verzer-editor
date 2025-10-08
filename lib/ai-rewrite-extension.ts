@@ -97,16 +97,35 @@ export const AIRewriteExtension = Extension.create<AIRewriteOptions>({
                return false;
              }
 
-             // Get cursor position for menu placement (position on the left)
-             const coords = view.coordsAtPos(from);
-             console.log('📐 Coordinates:', coords);
-             
-             // Position menu at fixed left position, higher up on the page
-             const menuPosition = {
-               x: 20, // Fixed position 20px from left edge
-               y: Math.max(80, Math.min(coords.top - 50, window.innerHeight - 600)), // Higher up, with bounds checking
-             };
-             console.log('📍 Menu position:', menuPosition);
+            // Get cursor position for menu placement (position on the left)
+            const coords = view.coordsAtPos(from);
+            console.log('📐 Coordinates:', coords);
+            
+            // Try to load saved position from localStorage, otherwise use default
+            let menuPosition = { x: 20, y: 100 };
+            try {
+              const savedPos = localStorage.getItem('aiRewriteMenuPosition');
+              if (savedPos) {
+                const parsed = JSON.parse(savedPos);
+                // Validate position is still on screen
+                if (parsed.x >= 0 && parsed.x < window.innerWidth - 300 && 
+                    parsed.y >= 0 && parsed.y < window.innerHeight - 400) {
+                  menuPosition = parsed;
+                  console.log('📍 Restored saved menu position:', menuPosition);
+                }
+              }
+            } catch (e) {
+              console.log('⚠️ Failed to load saved position, using default');
+            }
+            
+            // If no saved position, calculate default near selection
+            if (menuPosition.x === 20 && menuPosition.y === 100) {
+              menuPosition = {
+                x: Math.max(20, coords.left - 450), // Position to left of selection, but not too far
+                y: Math.max(80, Math.min(coords.top, window.innerHeight - 600)), // Align with selection vertically
+              };
+            }
+            console.log('📍 Menu position:', menuPosition);
 
              // Get context (200 chars before and after)
              const contextStart = Math.max(0, from - 200);
@@ -366,9 +385,14 @@ export const AIRewriteExtension = Extension.create<AIRewriteOptions>({
       'Mod-4': () => this.editor.commands.showRewriteMenu(),
       'Escape': () => {
         const pluginState = aiRewriteKey.getState(this.editor.state);
+        console.log('⌨️ Escape pressed, plugin state:', pluginState);
         if (pluginState?.menuVisible) {
-          return this.editor.commands.hideRewriteMenu();
+          console.log('✅ Hiding rewrite menu');
+          const result = this.editor.commands.hideRewriteMenu();
+          console.log('✅ Hide result:', result);
+          return result;
         }
+        console.log('❌ Menu not visible, passing through');
         return false;
       },
     };
@@ -457,20 +481,78 @@ export const AIRewriteExtension = Extension.create<AIRewriteOptions>({
           menuElement.className = 'ai-rewrite-menu';
           menuElement.style.cssText = `
             position: fixed;
-            background: white;
-            border: 2px solid #4f46e5;
-            border-radius: 8px;
-            box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04);
-            padding: 8px;
+            background: linear-gradient(to bottom, #ffffff, #f9fafb);
+            border: 1px solid #e5e7eb;
+            border-radius: 12px;
+            box-shadow: 0 20px 25px -5px rgba(0,0,0,0.15), 0 10px 10px -5px rgba(0,0,0,0.08);
+            padding: 0;
             z-index: 999999;
-            min-width: 320px;
-            max-width: 360px;
+            min-width: 380px;
+            max-width: 420px;
             display: none;
-            font-family: inherit;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
             pointer-events: auto;
+            overflow: hidden;
           `;
 
           document.body.appendChild(menuElement);
+
+          // Make menu draggable
+          let isDragging = false;
+          let dragStartX = 0;
+          let dragStartY = 0;
+          let menuStartX = 0;
+          let menuStartY = 0;
+
+          const handleMouseDown = (e: MouseEvent) => {
+            // Only drag if clicking on header, not buttons or content
+            const target = e.target as Element;
+            if (target.closest('.rewrite-options-container') || target.closest('button')) {
+              return;
+            }
+            
+            isDragging = true;
+            dragStartX = e.clientX;
+            dragStartY = e.clientY;
+            menuStartX = parseInt(menuElement.style.left || '0');
+            menuStartY = parseInt(menuElement.style.top || '0');
+            menuElement.style.cursor = 'grabbing';
+            e.preventDefault();
+          };
+
+          const handleMouseMove = (e: MouseEvent) => {
+            if (!isDragging) return;
+            
+            const deltaX = e.clientX - dragStartX;
+            const deltaY = e.clientY - dragStartY;
+            
+            const newX = menuStartX + deltaX;
+            const newY = menuStartY + deltaY;
+            
+            menuElement.style.left = `${newX}px`;
+            menuElement.style.top = `${newY}px`;
+          };
+
+          const handleMouseUp = () => {
+            if (isDragging) {
+              isDragging = false;
+              menuElement.style.cursor = 'grab';
+              
+              // Save the final position to localStorage
+              try {
+                const finalX = parseInt(menuElement.style.left);
+                const finalY = parseInt(menuElement.style.top);
+                localStorage.setItem('aiRewriteMenuPosition', JSON.stringify({ x: finalX, y: finalY }));
+                console.log('💾 Saved menu position:', { x: finalX, y: finalY });
+              } catch (e) {
+                console.error('Failed to save menu position:', e);
+              }
+            }
+          };
+
+          menuElement.addEventListener('mousedown', handleMouseDown);
+          document.addEventListener('mousemove', handleMouseMove);
+          document.addEventListener('mouseup', handleMouseUp);
 
           // Click outside handler
           const handleClickOutside = (event: MouseEvent) => {
@@ -546,16 +628,41 @@ export const AIRewriteExtension = Extension.create<AIRewriteOptions>({
               } else if (pluginState.variations.length > 0) {
                 // Create menu content with simple click handlers
                 const menuContent = `
-                  <div style="padding: 8px 0; border-bottom: 1px solid #e5e7eb; margin-bottom: 8px;">
-                    <div style="font-weight: 600; font-size: 14px; color: #374151; padding: 0 12px; display: flex; align-items: center; gap: 8px;">
-                      <span style="width: 8px; height: 8px; background: #10b981; border-radius: 50%; display: inline-block;"></span>
-                      ✨ AI Rewrites
+                  <div style="
+                    padding: 16px 20px;
+                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    border-bottom: 1px solid rgba(255,255,255,0.1);
+                    cursor: grab;
+                  ">
+                    <div style="
+                      font-weight: 700;
+                      font-size: 16px;
+                      color: white;
+                      display: flex;
+                      align-items: center;
+                      gap: 10px;
+                      margin-bottom: 4px;
+                      user-select: none;
+                    ">
+                      <span style="font-size: 20px;">✨</span>
+                      AI Rewrites
+                      <span style="
+                        margin-left: auto;
+                        font-size: 12px;
+                        opacity: 0.7;
+                        font-weight: 400;
+                      ">Drag to move</span>
                     </div>
-                    <div style="font-size: 12px; color: #6b7280; padding: 0 12px; margin-top: 2px;">
-                      Click to apply any option
+                    <div style="
+                      font-size: 13px;
+                      color: rgba(255,255,255,0.9);
+                      font-weight: 500;
+                      user-select: none;
+                    ">
+                      Hover to preview • Click to apply
                     </div>
                   </div>
-                  <div class="rewrite-options-container">
+                  <div class="rewrite-options-container" style="padding: 8px;">
                     ${pluginState.variations
                       .map((variation, index) => `
                         <button 
@@ -564,15 +671,15 @@ export const AIRewriteExtension = Extension.create<AIRewriteOptions>({
                           type="button"
                           style="
                             width: 100%;
-                            padding: 16px;
+                            padding: 12px 14px;
                             cursor: pointer !important;
                             border-radius: 8px;
-                            margin: 6px 8px;
+                            margin-bottom: ${index === pluginState.variations.length - 1 ? '0' : '8px'};
                             background: white;
-                            border: 2px solid #e5e7eb;
-                            transition: all 0.2s ease;
+                            border: 1px solid #e5e7eb;
+                            transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
                             user-select: none;
-                            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+                            box-shadow: none;
                             text-align: left;
                             font-family: inherit;
                             pointer-events: auto !important;
@@ -580,20 +687,54 @@ export const AIRewriteExtension = Extension.create<AIRewriteOptions>({
                             z-index: 10;
                           "
                         >
-                          <div style="font-weight: 700; font-size: 14px; color: #4f46e5; margin-bottom: 8px; display: flex; align-items: center; gap: 8px;">
-                            <span style="font-size: 16px;">${getVariationIcon(variation.label)}</span>
+                          <div style="
+                            font-weight: 600;
+                            font-size: 11px;
+                            color: #6366f1;
+                            margin-bottom: 6px;
+                            text-transform: uppercase;
+                            letter-spacing: 0.8px;
+                          ">
                             ${variation.label}
                           </div>
-                          <div style="font-size: 14px; color: #374151; line-height: 1.5; font-weight: 400;">
+                          <div style="
+                            font-size: 14px;
+                            color: #374151;
+                            line-height: 1.5;
+                            font-weight: 400;
+                          ">
                             ${variation.text}
                           </div>
                         </button>
                       `)
                       .join('')}
                   </div>
-                  <div style="padding: 8px 12px; border-top: 1px solid #e5e7eb; margin-top: 8px;">
-                    <div style="font-size: 11px; color: #9ca3af; text-align: center;">
-                      Press Esc to dismiss • ⌘4 to reopen
+                  <div style="
+                    padding: 14px 20px;
+                    background: #f9fafb;
+                    border-top: 1px solid #e5e7eb;
+                  ">
+                    <div style="
+                      font-size: 12px;
+                      color: #6b7280;
+                      text-align: center;
+                      font-weight: 500;
+                    ">
+                      Press <kbd style="
+                        padding: 2px 6px;
+                        background: white;
+                        border: 1px solid #d1d5db;
+                        border-radius: 4px;
+                        font-family: monospace;
+                        font-size: 11px;
+                      ">Esc</kbd> to dismiss • <kbd style="
+                        padding: 2px 6px;
+                        background: white;
+                        border: 1px solid #d1d5db;
+                        border-radius: 4px;
+                        font-family: monospace;
+                        font-size: 11px;
+                      ">⌘4</kbd> to reopen
                     </div>
                   </div>
                 `;
@@ -645,10 +786,9 @@ export const AIRewriteExtension = Extension.create<AIRewriteOptions>({
                       // Simple hover with preview
                       button.onmouseenter = () => {
                         console.log('🖱️ Button hover enter:', index, variation.label);
-                        button.style.background = '#f3f4f6';
-                        button.style.borderColor = '#4f46e5';
-                        button.style.transform = 'translateX(4px)';
-                        button.style.boxShadow = '0 4px 12px rgba(79, 70, 229, 0.15)';
+                        button.style.background = '#f8fafc';
+                        button.style.borderColor = '#6366f1';
+                        button.style.boxShadow = '0 2px 4px rgba(99, 102, 241, 0.1)';
                         
                         // Show preview with a small delay to ensure state is ready
                         setTimeout(() => {
@@ -662,8 +802,7 @@ export const AIRewriteExtension = Extension.create<AIRewriteOptions>({
                         console.log('🖱️ Button leave:', index);
                         button.style.background = 'white';
                         button.style.borderColor = '#e5e7eb';
-                        button.style.transform = 'translateX(0)';
-                        button.style.boxShadow = '0 1px 3px rgba(0,0,0,0.1)';
+                        button.style.boxShadow = 'none';
                         
                         // Hide preview
                         console.log('👻 Hiding preview');
@@ -736,6 +875,9 @@ export const AIRewriteExtension = Extension.create<AIRewriteOptions>({
               if (clickOutsideListenerAdded) {
                 document.removeEventListener('click', handleClickOutside);
               }
+              // Clean up drag listeners
+              document.removeEventListener('mousemove', handleMouseMove);
+              document.removeEventListener('mouseup', handleMouseUp);
             },
           };
         },
