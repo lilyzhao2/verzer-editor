@@ -73,6 +73,19 @@ function analyzeWritingStyle(text: string): StyleAnalysis {
   return { avgSentenceLength, complexity, tone, preferredLength };
 }
 
+// Helper function to check if autocomplete is enabled (reads from localStorage as source of truth)
+function isAutocompleteEnabled(): boolean {
+  try {
+    const saved = localStorage.getItem('autocompleteEnabled');
+    if (saved !== null) {
+      return saved === 'true';
+    }
+  } catch (error) {
+    console.error('Failed to read autocomplete setting:', error);
+  }
+  return true; // Default to enabled
+}
+
 // Helper function to get current paragraph context
 function getCurrentParagraph(state: any, position: number, contextLength: number = 800): string {
   const { doc } = state;
@@ -117,26 +130,12 @@ export const TabAutocompleteExtension = Extension.create<TabAutocompleteOptions>
   },
 
   addStorage() {
-    // Load autocomplete enabled state from localStorage
-    let enabled = true; // Default to enabled
-    try {
-      const saved = localStorage.getItem('autocompleteEnabled');
-      if (saved !== null) {
-        enabled = saved === 'true';
-      }
-    } catch (error) {
-      console.error('Failed to load autocomplete setting:', error);
-    }
-    
     return {
       abortController: null as AbortController | null,
       typingTimer: null as NodeJS.Timeout | null,
       lastRequestTime: 0,
       lastRequestPosition: 0,
       requireNewInput: false,
-      tabAutocomplete: {
-        enabled,
-      },
     };
   },
 
@@ -261,13 +260,17 @@ export const TabAutocompleteExtension = Extension.create<TabAutocompleteOptions>
                 clearTimeout(extension.storage.typingTimer);
               }
               
-              // Set new typing timer for auto-trigger
-              extension.storage.typingTimer = setTimeout(() => {
-                console.log('⏰ Typing stopped, requesting completion...');
-                if (editorView) {
-                  requestCompletion(editorView, onRequestCompletion);
-                }
-              }, TYPING_DELAY);
+              // Set new typing timer for auto-trigger (only if enabled)
+              if (isAutocompleteEnabled()) {
+                extension.storage.typingTimer = setTimeout(() => {
+                  console.log('⏰ Typing stopped, requesting completion...');
+                  if (editorView) {
+                    requestCompletion(editorView, onRequestCompletion);
+                  }
+                }, TYPING_DELAY);
+              } else {
+                console.log('🚫 Autocomplete disabled, not setting timer');
+              }
               
               return {
                 ...oldState,
@@ -396,12 +399,15 @@ export const TabAutocompleteExtension = Extension.create<TabAutocompleteOptions>
               view.dispatch(tr);
                 extension.storage.requireNewInput = true;
                 return true;
-              } else {
-                // Manual trigger - request new completion immediately
+              } else if (isAutocompleteEnabled()) {
+                // Manual trigger - request new completion immediately (only if enabled)
                 console.log('🔄 Manual trigger - requesting completion...');
                 event.preventDefault();
                 requestCompletion(view, onRequestCompletion);
                 return true;
+              } else {
+                console.log('🚫 Autocomplete disabled, ignoring manual Tab trigger');
+                return false;
               }
             }
 
@@ -466,25 +472,11 @@ export const TabAutocompleteExtension = Extension.create<TabAutocompleteOptions>
             return;
           }
 
-          // Check if autocomplete is enabled - access storage directly from the closure
-          // The extension.storage reference should be the live one being updated
-          const storageEnabled = extension.storage?.tabAutocomplete?.enabled;
-          const isEnabled = storageEnabled === true;
+          // Check if autocomplete is enabled (reads from localStorage)
+          const enabled = isAutocompleteEnabled();
+          console.log('🔍 Checking autocomplete enabled:', enabled);
           
-          // Also check localStorage as backup
-          let localStorageEnabled = true;
-          try {
-            const saved = localStorage.getItem('autocompleteEnabled');
-            if (saved !== null) {
-              localStorageEnabled = saved === 'true';
-            }
-          } catch (e) {
-            // Ignore
-          }
-          
-          console.log('🔍 Checking autocomplete - storage:', storageEnabled, 'localStorage:', localStorageEnabled, '→ isEnabled:', isEnabled);
-          
-          if (!isEnabled) {
+          if (!enabled) {
             console.log('🚫 Autocomplete is disabled, skipping request');
             return;
           }

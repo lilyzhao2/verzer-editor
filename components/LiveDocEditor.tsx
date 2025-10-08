@@ -790,14 +790,6 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
       editor.view.dispatch(tr);
     }
   }, [editor, editorEditable, isCurrentVersionLocked, isSuggestingMode]);
- 
-  // Sync autocomplete enabled state with extension
-  React.useEffect(() => {
-    if (editor && (editor.storage as any).tabAutocomplete) {
-      (editor.storage as any).tabAutocomplete.enabled = autocompleteEnabled;
-      console.log('🔧 Autocomplete enabled state synced:', autocompleteEnabled);
-    }
-  }, [editor, autocompleteEnabled]);
 
   // Handle clicks outside editor to preserve selection
   React.useEffect(() => {
@@ -3015,13 +3007,10 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
           onClick={() => {
             const newState = !autocompleteEnabled;
             setAutocompleteEnabled(newState);
-            // Update editor storage
-            if (editor && (editor.storage as any).tabAutocomplete) {
-              (editor.storage as any).tabAutocomplete.enabled = newState;
-            }
-            // Save to localStorage
+            // Save to localStorage (this is the source of truth)
             try {
               localStorage.setItem('autocompleteEnabled', newState.toString());
+              console.log('💾 Autocomplete state saved to localStorage:', newState);
             } catch (error) {
               console.error('Failed to save autocomplete setting:', error);
             }
