@@ -721,6 +721,7 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
   const [showRewriteInput, setShowRewriteInput] = useState(false);
   const [commentInputValue, setCommentInputValue] = useState('');
   const [rewritePromptValue, setRewritePromptValue] = useState('');
+  const [pendingCommentPosition, setPendingCommentPosition] = useState<{ from: number; to: number; topPx: number } | null>(null);
   const [zoomLevel, setZoomLevel] = useState(100);
   const [formatPainterActive, setFormatPainterActive] = useState(false);
   const [debugMode, setDebugMode] = useState(false);
@@ -896,8 +897,23 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
 
   const handleAddComment = () => {
     setAIMenuVisible(false);
-    setShowCommentInput(true);
-    setCommentInputValue('');
+    
+    // Calculate position for the comment input card
+    if (editor && pageRef.current && scrollAreaRef.current) {
+      const { from, to } = aiMenuSelection;
+      const parentRect = scrollAreaRef.current.getBoundingClientRect();
+      
+      try {
+        const coords = editor.view.coordsAtPos(Math.max(1, Math.min(from, editor.state.doc.content.size)));
+        const topPx = coords.top - parentRect.top;
+        
+        setPendingCommentPosition({ from, to, topPx });
+        setShowCommentInput(true);
+        setCommentInputValue('');
+      } catch (error) {
+        console.error('Error calculating comment position:', error);
+      }
+    }
   };
 
   const submitComment = () => {
@@ -920,6 +936,7 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
     setShowCommentSidebar(true);
     setShowCommentInput(false);
     setCommentInputValue('');
+    setPendingCommentPosition(null);
   };
 
   // Removed "Ask AI for thoughts" feature
@@ -2116,7 +2133,22 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
             
             // Set the selection for the comment input
             setAIMenuSelection({ text: editor.state.doc.textBetween(from, to), from, to });
-            setShowCommentInput(true);
+            
+            // Calculate position for the comment input card
+            if (pageRef.current && scrollAreaRef.current) {
+              const parentRect = scrollAreaRef.current.getBoundingClientRect();
+              
+              try {
+                const coords = editor.view.coordsAtPos(Math.max(1, Math.min(from, editor.state.doc.content.size)));
+                const topPx = coords.top - parentRect.top;
+                
+                setPendingCommentPosition({ from, to, topPx });
+                setShowCommentInput(true);
+                setCommentInputValue('');
+              } catch (error) {
+                console.error('Error calculating comment position:', error);
+              }
+            }
           }}
           className="p-2 hover:bg-gray-200 rounded-md transition-colors text-gray-600"
           title="Add comment (Ctrl+Alt+M)"
@@ -2406,6 +2438,63 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
               className="absolute top-0" 
               style={{ left: overlayLeftPx, width: 300 }}
             >
+              {/* Pending comment input card */}
+              {showCommentInput && pendingCommentPosition && (
+                <div
+                  className="absolute right-0 w-72 bg-white border border-blue-200 rounded-lg shadow-md z-50"
+                  style={{ top: pendingCommentPosition.topPx }}
+                >
+                  {/* Header with navy banner */}
+                  <div className="px-3 py-2 text-xs font-semibold text-white rounded-t-lg bg-blue-900">
+                    💬 COMMENT
+                  </div>
+                  
+                  {/* Content area */}
+                  <div className="p-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs text-slate-500">{formatTimestamp(new Date())}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-medium text-slate-700">You</span>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setShowCommentInput(false);
+                            setPendingCommentPosition(null);
+                            setCommentInputValue('');
+                          }}
+                          className="text-xs text-slate-600 hover:text-slate-800 font-medium"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                    
+                    <textarea
+                      value={commentInputValue}
+                      onChange={(e) => setCommentInputValue(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && e.metaKey) {
+                          submitComment();
+                        }
+                      }}
+                      placeholder="Type your comment..."
+                      className="w-full px-2 py-1 text-sm text-black border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-slate-400 min-h-[60px] resize-none"
+                      autoFocus
+                    />
+                    
+                    <div className="flex items-center justify-between mt-2">
+                      <span className="text-xs text-slate-500">Cmd+Enter to submit</span>
+                      <button
+                        onClick={submitComment}
+                        className="px-2 py-1 text-xs font-medium text-white bg-blue-900 rounded hover:bg-blue-800"
+                      >
+                        Add Comment
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+              
               {memoizedFloatingItems.map(item => (
                 <div
                   key={item.id}
@@ -2809,54 +2898,7 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
         </div>
       )}
 
-      {/* Comment Input Panel - Integrated with Floating Cards */}
-      {showCommentInput && (
-        <div className="fixed right-4 top-1/2 -translate-y-1/2 w-72 bg-white border border-blue-200 rounded-lg shadow-md z-50">
-          {/* Header with navy banner */}
-          <div className="px-3 py-2 text-xs font-semibold text-white rounded-t-lg bg-blue-900">
-            💬 COMMENT
-          </div>
-          
-          {/* Content area */}
-          <div className="p-3">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs text-slate-500">{formatTimestamp(new Date())}</span>
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-medium text-slate-700">You</span>
-                <button
-                  onClick={() => setShowCommentInput(false)}
-                  className="text-xs text-slate-600 hover:text-slate-800 font-medium"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-            
-            <textarea
-              value={commentInputValue}
-              onChange={(e) => setCommentInputValue(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && e.metaKey) {
-                  submitComment();
-                }
-              }}
-              placeholder="Type your comment..."
-              className="w-full px-2 py-1 text-sm text-black border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-slate-400 min-h-[60px] resize-none"
-              autoFocus
-            />
-            
-            <div className="flex items-center justify-between mt-2">
-              <span className="text-xs text-slate-500">Cmd+Enter to submit</span>
-              <button
-                onClick={submitComment}
-                className="px-2 py-1 text-xs font-medium text-white bg-blue-900 rounded hover:bg-blue-800"
-              >
-                Add Comment
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Comment Input Panel - Now integrated with floating cards above */}
 
       {/* Rewrite Prompt Input Panel */}
       {showRewriteInput && (
