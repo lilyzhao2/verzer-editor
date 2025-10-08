@@ -8,6 +8,8 @@ interface TabAutocompleteOptions {
   typingDelay?: number; // milliseconds to wait after typing stops
   contextLength?: number; // characters of context to analyze
   styleAdaptation?: boolean; // whether to adapt to user's writing style
+  minConfidence?: number; // minimum confidence threshold (0-1)
+  maxSuggestionLength?: number; // max characters in suggestion
 }
 
 interface TabAutocompleteState {
@@ -92,9 +94,11 @@ export const TabAutocompleteExtension = Extension.create<TabAutocompleteOptions>
     return {
       enabled: true,
       onRequestCompletion: undefined,
-      typingDelay: 2500,
-      contextLength: 800,
+      typingDelay: 1500, // Reduced from 2500ms for faster response
+      contextLength: 500, // Reduced from 800 to save tokens
       styleAdaptation: true,
+      minConfidence: 0.7, // Only show high-confidence suggestions
+      maxSuggestionLength: 150, // Limit suggestion length
     };
   },
 
@@ -331,7 +335,7 @@ export const TabAutocompleteExtension = Extension.create<TabAutocompleteOptions>
 
             const decorations: Decoration[] = [];
             
-            // Create ghost text span that wraps properly
+            // Create improved ghost text span with better styling
             const ghostTextSpan = document.createElement('span');
             ghostTextSpan.className = 'ghost-text-container';
             ghostTextSpan.setAttribute('data-ghost-text', pluginState.suggestion);
@@ -339,6 +343,11 @@ export const TabAutocompleteExtension = Extension.create<TabAutocompleteOptions>
               display: inline;
               word-wrap: break-word;
               max-width: 100%;
+              color: #94a3b8;
+              opacity: 0.65;
+              font-style: normal;
+              pointer-events: none;
+              user-select: none;
             `;
             
             const decoration = Decoration.widget(

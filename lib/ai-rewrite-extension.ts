@@ -554,6 +554,31 @@ export const AIRewriteExtension = Extension.create<AIRewriteOptions>({
           document.addEventListener('mousemove', handleMouseMove);
           document.addEventListener('mouseup', handleMouseUp);
 
+          // Keyboard handler for number keys 1-5 and Escape
+          const handleKeyDown = (event: KeyboardEvent) => {
+            const pluginState = aiRewriteKey.getState(view.state);
+            if (!pluginState?.menuVisible || pluginState.variations.length === 0) return;
+            
+            // Numbers 1-5 to select variations
+            const num = parseInt(event.key);
+            if (num >= 1 && num <= pluginState.variations.length) {
+              event.preventDefault();
+              console.log(`🔢 Keyboard shortcut: Applying variation ${num}`);
+              extension.editor.commands.applyRewrite(num - 1);
+              return;
+            }
+            
+            // Escape to close menu
+            if (event.key === 'Escape') {
+              event.preventDefault();
+              console.log('⎋ Escape pressed: Closing rewrite menu');
+              extension.editor.commands.hideRewriteMenu();
+              return;
+            }
+          };
+
+          document.addEventListener('keydown', handleKeyDown);
+
           // Click outside handler
           const handleClickOutside = (event: MouseEvent) => {
             const target = event.target as Element;
@@ -598,12 +623,98 @@ export const AIRewriteExtension = Extension.create<AIRewriteOptions>({
               // Update menu content
               if (pluginState.isLoading) {
                 menuElement.innerHTML = `
-                  <div style="padding: 16px; text-align: center; color: #6b7280;">
-                    <div style="margin-bottom: 8px; font-size: 18px;">🔄</div>
-                    <div style="font-size: 14px; font-weight: 500;">Generating rewrites...</div>
-                    <div style="font-size: 12px; margin-top: 4px; opacity: 0.7;">This may take a few seconds</div>
+                  <div style="padding: 20px; font-family: -apple-system, system-ui, sans-serif;">
+                    <div style="
+                      text-align: center;
+                      font-size: 16px;
+                      font-weight: 600;
+                      color: #1f2937;
+                      margin-bottom: 16px;
+                      display: flex;
+                      align-items: center;
+                      justify-content: center;
+                      gap: 8px;
+                    ">
+                      <span style="animation: spin 1s linear infinite; display: inline-block;">🔄</span>
+                      Generating AI Rewrites
+                    </div>
+                    
+                    ${[1, 2, 3, 4, 5].map((num, idx) => `
+                      <div style="margin-bottom: 12px;">
+                        <div style="
+                          display: flex;
+                          justify-content: space-between;
+                          align-items: center;
+                          margin-bottom: 4px;
+                        ">
+                          <span style="font-size: 13px; color: #6b7280; font-weight: 500;">Variation ${num}</span>
+                          <span style="font-size: 11px; color: #9ca3af;" id="status-${num}">
+                            ${idx === 0 ? '⏳ Generating...' : '⏱️ Waiting...'}
+                          </span>
+                        </div>
+                        <div style="
+                          width: 100%;
+                          height: 6px;
+                          background: #e5e7eb;
+                          border-radius: 3px;
+                          overflow: hidden;
+                        ">
+                          <div 
+                            id="progress-${num}" 
+                            style="
+                              width: ${idx === 0 ? '60%' : '0%'};
+                              height: 100%;
+                              background: linear-gradient(90deg, #667eea, #764ba2);
+                              border-radius: 3px;
+                              transition: width 0.3s ease;
+                            "
+                          ></div>
+                        </div>
+                      </div>
+                    `).join('')}
+                    
+                    <div style="
+                      text-align: center;
+                      font-size: 12px;
+                      color: #9ca3af;
+                      margin-top: 16px;
+                      padding-top: 16px;
+                      border-top: 1px solid #f3f4f6;
+                    ">
+                      Usually takes 3-5 seconds
+                    </div>
                   </div>
+                  
+                  <style>
+                    @keyframes spin {
+                      from { transform: rotate(0deg); }
+                      to { transform: rotate(360deg); }
+                    }
+                  </style>
                 `;
+                
+                // Simulate progress animation
+                let currentVariation = 0;
+                const progressInterval = setInterval(() => {
+                  currentVariation++;
+                  if (currentVariation > 5) {
+                    clearInterval(progressInterval);
+                    return;
+                  }
+                  
+                  const statusEl = document.getElementById(`status-${currentVariation}`);
+                  const progressEl = document.getElementById(`progress-${currentVariation}`);
+                  
+                  if (statusEl) statusEl.textContent = '⏳ Generating...';
+                  if (progressEl) progressEl.style.width = '60%';
+                  
+                  if (currentVariation > 1) {
+                    const prevStatusEl = document.getElementById(`status-${currentVariation - 1}`);
+                    const prevProgressEl = document.getElementById(`progress-${currentVariation - 1}`);
+                    if (prevStatusEl) prevStatusEl.textContent = '✓ Done';
+                    if (prevProgressEl) prevProgressEl.style.width = '100%';
+                  }
+                }, 800);
               } else if (pluginState.error) {
                 menuElement.innerHTML = `
                   <div style="padding: 16px; text-align: center; color: #ef4444;">
@@ -685,18 +796,53 @@ export const AIRewriteExtension = Extension.create<AIRewriteOptions>({
                             pointer-events: auto !important;
                             position: relative;
                             z-index: 10;
+                            display: flex;
+                            align-items: flex-start;
+                            gap: 12px;
                           "
                         >
                           <div style="
-                            font-weight: 600;
-                            font-size: 11px;
-                            color: #6366f1;
-                            margin-bottom: 6px;
-                            text-transform: uppercase;
-                            letter-spacing: 0.8px;
+                            min-width: 24px;
+                            height: 24px;
+                            background: linear-gradient(135deg, #667eea, #764ba2);
+                            color: white;
+                            border-radius: 6px;
+                            display: flex;
+                            align-items: center;
+                            justify-content: center;
+                            font-size: 12px;
+                            font-weight: 700;
+                            flex-shrink: 0;
+                            margin-top: 2px;
                           ">
-                            ${variation.label}
+                            ${index + 1}
                           </div>
+                          <div style="flex: 1;">
+                            <div style="
+                              font-weight: 600;
+                              font-size: 11px;
+                              color: #6366f1;
+                              margin-bottom: 6px;
+                              text-transform: uppercase;
+                              letter-spacing: 0.8px;
+                              display: flex;
+                              align-items: center;
+                              gap: 8px;
+                            ">
+                              ${variation.label}
+                              ${index === 0 ? `
+                                <span style="
+                                  font-size: 10px;
+                                  color: #9ca3af;
+                                  padding: 2px 6px;
+                                  background: #f9fafb;
+                                  border-radius: 4px;
+                                  font-weight: 500;
+                                  text-transform: none;
+                                  letter-spacing: normal;
+                                ">Press 1-5</span>
+                              ` : ''}
+                            </div>
                           <div style="
                             font-size: 14px;
                             color: #374151;
@@ -875,6 +1021,8 @@ export const AIRewriteExtension = Extension.create<AIRewriteOptions>({
               if (clickOutsideListenerAdded) {
                 document.removeEventListener('click', handleClickOutside);
               }
+              // Clean up keyboard listener
+              document.removeEventListener('keydown', handleKeyDown);
               // Clean up drag listeners
               document.removeEventListener('mousemove', handleMouseMove);
               document.removeEventListener('mouseup', handleMouseUp);

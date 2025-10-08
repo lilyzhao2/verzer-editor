@@ -728,13 +728,40 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
         style: 'min-height: 11in; padding: 1in 1in; font-family: Arial, sans-serif; font-size: 11pt; line-height: 1.5; color: #000000;',
       },
       handleDOMEvents: {
-        // Prevent selection from being cleared when clicking inside editor on non-text areas
-        mousedown: (view, event) => {
-          const target = event.target as Element;
-          // If clicking on editor but not on text, preserve the current selection
-          if (target.classList.contains('ProseMirror') && !view.state.selection.empty) {
-            event.preventDefault();
-            return true;
+        // Track clicks to preserve selection until double-click outside
+        click: (view, event) => {
+          const { state } = view;
+          const { selection } = state;
+          
+          // If there's a selection, check if click is outside it
+          if (!selection.empty) {
+            const pos = view.posAtCoords({ left: event.clientX, top: event.clientY });
+            if (pos) {
+              // If clicking outside the selection range
+              if (pos.pos < selection.from || pos.pos > selection.to) {
+                // Single click outside - don't clear, just ignore
+                event.preventDefault();
+                return true;
+              }
+            }
+          }
+          return false;
+        },
+        dblclick: (view, event) => {
+          const { state } = view;
+          const { selection } = state;
+          
+          // Double-click anywhere should clear selection
+          if (!selection.empty) {
+            const pos = view.posAtCoords({ left: event.clientX, top: event.clientY });
+            if (pos && (pos.pos < selection.from || pos.pos > selection.to)) {
+              // Double-click outside selection - clear it
+              const tr = state.tr.setSelection(
+                state.schema.text('').resolve(pos.pos) as any
+              );
+              view.dispatch(tr);
+              return true;
+            }
           }
           return false;
         },
@@ -866,6 +893,70 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
   // Enhanced Auto-recovery
   const [showRecoveryModal, setShowRecoveryModal] = useState(false);
   const [recoveryBackups, setRecoveryBackups] = useState<Array<{id: string; timestamp: Date; content: string; changes: number}>>([]);
+  
+  // Loading & Performance
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
+  const [isOperationLoading, setIsOperationLoading] = useState(false);
+  const [loadingMessage, setLoadingMessage] = useState('');
+  
+  // Network & Error Handling
+  const [isOnline, setIsOnline] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<{message: string; retry?: () => void} | null>(null);
+  const [showValidationWarning, setShowValidationWarning] = useState(false);
+  const [validationWarning, setValidationWarning] = useState<{message: string; onConfirm: () => void; onCancel: () => void} | null>(null);
+
+  // Enhanced API call with retry and error handling
+  const makeAPICall = useCallback(async <T,>(
+    apiCall: () => Promise<T>,
+    options: {
+      retries?: number;
+      retryDelay?: number;
+      errorMessage?: string;
+      loadingMessage?: string;
+    } = {}
+  ): Promise<T | null> => {
+    const { retries = 2, retryDelay = 1000, errorMessage = 'Operation failed', loadingMessage = '' } = options;
+    
+    if (loadingMessage) {
+      setIsOperationLoading(true);
+      setLoadingMessage(loadingMessage);
+    }
+    
+    let lastError: Error | null = null;
+    
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        const result = await apiCall();
+        setIsOperationLoading(false);
+        setLoadingMessage('');
+        setErrorMessage(null);
+        return result;
+      } catch (error) {
+        lastError = error as Error;
+        console.error(`API call failed (attempt ${attempt + 1}/${retries + 1}):`, error);
+        
+        if (attempt < retries) {
+          await new Promise(resolve => setTimeout(resolve, retryDelay * (attempt + 1)));
+        }
+      }
+    }
+    
+    // All retries failed
+    setIsOperationLoading(false);
+    setLoadingMessage('');
+    
+    const retry = () => {
+      setErrorMessage(null);
+      makeAPICall(apiCall, options);
+    };
+    
+    setErrorMessage({
+      message: `${errorMessage}: ${lastError?.message || 'Unknown error'}. ${!isOnline ? 'Please check your internet connection.' : ''}`,
+      retry
+    });
+    
+    return null;
+  }, [isOnline]);
 
   // Search & Replace Functions
   const performSearch = useCallback(() => {
@@ -1607,16 +1698,17 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
 
   // Wipe everything - reset to fresh state
   const handleWipeEverything = useCallback(() => {
-    const confirmed = window.confirm(
-      '⚠️ WARNING: This will delete EVERYTHING!\n\n' +
-      '• All versions\n' +
-      '• All comments\n' +
-      '• All tracked changes\n' +
-      '• All document content\n\n' +
-      'This action cannot be undone. Continue?'
-    );
+    setValidationWarning({
+      message: '⚠️ WARNING: This will permanently delete EVERYTHING!\n\n• All versions\n• All comments\n• All tracked changes\n• All document content\n\nThis action cannot be undone. Are you absolutely sure?',
+      onConfirm: () => {
+        performWipe();
+        setValidationWarning(null);
+      },
+      onCancel: () => setValidationWarning(null)
+    });
+  }, []);
 
-    if (!confirmed) return;
+  const performWipe = useCallback(() => {
 
     // Reset editor content
     if (editor) {
@@ -1902,6 +1994,38 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
       editor.off('update', handleUpdate);
     };
   }, [editor, documentName, versions, comments, trackedChanges, currentVersionId]);
+
+  // Monitor network status
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOnline(true);
+      showToast('✓ Back online', 'success');
+    };
+    
+    const handleOffline = () => {
+      setIsOnline(false);
+      showToast('⚠️ No internet connection. Working offline...', 'info');
+    };
+    
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    
+    // Check initial status
+    setIsOnline(navigator.onLine);
+    
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, [showToast]);
+
+  // Hide initial loading after editor is ready
+  useEffect(() => {
+    if (editor) {
+      // Small delay to ensure content is rendered
+      setTimeout(() => setIsInitialLoading(false), 500);
+    }
+  }, [editor]);
 
   // Check for crash/unclean shutdown on mount
   useEffect(() => {
@@ -3903,6 +4027,121 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
       >
         ❓
       </button>
+      
+      {/* Skeleton Loader - Initial Loading */}
+      {isInitialLoading && (
+        <div className="fixed inset-0 bg-white z-50 flex items-center justify-center">
+          <div className="max-w-4xl w-full px-8">
+            <div className="flex items-center justify-center mb-8">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+            </div>
+            <div className="space-y-4">
+              {/* Toolbar skeleton */}
+              <div className="h-12 bg-gray-200 rounded-lg animate-pulse"></div>
+              {/* Document skeleton */}
+              <div className="space-y-3">
+                <div className="h-4 bg-gray-200 rounded animate-pulse w-3/4"></div>
+                <div className="h-4 bg-gray-200 rounded animate-pulse"></div>
+                <div className="h-4 bg-gray-200 rounded animate-pulse w-5/6"></div>
+                <div className="h-4 bg-gray-200 rounded animate-pulse w-2/3"></div>
+                <div className="h-4 bg-gray-200 rounded animate-pulse"></div>
+                <div className="h-4 bg-gray-200 rounded animate-pulse w-4/5"></div>
+              </div>
+            </div>
+            <div className="text-center mt-6 text-sm text-gray-600">
+              Loading your document...
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Operation Loading Spinner */}
+      {isOperationLoading && (
+        <div className="fixed top-20 right-4 bg-white border border-gray-300 rounded-lg shadow-lg px-4 py-3 z-50 flex items-center gap-3">
+          <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600"></div>
+          <span className="text-sm text-gray-700">{loadingMessage || 'Processing...'}</span>
+        </div>
+      )}
+      
+      {/* Offline Indicator */}
+      {!isOnline && (
+        <div className="fixed top-16 left-1/2 transform -translate-x-1/2 bg-orange-500 text-white px-6 py-2 rounded-full shadow-lg z-50 flex items-center gap-2">
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 5.636a9 9 0 010 12.728m0 0l-2.829-2.829m2.829 2.829L21 21M15.536 8.464a5 5 0 010 7.072m0 0l-2.829-2.829m-4.243 2.829a4.978 4.978 0 01-1.414-2.83m-1.414 5.658a9 9 0 01-2.167-9.238m7.824 2.167a1 1 0 111.414 1.414m-1.414-1.414L3 3m8.293 8.293l1.414 1.414" />
+          </svg>
+          <span className="text-sm font-medium">Working Offline</span>
+        </div>
+      )}
+      
+      {/* Error Banner */}
+      {errorMessage && (
+        <div className="fixed top-16 left-1/2 transform -translate-x-1/2 max-w-2xl w-full bg-red-50 border border-red-200 rounded-lg shadow-lg p-4 z-50">
+          <div className="flex items-start gap-3">
+            <div className="flex-shrink-0">
+              <svg className="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <div className="flex-1">
+              <h3 className="text-sm font-semibold text-red-900 mb-1">Error</h3>
+              <p className="text-sm text-red-800">{errorMessage.message}</p>
+            </div>
+            <div className="flex-shrink-0 flex gap-2">
+              {errorMessage.retry && (
+                <button
+                  onClick={errorMessage.retry}
+                  className="px-3 py-1 text-xs font-medium text-white bg-red-600 rounded hover:bg-red-700"
+                >
+                  Retry
+                </button>
+              )}
+              <button
+                onClick={() => setErrorMessage(null)}
+                className="text-red-600 hover:text-red-800"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Validation Warning Modal */}
+      {validationWarning && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg shadow-2xl max-w-md w-full">
+            <div className="px-6 py-4 border-b border-gray-200">
+              <div className="flex items-center gap-3">
+                <div className="flex-shrink-0 w-10 h-10 bg-red-100 rounded-full flex items-center justify-center">
+                  <svg className="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                </div>
+                <h3 className="text-lg font-bold text-gray-900">Confirm Action</h3>
+              </div>
+            </div>
+            <div className="px-6 py-4">
+              <p className="text-sm text-gray-700 whitespace-pre-line">{validationWarning.message}</p>
+            </div>
+            <div className="px-6 py-4 bg-gray-50 rounded-b-lg flex justify-end gap-3">
+              <button
+                onClick={validationWarning.onCancel}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={validationWarning.onConfirm}
+                className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded hover:bg-red-700"
+              >
+                Yes, Delete Everything
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
  
       {/* Crash Recovery Modal */}
       {showRecoveryModal && recoveryBackups.length > 0 && (

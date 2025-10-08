@@ -78,25 +78,7 @@ export function ProjectSetup() {
   const [editingTemplate, setEditingTemplate] = useState<string | null>(null);
   const [editingValues, setEditingValues] = useState<{ label: string; description: string; prompt: string }>({ label: '', description: '', prompt: '' });
   
-  // Autocomplete settings
-  const [autocompleteSettings, setAutocompleteSettings] = useState(() => {
-    try {
-      const saved = localStorage.getItem('autocompleteSettings');
-      if (saved) {
-        return JSON.parse(saved);
-      }
-    } catch (e) {
-      console.error('Failed to load autocomplete settings:', e);
-    }
-    return {
-      enabled: true,
-      typingDelay: 2000, // milliseconds
-      styleAdaptation: true,
-      contextLength: 800 // characters
-    };
-  });
-  
-  const [activeTab, setActiveTab] = useState<'context' | 'rewrites' | 'autocomplete'>('context');
+  const [activeTab, setActiveTab] = useState<'context' | 'rewrites'>('context');
   
   // Always use/create a single config
   const activeConfig = state.projectConfigs?.[0] || {
@@ -307,17 +289,6 @@ export function ProjectSetup() {
       saveRewriteTemplates(updated);
     }
   };
-  
-  // Autocomplete settings functions
-  const saveAutocompleteSettings = (settings: typeof autocompleteSettings) => {
-    try {
-      localStorage.setItem('autocompleteSettings', JSON.stringify(settings));
-      setAutocompleteSettings(settings);
-      console.log('✅ Saved autocomplete settings to localStorage');
-    } catch (e) {
-      console.error('Failed to save autocomplete settings:', e);
-    }
-  };
 
   // Retry function for API calls
   const retryApiCall = async (apiCall: () => Promise<Response>, maxRetries = 3, baseDelay = 1000) => {
@@ -520,26 +491,6 @@ Be specific about the tone, audience, syntax style, and intended outcome based o
             }`}
           >
             Rewrite Settings
-          </button>
-          <button
-            onClick={() => setActiveTab('autocomplete')}
-            className={`px-6 py-3 font-medium transition-colors ${
-              activeTab === 'autocomplete'
-                ? 'text-[#1e3a8a] border-b-2 border-[#1e3a8a]'
-                : 'text-gray-600 hover:text-gray-900'
-            }`}
-          >
-            Autocomplete Settings
-          </button>
-          <button
-            onClick={() => setActiveTab('view')}
-            className={`px-4 py-2 text-sm font-medium transition-colors ${
-              activeTab === 'view'
-                ? 'text-[#1e3a8a] border-b-2 border-[#1e3a8a]'
-                : 'text-gray-600 hover:text-gray-900'
-            }`}
-          >
-            View Options
           </button>
         </div>
 
@@ -789,79 +740,6 @@ Be specific about the tone, audience, syntax style, and intended outcome based o
               <Plus className="w-5 h-5" />
               Add Custom Rewrite
             </button>
-          </div>
-        )}
-
-        {/* Autocomplete Settings Tab */}
-        {activeTab === 'autocomplete' && (
-          <div className="space-y-6">
-            {/* Header Info */}
-            <div className="bg-white rounded-lg border border-gray-200 p-6">
-              <h2 className="text-lg font-semibold text-black mb-2">Autocomplete Configuration</h2>
-              <p className="text-sm text-gray-600">
-                Customize how the AI autocomplete feature behaves while you're typing.
-              </p>
-            </div>
-
-            {/* Settings */}
-            <div className="bg-white rounded-lg border border-gray-200 p-6 space-y-6">
-              {/* Typing Delay */}
-              <div>
-                <h3 className="text-base font-semibold text-black mb-1">Typing Delay</h3>
-                <p className="text-sm text-gray-600 mb-3">How long to wait after you stop typing before showing suggestions</p>
-                <div className="flex items-center gap-4">
-                  <input
-                    type="range"
-                    min="500"
-                    max="5000"
-                    step="500"
-                    value={autocompleteSettings.typingDelay}
-                    onChange={(e) => saveAutocompleteSettings({ ...autocompleteSettings, typingDelay: parseInt(e.target.value) })}
-                    className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-[#1e3a8a]"
-                  />
-                  <span className="text-sm font-medium text-black w-20 text-right">
-                    {(autocompleteSettings.typingDelay / 1000).toFixed(1)}s
-                  </span>
-                </div>
-              </div>
-
-              {/* Style Adaptation */}
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-base font-semibold text-black mb-1">Style Adaptation</h3>
-                  <p className="text-sm text-gray-600">Let AI adapt to your writing style (short/long sentences, formal/casual)</p>
-                </div>
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={autocompleteSettings.styleAdaptation}
-                    onChange={(e) => saveAutocompleteSettings({ ...autocompleteSettings, styleAdaptation: e.target.checked })}
-                    className="sr-only peer"
-                  />
-                  <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#1e3a8a]"></div>
-                </label>
-              </div>
-
-              {/* Context Length */}
-              <div>
-                <h3 className="text-base font-semibold text-black mb-1">Context Length</h3>
-                <p className="text-sm text-gray-600 mb-3">How much of your previous text to analyze for better suggestions</p>
-                <div className="flex items-center gap-4">
-                  <input
-                    type="range"
-                    min="200"
-                    max="2000"
-                    step="200"
-                    value={autocompleteSettings.contextLength}
-                    onChange={(e) => saveAutocompleteSettings({ ...autocompleteSettings, contextLength: parseInt(e.target.value) })}
-                    className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-[#1e3a8a]"
-                  />
-                  <span className="text-sm font-medium text-black w-20 text-right">
-                    {autocompleteSettings.contextLength} chars
-                  </span>
-                </div>
-              </div>
-            </div>
           </div>
         )}
       </div>
