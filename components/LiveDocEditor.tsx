@@ -19,6 +19,7 @@ import { TabAutocompleteExtension } from '@/lib/tab-autocomplete-extension';
 import { ProjectSetup } from '@/components/ProjectSetup';
 import { preloadCriticalComponents, preloadHeavyComponents } from '@/components/LazyComponents';
 import { TrackChangesDecorationExtension, TrackedChange } from '@/lib/track-changes-decorations';
+import { FontSize } from '@/lib/extensions/font-size';
 
 /**
  * MODE 1: LIVE DOC EDITOR
@@ -336,7 +337,14 @@ export default function LiveDocEditor() {
         underline: false, // Disable underline from StarterKit since we import it separately
       }),
       Underline,
-      TextStyle,
+      TextStyle.configure({
+        HTMLAttributes: {
+          class: 'text-style',
+        },
+      }),
+      FontSize.configure({
+        types: ['textStyle'],
+      }),
       Color,
       FontFamily.configure({
         types: ['textStyle'],
@@ -554,6 +562,10 @@ export default function LiveDocEditor() {
   const [formatPainterActive, setFormatPainterActive] = useState(false);
   const [debugMode, setDebugMode] = useState(false);
   const [copiedFormat, setCopiedFormat] = useState<any>(null);
+  const [showSaveMenu, setShowSaveMenu] = useState(false);
+  const [showLinkModal, setShowLinkModal] = useState(false);
+  const [linkText, setLinkText] = useState('');
+  const [linkUrl, setLinkUrl] = useState('');
   const [versionStartContent, setVersionStartContent] = useState<string>('');
   const [suggestingModeContent, setSuggestingModeContent] = useState<string>(''); // Tracks changes during suggesting
 
@@ -1219,11 +1231,196 @@ export default function LiveDocEditor() {
       // Only save if content changed
       if (currentVersion && currentContent !== currentVersion.content) {
         createNewVersion(currentContent, true);
+        setChangesSinceLastSave(0); // Reset counter after auto-save
       }
     }, versionSettings.autoSaveFrequency * 60 * 1000); // Convert minutes to ms
 
     return () => clearInterval(interval);
   }, [editor, versionSettings.autoSaveFrequency, versionSettings.autoSaveEnabled, currentVersionId, versions]);
+
+  // Auto-save to localStorage to prevent data loss
+  useEffect(() => {
+    if (!editor) return;
+
+    const saveToLocalStorage = () => {
+      try {
+        const documentData = {
+          documentName,
+          content: editor.getHTML(),
+          versions,
+          comments,
+          trackedChanges,
+          currentVersionId,
+          lastSaved: new Date().toISOString(),
+        };
+        localStorage.setItem('verzer-document-backup', JSON.stringify(documentData));
+        console.log('📦 Document auto-saved to localStorage');
+      } catch (error) {
+        console.error('Failed to save to localStorage:', error);
+      }
+    };
+
+    // Save every 30 seconds
+    const interval = setInterval(saveToLocalStorage, 30000);
+
+    // Save on content change (debounced)
+    let saveTimeout: NodeJS.Timeout;
+    const handleUpdate = () => {
+      clearTimeout(saveTimeout);
+      saveTimeout = setTimeout(saveToLocalStorage, 2000); // 2 second debounce
+    };
+
+    editor.on('update', handleUpdate);
+
+    // Save immediately on mount
+    saveToLocalStorage();
+
+    return () => {
+      clearInterval(interval);
+      clearTimeout(saveTimeout);
+      editor.off('update', handleUpdate);
+    };
+  }, [editor, documentName, versions, comments, trackedChanges, currentVersionId]);
+
+  // Load from localStorage on mount (SILENTLY - no popup)
+  useEffect(() => {
+    try {
+      const savedData = localStorage.getItem('verzer-document-backup');
+      if (savedData) {
+        const data = JSON.parse(savedData);
+        const lastSaved = new Date(data.lastSaved);
+        const now = new Date();
+        const timeDiff = now.getTime() - lastSaved.getTime();
+        
+        // Only restore if data is less than 1 hour old and silently
+        if (timeDiff < 60 * 60 * 1000 && data.content && data.content !== '<p></p>') {
+          console.log('📥 Silently restoring backup data from:', lastSaved.toLocaleString());
+          
+          // Restore silently without asking user
+          setDocumentName(data.documentName || 'Untitled Document');
+          if (data.versions && data.versions.length > 0) {
+            setVersions(data.versions);
+          }
+          if (data.comments) {
+            setComments(data.comments);
+          }
+          if (data.trackedChanges) {
+            setTrackedChanges(data.trackedChanges);
+          }
+          if (data.currentVersionId) {
+            setCurrentVersionId(data.currentVersionId);
+          }
+          
+          // Set content after editor is ready
+          setTimeout(() => {
+            if (editor && data.content) {
+              editor.commands.setContent(data.content);
+            }
+          }, 100);
+          
+          console.log('✅ Document silently restored from backup');
+        } else {
+          // Remove old backup data
+          localStorage.removeItem('verzer-document-backup');
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load from localStorage:', error);
+      localStorage.removeItem('verzer-document-backup');
+    }
+  }, [editor]);
+
+  // Close save menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Element;
+      if (showSaveMenu && !target.closest('[data-save-menu]')) {
+        setShowSaveMenu(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showSaveMenu]);
+
+  // Save functions for different formats
+  const saveAsHTML = () => {
+    if (!editor) return;
+    const content = editor.getHTML();
+    const blob = new Blob([content], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${documentName || 'document'}.html`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    setShowSaveMenu(false);
+  };
+
+  const saveAsWord = () => {
+    if (!editor) return;
+    // Create a basic DOC file (RTF format for compatibility)
+    const content = editor.getText();
+    const rtfContent = `{\\rtf1\\ansi\\deff0 {\\fonttbl {\\f0 Times New Roman;}}\\f0\\fs24 ${content.replace(/\n/g, '\\par ')}}`;
+    
+    const blob = new Blob([rtfContent], { type: 'application/rtf' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${documentName || 'document'}.doc`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    setShowSaveMenu(false);
+  };
+
+  const saveAsPDF = () => {
+    if (!editor) return;
+    // Use browser's print to PDF functionality
+    const printWindow = window.open('', '_blank');
+    if (printWindow) {
+      const content = editor.getHTML();
+      printWindow.document.write(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>${documentName}</title>
+          <style>
+            body { font-family: Arial, sans-serif; line-height: 1.6; margin: 40px; }
+            h1, h2, h3 { color: #333; }
+            p { margin-bottom: 16px; }
+          </style>
+        </head>
+        <body>
+          <h1>${documentName}</h1>
+          ${content}
+        </body>
+        </html>
+      `);
+      printWindow.document.close();
+      printWindow.focus();
+      setTimeout(() => {
+        printWindow.print();
+        printWindow.close();
+      }, 250);
+    }
+    setShowSaveMenu(false);
+  };
+
+  const sendAsEmail = () => {
+    if (!editor) return;
+    const content = editor.getText();
+    const subject = encodeURIComponent(documentName || 'Document');
+    const body = encodeURIComponent(`Hi,\n\nPlease find the document "${documentName}" below:\n\n${content}\n\nBest regards`);
+    
+    window.open(`mailto:?subject=${subject}&body=${body}`);
+    setShowSaveMenu(false);
+  };
 
   // Track changes for line-based auto-save
   React.useEffect(() => {
@@ -1236,6 +1433,7 @@ export default function LiveDocEditor() {
       if (versionSettings.autoSaveEnabled && changesSinceLastSave >= versionSettings.autoSaveByLineCount) {
         const currentContent = editor.getHTML();
         createNewVersion(currentContent, true);
+        setChangesSinceLastSave(0); // Reset counter after auto-save
       }
     };
 
@@ -1303,24 +1501,62 @@ export default function LiveDocEditor() {
             placeholder="Untitled Document"
           />
           
-          {/* Star Icon */}
-          <button className="text-black hover:text-gray-600" title="Star">
-            ☆
-          </button>
-          
-          {/* Move to folder */}
-          <button className="text-black hover:text-gray-600" title="Move">
-            📁
-          </button>
-          
-          {/* Cloud icon */}
-          <button className="text-black hover:text-gray-600" title="Saved">
-            ☁️
-          </button>
+          {/* Save Menu - moved to the right */}
+          <div className="relative ml-auto" data-save-menu>
+            <button 
+              className="text-black hover:text-gray-600 flex items-center gap-1" 
+              title="Save As..."
+              onClick={() => setShowSaveMenu(!showSaveMenu)}
+            >
+              💾 <span className="text-sm">Save</span>
+            </button>
+            
+            {showSaveMenu && (
+              <div className="absolute right-0 top-8 bg-white border border-gray-200 rounded-md shadow-lg z-50 min-w-[180px]">
+                <div className="py-1">
+                  <button
+                    onClick={saveAsWord}
+                    className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                  >
+                    📄 Save as Word Doc
+                  </button>
+                  <button
+                    onClick={saveAsPDF}
+                    className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                  >
+                    📋 Save as PDF
+                  </button>
+                  <button
+                    onClick={sendAsEmail}
+                    className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                  >
+                    📧 Send via Email
+                  </button>
+                  <div className="border-t border-gray-100 my-1"></div>
+                  <button
+                    onClick={saveAsHTML}
+                    className="w-full text-left px-4 py-2 text-sm text-gray-500 hover:bg-gray-100"
+                  >
+                    🌐 Save as HTML
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
         
         {/* Menu Bar */}
         <div className="flex items-center gap-4 mt-2 text-sm">
+          {/* History Button - Far Left */}
+          <button
+            onClick={() => setShowVersionHistory(!showVersionHistory)}
+            onMouseEnter={() => preloadHeavyComponents()}
+            className="px-3 py-1.5 text-xs font-medium text-black bg-white border border-gray-300 rounded hover:bg-gray-50"
+            title="Version History"
+          >
+            📜 History
+          </button>
+          
           {/* Context Page */}
           <button 
             onClick={() => setShowContextPage(true)}
@@ -1360,16 +1596,6 @@ export default function LiveDocEditor() {
                 </option>
               ))}
             </select>
-
-            {/* History Button */}
-            <button
-              onClick={() => setShowVersionHistory(!showVersionHistory)}
-              onMouseEnter={() => preloadHeavyComponents()}
-              className="px-3 py-1.5 text-xs font-medium text-black bg-white border border-gray-300 rounded hover:bg-gray-50"
-              title="Version History"
-            >
-              📜 History
-            </button>
 
             {/* Manual Save Button */}
             <button
@@ -1536,41 +1762,38 @@ export default function LiveDocEditor() {
         </select>
 
         {/* Font Size */}
-        <div className="flex items-center bg-white border border-gray-300 rounded-md">
-          <button 
-            onClick={() => {
-              const currentSize = editor.getAttributes('textStyle').fontSize || '11px';
-              const newSize = Math.max(8, parseInt(currentSize) - 1);
-              editor.chain().focus().setMark('textStyle', { fontSize: `${newSize}px` }).run();
-            }}
-            className="p-1.5 hover:bg-gray-100 rounded-l-md transition-colors" 
-            title="Decrease font size"
-          >
-            <span className="text-gray-600 font-medium text-sm">−</span>
-          </button>
-          <input 
-            type="text" 
-            value={editor.getAttributes('textStyle').fontSize?.replace('px', '') || '11'} 
-            onChange={(e) => {
-              const size = parseInt(e.target.value);
-              if (size >= 8 && size <= 72) {
-                editor.chain().focus().setMark('textStyle', { fontSize: `${size}px` }).run();
-              }
-            }}
-            className="w-8 text-center text-sm border-none bg-transparent px-1 py-1.5 text-gray-700 focus:outline-none"
-          />
-          <button 
-            onClick={() => {
-              const currentSize = editor.getAttributes('textStyle').fontSize || '11px';
-              const newSize = Math.min(72, parseInt(currentSize) + 1);
-              editor.chain().focus().setMark('textStyle', { fontSize: `${newSize}px` }).run();
-            }}
-            className="p-1.5 hover:bg-gray-100 rounded-r-md transition-colors" 
-            title="Increase font size"
-          >
-            <span className="text-gray-600 font-medium text-sm">+</span>
-          </button>
-        </div>
+        <select 
+          className="text-sm bg-white border border-gray-300 rounded-md px-3 py-1.5 hover:bg-gray-50 text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          onChange={(e) => {
+            const size = e.target.value;
+            console.log('Setting font size to:', size);
+            
+            // Use the custom FontSize extension
+            editor.chain().focus().setFontSize(`${size}px`).run();
+            
+            // Debug: log the current attributes
+            setTimeout(() => {
+              console.log('Current textStyle attributes:', editor.getAttributes('textStyle'));
+            }, 100);
+          }}
+          value={editor.getAttributes('textStyle').fontSize?.replace('px', '') || '11'}
+        >
+          <option value="8">8</option>
+          <option value="9">9</option>
+          <option value="10">10</option>
+          <option value="11">11</option>
+          <option value="12">12</option>
+          <option value="14">14</option>
+          <option value="16">16</option>
+          <option value="18">18</option>
+          <option value="20">20</option>
+          <option value="24">24</option>
+          <option value="28">28</option>
+          <option value="32">32</option>
+          <option value="36">36</option>
+          <option value="48">48</option>
+          <option value="72">72</option>
+        </select>
 
         <div className="w-px h-6 bg-gray-300 mx-1" />
 
@@ -1608,46 +1831,88 @@ export default function LiveDocEditor() {
         </button>
 
         {/* Text Color */}
-        <button 
-          onClick={() => {
-            const color = prompt('Enter text color (e.g., #ff0000 or red):');
-            if (color) {
-              editor.chain().focus().setColor(color).run();
-            }
-          }}
-          className="p-2 hover:bg-gray-200 rounded-md transition-colors text-gray-600" 
-          title="Text color"
-        >
-          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-            <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666.666 0 00-1.197.416 1 1 0 01-1.2.804 4.978 4.978 0 00-5.99 3.59A1 1 0 015 11H3a1 1 0 01-1-1V3a1 1 0 011-1zm1.658 6.991a1 1 0 00-.287.801 1 1 0 00.287.801l.566.566a1 1 0 001.414 0l.566-.566a1 1 0 000-1.414l-.566-.566a1 1 0 00-1.414 0l-.566.566z" clipRule="evenodd" />
-          </svg>
-        </button>
+        <div className="relative">
+          <select 
+            className="text-sm bg-white border border-gray-300 rounded-md px-3 py-1.5 hover:bg-gray-50 text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none pr-8"
+            onChange={(e) => {
+              const color = e.target.value;
+              if (color === 'default') {
+                editor.chain().focus().unsetColor().run();
+              } else {
+                editor.chain().focus().setColor(color).run();
+              }
+            }}
+            value={editor.getAttributes('textStyle').color || 'default'}
+          >
+            <option value="default">Text Color</option>
+            <option value="#000000">Black</option>
+            <option value="#333333">Dark Gray</option>
+            <option value="#666666">Gray</option>
+            <option value="#999999">Light Gray</option>
+            <option value="#ffffff">White</option>
+            <option value="#ff0000">Red</option>
+            <option value="#00ff00">Green</option>
+            <option value="#0000ff">Blue</option>
+            <option value="#ffff00">Yellow</option>
+            <option value="#ff00ff">Magenta</option>
+            <option value="#00ffff">Cyan</option>
+            <option value="#ffa500">Orange</option>
+            <option value="#800080">Purple</option>
+            <option value="#008000">Dark Green</option>
+            <option value="#000080">Dark Blue</option>
+          </select>
+          <div className="absolute right-2 top-1/2 transform -translate-y-1/2 pointer-events-none">
+            <svg className="w-4 h-4 text-gray-500" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+            </svg>
+          </div>
+        </div>
 
         {/* Highlight */}
-        <button 
-          onClick={() => {
-            const color = prompt('Enter highlight color (e.g., #ffff00 or yellow):');
-            if (color) {
-              editor.chain().focus().setHighlight({ color }).run();
-            }
-          }}
-          className="p-2 hover:bg-gray-200 rounded-md transition-colors text-gray-600" 
-          title="Highlight color"
-        >
-          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-            <path fillRule="evenodd" d="M3 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h6a1 1 0 110 2H4a1 1 0 01-1-1z" />
-          </svg>
-        </button>
+        <div className="relative">
+          <select 
+            className="text-sm bg-white border border-gray-300 rounded-md px-3 py-1.5 hover:bg-gray-50 text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none pr-8"
+            onChange={(e) => {
+              const color = e.target.value;
+              if (color === 'default') {
+                editor.chain().focus().unsetHighlight().run();
+              } else {
+                editor.chain().focus().setHighlight({ color }).run();
+              }
+            }}
+            value={editor.getAttributes('highlight').color || 'default'}
+          >
+            <option value="default">Highlight</option>
+            <option value="#ffff00">Yellow</option>
+            <option value="#ffcccc">Light Red</option>
+            <option value="#ccffcc">Light Green</option>
+            <option value="#ccccff">Light Blue</option>
+            <option value="#ffffcc">Light Yellow</option>
+            <option value="#ffccff">Light Magenta</option>
+            <option value="#ccffff">Light Cyan</option>
+            <option value="#ffcc99">Light Orange</option>
+            <option value="#e6ccff">Light Purple</option>
+            <option value="#ff9999">Pink</option>
+            <option value="#99ff99">Mint</option>
+            <option value="#9999ff">Lavender</option>
+          </select>
+          <div className="absolute right-2 top-1/2 transform -translate-y-1/2 pointer-events-none">
+            <svg className="w-4 h-4 text-gray-500" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M3 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h6a1 1 0 110 2H4a1 1 0 01-1-1z" />
+            </svg>
+          </div>
+        </div>
 
         <div className="w-px h-6 bg-gray-300 mx-1" />
 
         {/* Link */}
         <button 
           onClick={() => {
-            const url = prompt('Enter URL:');
-            if (url) {
-              editor.chain().focus().setLink({ href: url }).run();
-            }
+            const { from, to } = editor.state.selection;
+            const selectedText = editor.state.doc.textBetween(from, to);
+            setLinkText(selectedText || '');
+            setLinkUrl('');
+            setShowLinkModal(true);
           }}
           className="p-2 hover:bg-gray-200 rounded-md transition-colors text-gray-600" 
           title="Insert link (Ctrl+K)"
@@ -1681,13 +1946,26 @@ export default function LiveDocEditor() {
         {/* Image */}
         <button 
           onClick={() => {
-            const url = prompt('Enter image URL:');
-            if (url) {
-              editor.chain().focus().insertContent(`<img src="${url}" alt="Image" style="max-width: 100%; height: auto;" />`).run();
-            }
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = 'image/*';
+            input.onchange = (e) => {
+              const file = (e.target as HTMLInputElement).files?.[0];
+              if (file) {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                  const result = e.target?.result as string;
+                  if (result) {
+                    editor.chain().focus().insertContent(`<img src="${result}" alt="${file.name}" style="max-width: 100%; height: auto;" />`).run();
+                  }
+                };
+                reader.readAsDataURL(file);
+              }
+            };
+            input.click();
           }}
           className="p-2 hover:bg-gray-200 rounded-md transition-colors text-gray-600" 
-          title="Insert image"
+          title="Upload image from computer"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
@@ -1756,7 +2034,7 @@ export default function LiveDocEditor() {
           title="Bulleted list"
         >
           <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-            <path fillRule="evenodd" d="M3 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" />
+            <path d="M3 4a1 1 0 000 2h.01a1 1 0 100-2H3zM3 8a1 1 0 000 2h.01a1 1 0 100-2H3zM3 12a1 1 0 000 2h.01a1 1 0 100-2H3zM7 4a1 1 0 000 2h10a1 1 0 100-2H7zM7 8a1 1 0 000 2h10a1 1 0 100-2H7zM7 12a1 1 0 000 2h10a1 1 0 100-2H7z" />
           </svg>
         </button>
 
@@ -1768,7 +2046,7 @@ export default function LiveDocEditor() {
           title="Numbered list"
         >
           <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-            <path fillRule="evenodd" d="M3 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" />
+            <path d="M3 4a1 1 0 01.707.293l.707.707a1 1 0 01-1.414 1.414L3 6.414l-.707.707A1 1 0 01.879 5.707L2.586 4A1 1 0 013 4zM7 4a1 1 0 000 2h10a1 1 0 100-2H7zM3 8a1 1 0 01.707.293l.707.707a1 1 0 01-1.414 1.414L3 10.414l-.707.707A1 1 0 01.879 9.707L2.586 8A1 1 0 013 8zM7 8a1 1 0 000 2h10a1 1 0 100-2H7zM3 12a1 1 0 01.707.293l.707.707a1 1 0 01-1.414 1.414L3 14.414l-.707.707a1 1 0 01-1.414-1.414L2.586 12A1 1 0 013 12zM7 12a1 1 0 000 2h10a1 1 0 100-2H7z" />
           </svg>
         </button>
 
@@ -1802,16 +2080,10 @@ export default function LiveDocEditor() {
           </span>
         )}
 
-        {/* More Options */}
-        <button className="p-2 hover:bg-gray-200 rounded-md transition-colors text-gray-600 ml-2" title="More options">
-          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-            <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" />
-          </svg>
-        </button>
       </div>
 
       {/* Document Area + Comments Sidebar */}
-      <div ref={scrollAreaRef} className="flex-1 overflow-auto flex relative">
+      <div ref={scrollAreaRef} className={`flex-1 overflow-auto flex relative transition-all duration-300 ${showVersionHistory ? 'ml-96' : 'ml-0'}`}>
         {/* Page-like white container */}
         <div className="flex-1 relative">
           {/* Old Version Warning Banner */}
@@ -2377,6 +2649,77 @@ export default function LiveDocEditor() {
                 className={"px-3 py-1.5 text-sm text-white rounded " + (confirmModal.action === 'acceptAll' ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700')}
               >
                 {confirmModal.action === 'acceptAll' ? 'Accept all' : 'Reject all'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Link Modal */}
+      {showLinkModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl w-96 p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-black">Insert Link</h3>
+              <button
+                onClick={() => setShowLinkModal(false)}
+                className="text-gray-500 hover:text-gray-700 text-xl"
+              >
+                ×
+              </button>
+            </div>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Display Text
+                </label>
+                <input
+                  type="text"
+                  value={linkText}
+                  onChange={(e) => setLinkText(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Enter display text"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  URL
+                </label>
+                <input
+                  type="url"
+                  value={linkUrl}
+                  onChange={(e) => setLinkUrl(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="https://example.com"
+                />
+              </div>
+            </div>
+            
+            <div className="flex justify-end gap-2 mt-6">
+              <button
+                onClick={() => setShowLinkModal(false)}
+                className="px-4 py-2 text-gray-600 hover:text-gray-800"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  if (linkUrl) {
+                    if (linkText) {
+                      editor.chain().focus().insertContent(`<a href="${linkUrl}">${linkText}</a>`).run();
+                    } else {
+                      editor.chain().focus().setLink({ href: linkUrl }).run();
+                    }
+                    setShowLinkModal(false);
+                    setLinkText('');
+                    setLinkUrl('');
+                  }
+                }}
+                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+              >
+                Apply
               </button>
             </div>
           </div>
