@@ -813,6 +813,7 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
   const [showRewriteInput, setShowRewriteInput] = useState(false);
   const [commentInputValue, setCommentInputValue] = useState('');
   const [rewritePromptValue, setRewritePromptValue] = useState('');
+  const [pendingCommentPosition, setPendingCommentPosition] = useState<{ from: number; to: number; topPx: number } | null>(null);
   const [zoomLevel, setZoomLevel] = useState(100);
   const [formatPainterActive, setFormatPainterActive] = useState(false);
   const [debugMode, setDebugMode] = useState(false);
@@ -990,8 +991,23 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
 
   const handleAddComment = () => {
     setAIMenuVisible(false);
-    setShowCommentInput(true);
-    setCommentInputValue('');
+    
+    // Calculate position for the comment input card
+    if (editor && pageRef.current && scrollAreaRef.current) {
+      const { from, to } = aiMenuSelection;
+      const parentRect = scrollAreaRef.current.getBoundingClientRect();
+      
+      try {
+        const coords = editor.view.coordsAtPos(Math.max(1, Math.min(from, editor.state.doc.content.size)));
+        const topPx = coords.top - parentRect.top;
+        
+        setPendingCommentPosition({ from, to, topPx });
+        setShowCommentInput(true);
+        setCommentInputValue('');
+      } catch (error) {
+        console.error('Error calculating comment position:', error);
+      }
+    }
   };
 
   const submitComment = () => {
@@ -1014,6 +1030,7 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
     setShowCommentSidebar(true);
     setShowCommentInput(false);
     setCommentInputValue('');
+    setPendingCommentPosition(null);
   };
 
   // Removed "Ask AI for thoughts" feature
@@ -1835,25 +1852,30 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
             placeholder="Untitled Document"
           />
           
-          {/* Save Menu - moved to the right */}
-          <div className="relative ml-auto" data-save-menu>
+          <div className="flex-1" />
+        </div>
+        
+        {/* Menu Bar */}
+        <div className="flex items-center gap-4 mt-2 text-sm">
+          {/* Save As Button - Far Left */}
+          <div className="relative" data-save-menu>
             <button 
-              className="text-black hover:text-gray-600 flex items-center gap-1" 
+              className="px-3 py-1.5 text-xs font-medium text-black bg-white border border-gray-300 rounded hover:bg-gray-50" 
               title="Save As..."
               onClick={() => setShowSaveMenu(!showSaveMenu)}
             >
-              💾 <span className="text-sm">Save</span>
-          </button>
-          
+              Save As
+            </button>
+            
             {showSaveMenu && (
-              <div className="absolute right-0 top-8 bg-white border border-gray-200 rounded-md shadow-lg z-50 min-w-[180px]">
+              <div className="absolute left-0 top-10 bg-white border border-gray-200 rounded-md shadow-lg z-50 min-w-[180px]">
                 <div className="py-1">
                   <button
                     onClick={saveAsWord}
                     className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
                   >
                     📄 Save as Word Doc
-          </button>
+                  </button>
                   <button
                     onClick={saveAsPDF}
                     className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
@@ -1872,16 +1894,13 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
                     className="w-full text-left px-4 py-2 text-sm text-gray-500 hover:bg-gray-100"
                   >
                     🌐 Save as HTML
-          </button>
+                  </button>
                 </div>
               </div>
             )}
           </div>
-        </div>
-        
-        {/* Menu Bar */}
-        <div className="flex items-center gap-4 mt-2 text-sm">
-          {/* History Button - Far Left */}
+          
+          {/* History Button */}
           <button
             onClick={() => setShowVersionHistory(!showVersionHistory)}
             onMouseEnter={() => preloadHeavyComponents()}
@@ -2269,38 +2288,6 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
           </svg>
         </button>
 
-        {/* Comment */}
-        <button
-          onClick={() => {
-            if (editingMode === 'viewing') return;
-            if (!editor) {
-              console.error('Editor not available');
-              return;
-            }
-            
-            const { from, to } = editor.state.selection;
-            if (from === to) {
-              showToast('Please select some text to comment on', 'info');
-              return;
-            }
-            
-            // Set the selection for the comment input
-            setAIMenuSelection({ text: editor.state.doc.textBetween(from, to), from, to });
-            setShowCommentInput(true);
-          }}
-          disabled={editingMode === 'viewing'}
-          className={`p-2 rounded-md transition-colors ${
-            editingMode === 'viewing' 
-              ? 'text-gray-400 cursor-not-allowed opacity-50' 
-              : 'text-gray-600 hover:bg-gray-200'
-          }`}
-          title={editingMode === 'viewing' ? 'Comments disabled in viewing mode' : 'Add comment (Ctrl+Alt+M)'}
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-          </svg>
-        </button>
-
         {/* Image */}
               <button
           onClick={() => {
@@ -2437,6 +2424,56 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
             👁️ Read-Only Mode
           </span>
         )}
+
+        {/* Comment */}
+        <button
+          onClick={() => {
+            if (editingMode === 'viewing') return;
+            if (!editor) {
+              console.error('Editor not available');
+              return;
+            }
+            
+            const { from, to } = editor.state.selection;
+            if (from === to) {
+              showToast('Please select some text to comment on', 'info');
+              return;
+            }
+            
+            // Set the selection for the comment input
+            setAIMenuSelection({ text: editor.state.doc.textBetween(from, to), from, to });
+            
+            // Calculate position for the comment input card
+            if (pageRef.current && scrollAreaRef.current) {
+              const parentRect = scrollAreaRef.current.getBoundingClientRect();
+              
+              try {
+                const coords = editor.view.coordsAtPos(Math.max(1, Math.min(from, editor.state.doc.content.size)));
+                const topPx = coords.top - parentRect.top;
+                
+                console.log('📍 Comment position calculated:', { from, to, topPx });
+                setPendingCommentPosition({ from, to, topPx });
+                setShowCommentInput(true);
+                setCommentInputValue('');
+              } catch (error) {
+                console.error('Error calculating comment position:', error);
+              }
+            } else {
+              console.warn('⚠️ pageRef or scrollAreaRef not available');
+            }
+          }}
+          disabled={editingMode === 'viewing'}
+          className={`p-2 rounded-md transition-colors ${
+            editingMode === 'viewing' 
+              ? 'text-gray-400 cursor-not-allowed opacity-50' 
+              : 'text-gray-600 hover:bg-gray-200'
+          }`}
+          title={editingMode === 'viewing' ? 'Comments disabled in viewing mode' : 'Comment'}
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+          </svg>
+        </button>
 
         {/* Rewrite Refresh Button */}
         <button
@@ -2587,6 +2624,63 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
               className="absolute top-0" 
               style={{ left: overlayLeftPx, width: 300 }}
             >
+              {/* Pending comment input card */}
+              {showCommentInput && pendingCommentPosition && (
+                <div
+                  className="absolute right-0 w-72 bg-white border border-blue-200 rounded-lg shadow-md z-50"
+                  style={{ top: pendingCommentPosition.topPx }}
+                >
+                  {/* Header with navy banner */}
+                  <div className="px-3 py-2 text-xs font-semibold text-white rounded-t-lg bg-blue-900">
+                    💬 COMMENT
+                  </div>
+                  
+                  {/* Content area */}
+                  <div className="p-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs text-slate-500">{formatTimestamp(new Date())}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-medium text-slate-700">You</span>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setShowCommentInput(false);
+                            setPendingCommentPosition(null);
+                            setCommentInputValue('');
+                          }}
+                          className="text-xs text-slate-600 hover:text-slate-800 font-medium"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                    
+                    <textarea
+                      value={commentInputValue}
+                      onChange={(e) => setCommentInputValue(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && e.metaKey) {
+                          submitComment();
+                        }
+                      }}
+                      placeholder="Type your comment..."
+                      className="w-full px-2 py-1 text-sm text-black border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-slate-400 min-h-[60px] resize-none"
+                      autoFocus
+                    />
+                    
+                    <div className="flex items-center justify-between mt-2">
+                      <span className="text-xs text-slate-500">Cmd+Enter to submit</span>
+                      <button
+                        onClick={submitComment}
+                        className="px-2 py-1 text-xs font-medium text-white bg-blue-900 rounded hover:bg-blue-800"
+                      >
+                        Add Comment
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+              
               {memoizedFloatingItems.map(item => (
                 <div
                   key={item.id}
@@ -3049,54 +3143,7 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
         </div>
       )}
 
-      {/* Comment Input Panel - Integrated with Floating Cards */}
-      {showCommentInput && (
-        <div className="fixed right-4 top-1/2 -translate-y-1/2 w-72 bg-white border border-blue-200 rounded-lg shadow-md z-50">
-          {/* Header with navy banner */}
-          <div className="px-3 py-2 text-xs font-semibold text-white rounded-t-lg bg-blue-900">
-            💬 COMMENT
-          </div>
-          
-          {/* Content area */}
-          <div className="p-3">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs text-slate-500">{formatTimestamp(new Date())}</span>
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-medium text-slate-700">You</span>
-            <button
-              onClick={() => setShowCommentInput(false)}
-                  className="text-xs text-slate-600 hover:text-slate-800 font-medium"
-            >
-                  Cancel
-            </button>
-              </div>
-          </div>
-
-            <textarea
-              value={commentInputValue}
-              onChange={(e) => setCommentInputValue(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && e.metaKey) {
-                  submitComment();
-                }
-              }}
-              placeholder="Type your comment..."
-              className="w-full px-2 py-1 text-sm text-black border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-slate-400 min-h-[60px] resize-none"
-              autoFocus
-            />
-            
-            <div className="flex items-center justify-between mt-2">
-              <span className="text-xs text-slate-500">Cmd+Enter to submit</span>
-                <button
-                  onClick={submitComment}
-                className="px-2 py-1 text-xs font-medium text-white bg-blue-900 rounded hover:bg-blue-800"
-                >
-                  Add Comment
-                </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Comment Input Panel - Now removed, integrated into floating cards below */}
 
       {/* Rewrite Prompt Input Panel */}
       {showRewriteInput && (
