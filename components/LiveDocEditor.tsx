@@ -623,7 +623,7 @@ export default function LiveDocEditor() {
         const coords = editor.view.coordsAtPos(Math.max(1, Math.min(c.from, editor.state.doc.content.size)));
         const topPx = coords.top - parentRect.top;
         items.push({
-          id: `comment-${c.id}`,
+          id: c.id, // Use the comment ID directly since it already has the prefix
           kind: 'comment',
           topPx,
           summary: c.text,
@@ -643,7 +643,7 @@ export default function LiveDocEditor() {
         const coords = editor.view.coordsAtPos(Math.max(1, Math.min(ch.from, editor.state.doc.content.size)));
         const topPx = coords.top - parentRect.top;
         items.push({
-          id: `change-${ch.id}`,
+          id: ch.id, // Use the change ID directly
           kind: 'change',
           topPx,
           summary: ch.text,
@@ -1427,39 +1427,40 @@ export default function LiveDocEditor() {
         </div>
       </div>
 
-      {/* Toolbar - Like Google Docs */}
-      <div className="bg-gray-50 border-b border-gray-300 px-6 py-2 flex items-center gap-1 text-black">
+      {/* Modern Toolbar */}
+      <div className="bg-gray-50 border-b border-gray-200 px-6 py-3 flex items-center gap-0 text-sm">
         {/* Undo/Redo */}
         <button
           onClick={() => editor.chain().focus().undo().run()}
           disabled={!editor.can().undo()}
-          className="p-2 hover:bg-gray-200 rounded disabled:opacity-30 disabled:hover:bg-transparent"
+          className="p-2 hover:bg-gray-200 rounded-md transition-colors disabled:opacity-30 disabled:hover:bg-transparent"
           title="Undo (Ctrl+Z)"
         >
-          <svg className="w-5 h-5 text-black" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
           </svg>
         </button>
+
         <button
           onClick={() => editor.chain().focus().redo().run()}
           disabled={!editor.can().redo()}
-          className="p-2 hover:bg-gray-200 rounded disabled:opacity-30 disabled:hover:bg-transparent"
+          className="p-2 hover:bg-gray-200 rounded-md transition-colors disabled:opacity-30 disabled:hover:bg-transparent"
           title="Redo (Ctrl+Y)"
         >
-          <svg className="w-5 h-5 text-black" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 10h-10a8 8 0 00-8 8v2m18-10l-6 6m6-6l-6-6" />
+          <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 10H11a8 8 0 00-8 8v2m18-10l-6 6m6-6l-6-6" />
           </svg>
         </button>
 
-        <div className="w-px h-6 bg-gray-300 mx-1" />
+        <div className="w-px h-6 bg-gray-300 mx-2" />
 
         {/* Print */}
         <button
           onClick={handlePrint}
-          className="p-2 hover:bg-gray-200 rounded"
+          className="p-2 hover:bg-gray-200 rounded-md transition-colors"
           title="Print (Ctrl+P)"
         >
-          <svg className="w-5 h-5 text-black" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
           </svg>
         </button>
@@ -1467,85 +1468,52 @@ export default function LiveDocEditor() {
         {/* Manual Save (Checkmark) */}
         <button
           onClick={handleManualSave}
-          className="p-2 hover:bg-gray-200 rounded"
+          className="p-2 hover:bg-blue-100 rounded-md transition-colors"
           title="Save new version"
         >
-          <svg className="w-5 h-5 text-black" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
         </button>
 
-        {/* Format Painter */}
-        <button
-          onClick={handleFormatPainter}
-          className={`p-2 hover:bg-gray-200 rounded ${formatPainterActive ? 'bg-blue-200' : ''}`}
-          title="Format painter (copy formatting)"
-        >
-          <svg className="w-5 h-5 text-black" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
-          </svg>
-        </button>
-
-        <div className="w-px h-6 bg-gray-300 mx-1" />
-
-        {/* Version Navigation */}
-        <button
-          onClick={goToPreviousVersion}
-          disabled={versions.findIndex(v => v.id === currentVersionId) === 0}
-          className="p-2 hover:bg-gray-200 rounded disabled:opacity-30 disabled:hover:bg-transparent"
-          title="Previous version"
-        >
-          <svg className="w-5 h-5 text-black" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
-        </button>
-        <button
-          onClick={goToNextVersion}
-          disabled={versions.findIndex(v => v.id === currentVersionId) === versions.length - 1}
-          className="p-2 hover:bg-gray-200 rounded disabled:opacity-30 disabled:hover:bg-transparent"
-          title="Next version"
-        >
-          <svg className="w-5 h-5 text-black" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-          </svg>
-        </button>
-
-        <div className="w-px h-6 bg-gray-300 mx-1" />
+        <div className="w-px h-6 bg-gray-300 mx-2" />
 
         {/* Zoom Controls */}
-        <button
-          onClick={handleZoomOut}
-          className="p-2 hover:bg-gray-200 rounded"
-          title="Zoom out"
-        >
-          <span className="text-black font-bold">−</span>
-        </button>
-        <select
-          value={zoomLevel}
-          onChange={(e) => setZoomLevel(parseInt(e.target.value))}
-          className="text-sm border-none bg-transparent px-2 py-1 hover:bg-gray-200 rounded text-black"
-        >
-          <option value="50">50%</option>
-          <option value="75">75%</option>
-          <option value="90">90%</option>
-          <option value="100">100%</option>
-          <option value="125">125%</option>
-          <option value="150">150%</option>
-          <option value="200">200%</option>
-        </select>
-        <button
-          onClick={handleZoomIn}
-          className="p-2 hover:bg-gray-200 rounded"
-          title="Zoom in"
-        >
-          <span className="text-black font-bold">+</span>
-        </button>
+        <div className="flex items-center bg-white border border-gray-300 rounded-md">
+          <button
+            onClick={handleZoomOut}
+            className="p-1.5 hover:bg-gray-100 rounded-l-md transition-colors"
+            title="Zoom out"
+          >
+            <span className="text-gray-600 font-medium text-sm">−</span>
+          </button>
+          <select
+            value={zoomLevel}
+            onChange={(e) => setZoomLevel(parseInt(e.target.value))}
+            className="text-sm border-none bg-transparent px-2 py-1.5 text-gray-700 focus:outline-none"
+          >
+            <option value="50">50%</option>
+            <option value="75">75%</option>
+            <option value="90">90%</option>
+            <option value="100">100%</option>
+            <option value="125">125%</option>
+            <option value="150">150%</option>
+            <option value="200">200%</option>
+          </select>
+          <button
+            onClick={handleZoomIn}
+            className="p-1.5 hover:bg-gray-100 rounded-r-md transition-colors"
+            title="Zoom in"
+          >
+            <span className="text-gray-600 font-medium text-sm">+</span>
+          </button>
+        </div>
 
         <div className="w-px h-6 bg-gray-300 mx-1" />
 
         {/* Style Dropdown */}
         <select
-          className="text-sm border-none bg-transparent px-3 py-1 hover:bg-gray-200 rounded min-w-[120px] text-black"
+          className="text-sm bg-white border border-gray-300 rounded-md px-3 py-1.5 hover:bg-gray-50 min-w-[120px] text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
           onChange={(e) => {
             const level = e.target.value;
             if (level === 'p') {
@@ -1562,30 +1530,65 @@ export default function LiveDocEditor() {
         </select>
 
         {/* Font Family */}
-        <select className="text-sm border-none bg-transparent px-3 py-1 hover:bg-gray-200 rounded min-w-[100px] text-black">
-          <option>Arial</option>
-          <option>Times New Roman</option>
-          <option>Calibri</option>
-          <option>Comic Sans MS</option>
+        <select 
+          className="text-sm bg-white border border-gray-300 rounded-md px-3 py-1.5 hover:bg-gray-50 min-w-[100px] text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          onChange={(e) => {
+            editor.chain().focus().setFontFamily(e.target.value).run();
+          }}
+          value={editor.getAttributes('textStyle').fontFamily || 'Arial'}
+        >
+          <option value="Arial">Arial</option>
+          <option value="Times New Roman">Times New Roman</option>
+          <option value="Calibri">Calibri</option>
+          <option value="Georgia">Georgia</option>
+          <option value="Verdana">Verdana</option>
+          <option value="Helvetica">Helvetica</option>
         </select>
 
         {/* Font Size */}
-        <select className="text-sm border-none bg-transparent px-2 py-1 hover:bg-gray-200 rounded text-black">
-          <option>11</option>
-          <option>10</option>
-          <option>12</option>
-          <option>14</option>
-          <option>18</option>
-          <option>24</option>
-        </select>
+        <div className="flex items-center bg-white border border-gray-300 rounded-md">
+          <button 
+            onClick={() => {
+              const currentSize = editor.getAttributes('textStyle').fontSize || '11px';
+              const newSize = Math.max(8, parseInt(currentSize) - 1);
+              editor.chain().focus().setFontSize(`${newSize}px`).run();
+            }}
+            className="p-1.5 hover:bg-gray-100 rounded-l-md transition-colors" 
+            title="Decrease font size"
+          >
+            <span className="text-gray-600 font-medium text-sm">−</span>
+          </button>
+          <input 
+            type="text" 
+            value={editor.getAttributes('textStyle').fontSize?.replace('px', '') || '11'} 
+            onChange={(e) => {
+              const size = parseInt(e.target.value);
+              if (size >= 8 && size <= 72) {
+                editor.chain().focus().setFontSize(`${size}px`).run();
+              }
+            }}
+            className="w-8 text-center text-sm border-none bg-transparent px-1 py-1.5 text-gray-700 focus:outline-none"
+          />
+          <button 
+            onClick={() => {
+              const currentSize = editor.getAttributes('textStyle').fontSize || '11px';
+              const newSize = Math.min(72, parseInt(currentSize) + 1);
+              editor.chain().focus().setFontSize(`${newSize}px`).run();
+            }}
+            className="p-1.5 hover:bg-gray-100 rounded-r-md transition-colors" 
+            title="Increase font size"
+          >
+            <span className="text-gray-600 font-medium text-sm">+</span>
+          </button>
+        </div>
 
         <div className="w-px h-6 bg-gray-300 mx-1" />
 
         {/* Bold */}
         <button
           onClick={() => editor.chain().focus().toggleBold().run()}
-          className={`p-2 hover:bg-gray-200 rounded font-bold ${
-            editor.isActive('bold') ? 'bg-gray-300' : ''
+          className={`p-2 hover:bg-gray-200 rounded-md transition-colors font-bold ${
+            editor.isActive('bold') ? 'bg-gray-200 text-gray-900' : 'text-gray-600'
           }`}
           title="Bold (Ctrl+B)"
         >
@@ -1595,8 +1598,8 @@ export default function LiveDocEditor() {
         {/* Italic */}
         <button
           onClick={() => editor.chain().focus().toggleItalic().run()}
-          className={`p-2 hover:bg-gray-200 rounded italic ${
-            editor.isActive('italic') ? 'bg-gray-300' : ''
+          className={`p-2 hover:bg-gray-200 rounded-md transition-colors italic ${
+            editor.isActive('italic') ? 'bg-gray-200 text-gray-900' : 'text-gray-600'
           }`}
           title="Italic (Ctrl+I)"
         >
@@ -1606,8 +1609,8 @@ export default function LiveDocEditor() {
         {/* Underline */}
         <button
           onClick={() => editor.chain().focus().toggleUnderline().run()}
-          className={`p-2 hover:bg-gray-200 rounded underline ${
-            editor.isActive('underline') ? 'bg-gray-300' : ''
+          className={`p-2 hover:bg-gray-200 rounded-md transition-colors underline ${
+            editor.isActive('underline') ? 'bg-gray-200 text-gray-900' : 'text-gray-600'
           }`}
           title="Underline (Ctrl+U)"
         >
@@ -1615,20 +1618,53 @@ export default function LiveDocEditor() {
         </button>
 
         {/* Text Color */}
-        <button className="p-2 hover:bg-gray-200 rounded" title="Text color">
-          <span className="text-lg">A</span>
+        <button 
+          onClick={() => {
+            const color = prompt('Enter text color (e.g., #ff0000 or red):');
+            if (color) {
+              editor.chain().focus().setColor(color).run();
+            }
+          }}
+          className="p-2 hover:bg-gray-200 rounded-md transition-colors text-gray-600" 
+          title="Text color"
+        >
+          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+            <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666.666 0 00-1.197.416 1 1 0 01-1.2.804 4.978 4.978 0 00-5.99 3.59A1 1 0 015 11H3a1 1 0 01-1-1V3a1 1 0 011-1zm1.658 6.991a1 1 0 00-.287.801 1 1 0 00.287.801l.566.566a1 1 0 001.414 0l.566-.566a1 1 0 000-1.414l-.566-.566a1 1 0 00-1.414 0l-.566.566z" clipRule="evenodd" />
+          </svg>
         </button>
 
         {/* Highlight */}
-        <button className="p-2 hover:bg-gray-200 rounded" title="Highlight color">
-          <span className="text-lg">🖍</span>
+        <button 
+          onClick={() => {
+            const color = prompt('Enter highlight color (e.g., #ffff00 or yellow):');
+            if (color) {
+              editor.chain().focus().setHighlight({ color }).run();
+            }
+          }}
+          className="p-2 hover:bg-gray-200 rounded-md transition-colors text-gray-600" 
+          title="Highlight color"
+        >
+          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+            <path fillRule="evenodd" d="M3 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h6a1 1 0 110 2H4a1 1 0 01-1-1z" />
+          </svg>
         </button>
 
         <div className="w-px h-6 bg-gray-300 mx-1" />
 
         {/* Link */}
-        <button className="p-2 hover:bg-gray-200 rounded" title="Insert link (Ctrl+K)">
-          🔗
+        <button 
+          onClick={() => {
+            const url = prompt('Enter URL:');
+            if (url) {
+              editor.chain().focus().setLink({ href: url }).run();
+            }
+          }}
+          className="p-2 hover:bg-gray-200 rounded-md transition-colors text-gray-600" 
+          title="Insert link (Ctrl+K)"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+          </svg>
         </button>
 
         {/* Comment */}
@@ -1640,37 +1676,113 @@ export default function LiveDocEditor() {
               return;
             }
             
-            const text = prompt('Enter your comment:');
-            if (!text) return;
-
-            const newComment: Comment = {
-              id: `comment-${Date.now()}`,
-              userId: 'user-1',
-              userName: 'You',
-              userColor: '#4285f4',
-              text,
-              from,
-              to,
-              timestamp: new Date(),
-              resolved: false,
-              replies: [],
-            };
-
-            setComments([...comments, newComment]);
-            setShowCommentSidebar(true);
+            // Set the selection for the comment input
+            setAIMenuSelection({ text: editor.state.doc.textBetween(from, to), from, to });
+            setShowCommentInput(true);
           }}
-          className="p-2 hover:bg-gray-200 rounded"
+          className="p-2 hover:bg-gray-200 rounded-md transition-colors text-gray-600"
           title="Add comment (Ctrl+Alt+M)"
         >
-          💬
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+          </svg>
         </button>
 
         {/* Image */}
-        <button className="p-2 hover:bg-gray-200 rounded" title="Insert image">
-          🖼
+        <button 
+          onClick={() => {
+            const url = prompt('Enter image URL:');
+            if (url) {
+              editor.chain().focus().insertContent(`<img src="${url}" alt="Image" style="max-width: 100%; height: auto;" />`).run();
+            }
+          }}
+          className="p-2 hover:bg-gray-200 rounded-md transition-colors text-gray-600" 
+          title="Insert image"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+          </svg>
         </button>
 
-        <div className="w-px h-6 bg-gray-300 mx-1" />
+        <div className="w-px h-6 bg-gray-300 mx-2" />
+
+        {/* Text Alignment */}
+        <button
+          onClick={() => editor.chain().focus().setTextAlign('left').run()}
+          className={`p-2 hover:bg-gray-200 rounded-md transition-colors ${
+            editor.isActive({ textAlign: 'left' }) ? 'bg-gray-200 text-gray-900' : 'text-gray-600'
+          }`}
+          title="Align left"
+        >
+          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+            <path fillRule="evenodd" d="M3 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h6a1 1 0 110 2H4a1 1 0 01-1-1z" />
+          </svg>
+        </button>
+
+        <button
+          onClick={() => editor.chain().focus().setTextAlign('center').run()}
+          className={`p-2 hover:bg-gray-200 rounded-md transition-colors ${
+            editor.isActive({ textAlign: 'center' }) ? 'bg-gray-200 text-gray-900' : 'text-gray-600'
+          }`}
+          title="Align center"
+        >
+          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+            <path fillRule="evenodd" d="M3 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm2 4a1 1 0 011-1h8a1 1 0 110 2H6a1 1 0 01-1-1zm3 4a1 1 0 011-1h2a1 1 0 110 2H9a1 1 0 01-1-1z" />
+          </svg>
+        </button>
+
+        <button
+          onClick={() => editor.chain().focus().setTextAlign('right').run()}
+          className={`p-2 hover:bg-gray-200 rounded-md transition-colors ${
+            editor.isActive({ textAlign: 'right' }) ? 'bg-gray-200 text-gray-900' : 'text-gray-600'
+          }`}
+          title="Align right"
+        >
+          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+            <path fillRule="evenodd" d="M3 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm6 4a1 1 0 011-1h6a1 1 0 110 2h-6a1 1 0 01-1-1z" />
+          </svg>
+        </button>
+
+        <button
+          onClick={() => editor.chain().focus().setTextAlign('justify').run()}
+          className={`p-2 hover:bg-gray-200 rounded-md transition-colors ${
+            editor.isActive({ textAlign: 'justify' }) ? 'bg-gray-200 text-gray-900' : 'text-gray-600'
+          }`}
+          title="Justify"
+        >
+          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+            <path fillRule="evenodd" d="M3 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" />
+          </svg>
+        </button>
+
+        <div className="w-px h-6 bg-gray-300 mx-2" />
+
+        {/* Lists */}
+        <button
+          onClick={() => editor.chain().focus().toggleBulletList().run()}
+          className={`p-2 hover:bg-gray-200 rounded-md transition-colors ${
+            editor.isActive('bulletList') ? 'bg-gray-200 text-gray-900' : 'text-gray-600'
+          }`}
+          title="Bulleted list"
+        >
+          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+            <path fillRule="evenodd" d="M3 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" />
+          </svg>
+        </button>
+
+        <button
+          onClick={() => editor.chain().focus().toggleOrderedList().run()}
+          className={`p-2 hover:bg-gray-200 rounded-md transition-colors ${
+            editor.isActive('orderedList') ? 'bg-gray-200 text-gray-900' : 'text-gray-600'
+          }`}
+          title="Numbered list"
+        >
+          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+            <path fillRule="evenodd" d="M3 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" />
+          </svg>
+        </button>
+
+        <div className="flex-1" />
 
         {/* Mode Status Indicator + Changes Sidebar Toggle */}
         {editingMode === 'suggesting' && (
@@ -1679,7 +1791,7 @@ export default function LiveDocEditor() {
             <button
               onClick={() => setConfirmModal({ open: true, action: 'acceptAll' })}
               disabled={trackedChanges.length === 0}
-              className="px-3 py-1.5 text-xs font-medium text-white bg-emerald-500 rounded hover:bg-emerald-600 disabled:opacity-30 disabled:cursor-not-allowed"
+              className="px-3 py-1.5 text-xs font-medium text-white bg-emerald-500 rounded-md hover:bg-emerald-600 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
               title="Accept all changes"
             >
               ✓ Accept All
@@ -1687,7 +1799,7 @@ export default function LiveDocEditor() {
             <button
               onClick={() => setConfirmModal({ open: true, action: 'rejectAll' })}
               disabled={trackedChanges.length === 0}
-              className="px-3 py-1.5 text-xs font-medium text-white bg-rose-500 rounded hover:bg-rose-600 disabled:opacity-30 disabled:cursor-not-allowed"
+              className="px-3 py-1.5 text-xs font-medium text-white bg-rose-500 rounded-md hover:bg-rose-600 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
               title="Reject all changes"
             >
               ✕ Reject All
@@ -1695,97 +1807,16 @@ export default function LiveDocEditor() {
           </div>
         )}
         {editingMode === 'viewing' && (
-          <span className="px-3 py-1.5 text-xs font-medium bg-slate-600 text-white rounded">
+          <span className="px-3 py-1.5 text-xs font-medium bg-slate-600 text-white rounded-md">
             👁️ Read-Only Mode
           </span>
         )}
 
-        <div className="w-px h-6 bg-gray-300 mx-1" />
-
-        {/* Align Left */}
-        <button
-          onClick={() => editor.chain().focus().setTextAlign('left').run()}
-          className={`p-2 hover:bg-gray-200 rounded ${
-            editor.isActive({ textAlign: 'left' }) ? 'bg-gray-300' : ''
-          }`}
-          title="Align left (Ctrl+Shift+L)"
-        >
-          <svg className="w-5 h-5 text-black" fill="currentColor" viewBox="0 0 20 20">
-            <path fillRule="evenodd" d="M3 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h6a1 1 0 110 2H4a1 1 0 01-1-1z" />
+        {/* More Options */}
+        <button className="p-2 hover:bg-gray-200 rounded-md transition-colors text-gray-600 ml-2" title="More options">
+          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+            <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" />
           </svg>
-        </button>
-
-        {/* Align Center */}
-        <button
-          onClick={() => editor.chain().focus().setTextAlign('center').run()}
-          className={`p-2 hover:bg-gray-200 rounded ${
-            editor.isActive({ textAlign: 'center' }) ? 'bg-gray-300' : ''
-          }`}
-          title="Align center (Ctrl+Shift+E)"
-        >
-          <svg className="w-5 h-5 text-black" fill="currentColor" viewBox="0 0 20 20">
-            <path fillRule="evenodd" d="M3 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm2 4a1 1 0 011-1h8a1 1 0 110 2H6a1 1 0 01-1-1zm3 4a1 1 0 011-1h2a1 1 0 110 2H9a1 1 0 01-1-1z" />
-          </svg>
-        </button>
-
-        {/* Align Right */}
-        <button
-          onClick={() => editor.chain().focus().setTextAlign('right').run()}
-          className={`p-2 hover:bg-gray-200 rounded ${
-            editor.isActive({ textAlign: 'right' }) ? 'bg-gray-300' : ''
-          }`}
-          title="Align right (Ctrl+Shift+R)"
-        >
-          <svg className="w-5 h-5 text-black" fill="currentColor" viewBox="0 0 20 20">
-            <path fillRule="evenodd" d="M3 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm6 4a1 1 0 011-1h6a1 1 0 110 2h-6a1 1 0 01-1-1z" />
-          </svg>
-        </button>
-
-        {/* Justify */}
-        <button
-          onClick={() => editor.chain().focus().setTextAlign('justify').run()}
-          className={`p-2 hover:bg-gray-200 rounded ${
-            editor.isActive({ textAlign: 'justify' }) ? 'bg-gray-300' : ''
-          }`}
-          title="Justify (Ctrl+Shift+J)"
-        >
-          <svg className="w-5 h-5 text-black" fill="currentColor" viewBox="0 0 20 20">
-            <path fillRule="evenodd" d="M3 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" />
-          </svg>
-        </button>
-
-        <div className="w-px h-6 bg-gray-300 mx-1" />
-
-        {/* Bullet List */}
-        <button
-          onClick={() => editor.chain().focus().toggleBulletList().run()}
-          className={`p-2 hover:bg-gray-200 rounded ${
-            editor.isActive('bulletList') ? 'bg-gray-300' : ''
-          }`}
-          title="Bulleted list (Ctrl+Shift+8)"
-        >
-          •
-        </button>
-
-        {/* Numbered List */}
-        <button
-          onClick={() => editor.chain().focus().toggleOrderedList().run()}
-          className={`p-2 hover:bg-gray-200 rounded ${
-            editor.isActive('orderedList') ? 'bg-gray-300' : ''
-          }`}
-          title="Numbered list (Ctrl+Shift+7)"
-        >
-          1.
-        </button>
-
-        {/* Decrease Indent */}
-        <button className="p-2 hover:bg-gray-200 rounded" title="Decrease indent (Ctrl+[)">
-          ←
-        </button>
-
-        {/* Increase Indent */}
-        <button className="p-2 hover:bg-gray-200 rounded" title="Increase indent (Ctrl+])">
-          →
         </button>
       </div>
 
@@ -1894,8 +1925,8 @@ export default function LiveDocEditor() {
                               onClick={() => {
                                 editor.commands.focus();
                                 // @ts-ignore
-                                editor.commands.acceptChange(item.id.replace('change-',''));
-                                setTrackedChanges(prev => prev.filter(c => c.id !== item.id.replace('change-','')));
+                                editor.commands.acceptChange(item.id);
+                                setTrackedChanges(prev => prev.filter(c => c.id !== item.id));
                               }}
                               className="text-emerald-600 hover:bg-emerald-100 p-1 rounded"
                               title="Accept"
@@ -1906,8 +1937,8 @@ export default function LiveDocEditor() {
                               onClick={() => {
                                 editor.commands.focus();
                                 // @ts-ignore
-                                editor.commands.rejectChange(item.id.replace('change-',''));
-                                setTrackedChanges(prev => prev.filter(c => c.id !== item.id.replace('change-','')));
+                                editor.commands.rejectChange(item.id);
+                                setTrackedChanges(prev => prev.filter(c => c.id !== item.id));
                               }}
                               className="text-rose-600 hover:bg-rose-100 p-1 rounded"
                               title="Reject"
@@ -1919,7 +1950,7 @@ export default function LiveDocEditor() {
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              const commentId = item.id.replace('comment-','');
+                              const commentId = item.id;
                               const updatedComments = comments.map((c) =>
                                 c.id === commentId ? { ...c, resolved: !c.resolved } : c
                               );
@@ -2190,10 +2221,10 @@ export default function LiveDocEditor() {
         </div>
       )}
 
-      {/* Comment Input Panel - Floating Card Style */}
+      {/* Comment Input Panel - Integrated with Floating Cards */}
       {showCommentInput && (
-        <div className="fixed right-4 top-1/2 -translate-y-1/2 w-72 bg-white border border-gray-300 rounded-lg shadow-md z-50">
-          {/* Header with blueish-grey banner */}
+        <div className="fixed right-4 top-1/2 -translate-y-1/2 w-72 bg-white border border-blue-200 rounded-lg shadow-md z-50">
+          {/* Header with navy banner */}
           <div className="px-3 py-2 text-xs font-semibold text-white rounded-t-lg bg-blue-900">
             💬 COMMENT
           </div>
@@ -2230,7 +2261,7 @@ export default function LiveDocEditor() {
               <span className="text-xs text-slate-500">Cmd+Enter to submit</span>
               <button
                 onClick={submitComment}
-                className="px-2 py-1 text-xs font-medium text-white bg-slate-500 rounded hover:bg-slate-600"
+                className="px-2 py-1 text-xs font-medium text-white bg-blue-900 rounded hover:bg-blue-800"
               >
                 Add Comment
               </button>
