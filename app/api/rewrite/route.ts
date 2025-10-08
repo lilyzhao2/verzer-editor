@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 export async function POST(request: NextRequest) {
   try {
-    const { selectedText, context, model = 'claude-3-5-sonnet-20241022' } = await request.json();
+    const { selectedText, context, model = 'claude-3-5-sonnet-20241022', templates } = await request.json();
 
     if (!selectedText || typeof selectedText !== 'string') {
       return NextResponse.json({ error: 'Selected text is required' }, { status: 400 });
@@ -20,33 +20,45 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'API key not configured' }, { status: 500 });
     }
 
-    const prompt = `Rewrite the following text in 5 different ways. You must provide exactly 5 variations with these specific labels. Return ONLY a JSON array.
+    // Use custom templates if provided, otherwise use defaults
+    const rewriteTemplates = templates && Array.isArray(templates) && templates.length > 0 ? templates : [
+      { label: 'More concise', prompt: 'Make it shorter and punchier' },
+      { label: 'More formal', prompt: 'Use professional, business-appropriate language' },
+      { label: 'Simpler', prompt: 'Use easier words and shorter sentences' }
+    ];
+
+    console.log(`📋 Using ${rewriteTemplates.length} templates:`, rewriteTemplates.map(t => t.label));
+
+    // Build prompt dynamically based on templates
+    const variationsList = rewriteTemplates.map((t, i) => 
+      `${i + 1}. "${t.label}" - ${t.prompt || t.description || 'Rewrite accordingly'}`
+    ).join('\n');
+
+    const jsonFormat = rewriteTemplates.map(t => 
+      `  {"label": "${t.label}", "text": "..."}`
+    ).join(',\n');
+
+    const prompt = `Rewrite the following text in ${rewriteTemplates.length} different ways. You must provide exactly ${rewriteTemplates.length} variations with these specific labels. Return ONLY a JSON array.
 
 Original text: "${selectedText}"
 
 Context: "${context}"
 
-Create exactly these 5 variations:
-1. "More concise" - Make it shorter and punchier
-2. "More formal" - Use professional, business-appropriate language  
-3. "Simpler" - Use easier words and shorter sentences
-4. "Different angle" - Rephrase the same idea from a different perspective
-5. "Active voice" - Make it direct and action-oriented
+Create exactly these ${rewriteTemplates.length} variations:
+${variationsList}
 
 Return format (EXACTLY this structure):
 [
-  {"label": "More concise", "text": "..."},
-  {"label": "More formal", "text": "..."},
-  {"label": "Simpler", "text": "..."},
-  {"label": "Different angle", "text": "..."},
-  {"label": "Active voice", "text": "..."}
+${jsonFormat}
 ]
 
 IMPORTANT: 
 - Return ONLY the JSON array, no other text
-- All 5 variations must be present
-- Each variation should be meaningfully different
-- Keep the same core meaning but change the style`;
+- All ${rewriteTemplates.length} variations must be present
+- Each variation should be meaningfully different according to its prompt
+- Keep the same core meaning but change the style as specified`;
+
+    console.log('🔧 Generated prompt with', rewriteTemplates.length, 'templates');
 
     console.log('🔄 Making rewrite request to Anthropic API...');
     
@@ -129,13 +141,13 @@ IMPORTANT:
       return NextResponse.json({ error: 'No valid rewrites generated' }, { status: 500 });
     }
 
-    // If we have fewer than 5, log a warning but continue
-    if (validVariations.length < 5) {
-      console.warn(`⚠️ Only got ${validVariations.length} variations instead of 5`);
+    // If we have fewer than expected, log a warning but continue
+    if (validVariations.length < rewriteTemplates.length) {
+      console.warn(`⚠️ Only got ${validVariations.length} variations instead of ${rewriteTemplates.length}`);
     }
 
-    // Ensure we have the expected labels
-    const expectedLabels = ['More concise', 'More formal', 'Simpler', 'Different angle', 'Active voice'];
+    // Check which labels we got
+    const expectedLabels = rewriteTemplates.map(t => t.label);
     const foundLabels = validVariations.map(v => v.label);
     const missingLabels = expectedLabels.filter(label => !foundLabels.includes(label));
     

@@ -274,6 +274,38 @@ export default function LiveDocEditor() {
     try {
       console.log('🔄 Requesting rewrites for:', selectedText.substring(0, 50) + '...');
       
+      // Load active templates from localStorage
+      let activeTemplates: any[] = [];
+      try {
+        const saved = localStorage.getItem('rewriteTemplates');
+        if (saved) {
+          const allTemplates = JSON.parse(saved);
+          activeTemplates = allTemplates.filter((t: any) => t.isActive);
+          console.log('📋 Loaded active templates:', activeTemplates.map(t => t.label));
+        }
+      } catch (e) {
+        console.error('Failed to load templates from localStorage:', e);
+      }
+      
+      // Fallback to default if no active templates
+      if (activeTemplates.length === 0) {
+        console.warn('⚠️ No active templates found, using defaults');
+        activeTemplates = [
+          {
+            label: 'More concise',
+            prompt: 'Rewrite this text to be more concise and direct, removing unnecessary words while preserving the core meaning.'
+          },
+          {
+            label: 'More formal',
+            prompt: 'Rewrite this text in a more formal, professional tone suitable for business or academic contexts.'
+          },
+          {
+            label: 'Simpler',
+            prompt: 'Rewrite this text to be simpler and easier to understand, using plain language and shorter sentences.'
+          }
+        ];
+      }
+      
       const response = await fetch('/api/rewrite', {
         method: 'POST',
         headers: {
@@ -283,6 +315,7 @@ export default function LiveDocEditor() {
           selectedText,
           context,
           model: 'claude-3-5-sonnet-20241022',
+          templates: activeTemplates, // Send only active templates
         }),
       });
 
@@ -319,6 +352,26 @@ export default function LiveDocEditor() {
   
   // AbortController for cancelling outdated requests
   const abortControllerRef = React.useRef<AbortController | null>(null);
+  
+  // Load autocomplete settings from localStorage
+  const [autocompleteSettings, setAutocompleteSettings] = React.useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('autocompleteSettings');
+        if (saved) {
+          return JSON.parse(saved);
+        }
+      } catch (e) {
+        console.error('Failed to load autocomplete settings:', e);
+      }
+    }
+    return {
+      enabled: true,
+      typingDelay: 2000,
+      styleAdaptation: true,
+      contextLength: 800
+    };
+  });
   
   // Save cache to localStorage when it changes
   React.useEffect(() => {
@@ -444,6 +497,9 @@ export default function LiveDocEditor() {
       }),
       TabAutocompleteExtension.configure({
         enabled: editingMode !== 'viewing', // Disable in viewing mode
+        typingDelay: autocompleteSettings.typingDelay || 2500,
+        contextLength: autocompleteSettings.contextLength || 800,
+        styleAdaptation: autocompleteSettings.styleAdaptation !== false,
         onRequestCompletion: async (context: string, styleHints: any) => {
           try {
             // Check cache first for instant response
@@ -465,8 +521,10 @@ export default function LiveDocEditor() {
             // Get project context for style matching
             const projectContext = getProjectContextForAI();
             
-            // Make sure we have some content to send (last 800 chars)
-            const contentToSend = context.trim() || 'Start of document';
+            // Use context length from settings
+            const contextLen = autocompleteSettings.contextLength || 800;
+            const recentContext = context.slice(-contextLen);
+            const contentToSend = recentContext.trim() || 'Start of document';
             
             // Check if we're at the end of a sentence (after punctuation + optional space)
             const lastFewChars = contentToSend.slice(-5); // Check last 5 chars instead of 3
@@ -627,14 +685,9 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
         style: 'min-height: 11in; padding: 1in 1in; font-family: Arial, sans-serif; font-size: 11pt; line-height: 1.5; color: #000000;',
       },
       handleDOMEvents: {
-        // Prevent selection from being cleared when clicking inside editor on non-text areas
+        // Allow double-click outside selection to deselect
         mousedown: (view, event) => {
-          const target = event.target as Element;
-          // If clicking on editor but not on text, preserve the current selection
-          if (target.classList.contains('ProseMirror') && !view.state.selection.empty) {
-            event.preventDefault();
-            return true;
-          }
+          // Let normal clicks through - they will handle selection naturally
           return false;
         },
       },
@@ -662,6 +715,14 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
       editor.view.dispatch(tr);
     }
   }, [editor, editorEditable, isCurrentVersionLocked, isSuggestingMode]);
+
+  // Sync autocomplete enabled state with extension
+  React.useEffect(() => {
+    if (editor && (editor.storage as any).tabAutocomplete) {
+      (editor.storage as any).tabAutocomplete.enabled = autocompleteEnabled;
+      console.log('🔧 Autocomplete enabled state synced:', autocompleteEnabled);
+    }
+  }, [editor, autocompleteEnabled]);
 
   // Handle clicks outside editor to preserve selection
   React.useEffect(() => {
@@ -793,25 +854,27 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
       to: number;
     }[] = [];
 
-    // Map comments
-    comments.forEach((c) => {
-      try {
-        const coords = editor.view.coordsAtPos(Math.max(1, Math.min(c.from, editor.state.doc.content.size)));
-        const topPx = coords.top - parentRect.top;
-        items.push({
-          id: c.id, // Use the comment ID directly since it already has the prefix
-          kind: 'comment',
-          topPx,
-          summary: c.text,
-          userName: c.userName,
-          timestamp: c.timestamp,
-          from: c.from,
-          to: c.to,
-        });
-      } catch {
-        // Ignore mapping errors
-      }
-    });
+    // Map comments (only unresolved ones)
+    comments
+      .filter(c => !c.resolved) // Only show unresolved comments in floating pane
+      .forEach((c) => {
+        try {
+          const coords = editor.view.coordsAtPos(Math.max(1, Math.min(c.from, editor.state.doc.content.size)));
+          const topPx = coords.top - parentRect.top;
+          items.push({
+            id: c.id, // Use the comment ID directly since it already has the prefix
+            kind: 'comment',
+            topPx,
+            summary: c.text,
+            userName: c.userName,
+            timestamp: c.timestamp,
+            from: c.from,
+            to: c.to,
+          });
+        } catch {
+          // Ignore mapping errors
+        }
+      });
 
     // Map tracked changes
     trackedChanges.forEach((ch) => {
@@ -1720,8 +1783,8 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
             placeholder="Untitled Document"
           />
           
-          {/* Save Menu - moved to the right */}
-          <div className="relative ml-auto" data-save-menu>
+          {/* Save Menu will be moved to menu bar */}
+          <div className="relative ml-auto hidden" data-save-menu>
             <button 
               className="text-black hover:text-gray-600 flex items-center gap-1" 
               title="Save As..."
@@ -1766,31 +1829,74 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
         
         {/* Menu Bar */}
         <div className="flex items-center gap-4 mt-2 text-sm">
-          {/* History Button - Far Left */}
+          {/* Save As Button - Far Left */}
+          <div className="relative" data-save-menu>
+            <button 
+              className="px-3 py-1.5 text-xs font-medium text-black bg-white border border-gray-300 rounded hover:bg-gray-50" 
+              title="Save As..."
+              onClick={() => setShowSaveMenu(!showSaveMenu)}
+            >
+              Save As
+            </button>
+            
+            {showSaveMenu && (
+              <div className="absolute left-0 top-10 bg-white border border-gray-200 rounded-md shadow-lg z-50 min-w-[180px]">
+                <div className="py-1">
+                  <button
+                    onClick={saveAsWord}
+                    className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                  >
+                    📄 Save as Word Doc
+                  </button>
+                  <button
+                    onClick={saveAsPDF}
+                    className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                  >
+                    📋 Save as PDF
+                  </button>
+                  <button
+                    onClick={sendAsEmail}
+                    className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                  >
+                    📧 Send via Email
+                  </button>
+                  <div className="border-t border-gray-100 my-1"></div>
+                  <button
+                    onClick={saveAsHTML}
+                    className="w-full text-left px-4 py-2 text-sm text-gray-500 hover:bg-gray-100"
+                  >
+                    🌐 Save as HTML
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+          
+          {/* History Button */}
           <button
             onClick={() => setShowVersionHistory(!showVersionHistory)}
             onMouseEnter={() => preloadHeavyComponents()}
             className="px-3 py-1.5 text-xs font-medium text-black bg-white border border-gray-300 rounded hover:bg-gray-50"
             title="Version History"
           >
-            📜 History
+            History
           </button>
           
-          {/* Context Page */}
+          {/* Settings Button */}
           <button 
             onClick={() => setShowContextPage(true)}
-            className="text-blue-600 px-3 py-1 rounded hover:bg-blue-50 transition-colors" 
-            title="Project Context & Settings"
+            className="px-3 py-1.5 text-xs font-medium text-black bg-white border border-gray-300 rounded hover:bg-gray-50" 
+            title="Settings"
           >
-            ⚙️ Context
+            Settings
           </button>
           
           {/* Placeholder for future modes */}
           <button className="text-gray-400 px-3 py-1 rounded cursor-not-allowed opacity-50" disabled title="Coming soon">
-            🤖 AI Mode <span className="text-xs">(Coming Soon)</span>
+            AI Mode <span className="text-xs">(Coming Soon)</span>
           </button>
           <button className="text-gray-400 px-3 py-1 rounded cursor-not-allowed opacity-50" disabled title="Coming soon">
-            🔀 Diff Mode <span className="text-xs">(Coming Soon)</span>
+            Diff Mode <span className="text-xs">(Coming Soon)</span>
           </button>
           
           <div className="flex-1" />
@@ -2122,42 +2228,6 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
           </svg>
         </button>
 
-        {/* Comment */}
-        <button
-          onClick={() => {
-            const { from, to } = editor.state.selection;
-            if (from === to) {
-              alert('Please select some text to comment on');
-              return;
-            }
-            
-            // Set the selection for the comment input
-            setAIMenuSelection({ text: editor.state.doc.textBetween(from, to), from, to });
-            
-            // Calculate position for the comment input card
-            if (pageRef.current && scrollAreaRef.current) {
-              const parentRect = scrollAreaRef.current.getBoundingClientRect();
-              
-              try {
-                const coords = editor.view.coordsAtPos(Math.max(1, Math.min(from, editor.state.doc.content.size)));
-                const topPx = coords.top - parentRect.top;
-                
-                setPendingCommentPosition({ from, to, topPx });
-                setShowCommentInput(true);
-                setCommentInputValue('');
-              } catch (error) {
-                console.error('Error calculating comment position:', error);
-              }
-            }
-          }}
-          className="p-2 hover:bg-gray-200 rounded-md transition-colors text-gray-600"
-          title="Add comment (Ctrl+Alt+M)"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-          </svg>
-        </button>
-
         {/* Image */}
         <button 
           onClick={() => {
@@ -2295,6 +2365,50 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
           </span>
         )}
 
+        {/* Comment Button */}
+        <button
+          onClick={() => {
+            if (!editor) {
+              console.error('Editor not available');
+              return;
+            }
+            
+            const { from, to } = editor.state.selection;
+            if (from === to) {
+              alert('Please select some text to comment on');
+              return;
+            }
+            
+            // Set the selection for the comment input
+            setAIMenuSelection({ text: editor.state.doc.textBetween(from, to), from, to });
+            
+            // Calculate position for the comment input card
+            if (pageRef.current && scrollAreaRef.current) {
+              const parentRect = scrollAreaRef.current.getBoundingClientRect();
+              
+              try {
+                const coords = editor.view.coordsAtPos(Math.max(1, Math.min(from, editor.state.doc.content.size)));
+                const topPx = coords.top - parentRect.top;
+                
+                console.log('📍 Comment position calculated:', { from, to, topPx });
+                setPendingCommentPosition({ from, to, topPx });
+                setShowCommentInput(true);
+                setCommentInputValue('');
+              } catch (error) {
+                console.error('Error calculating comment position:', error);
+              }
+            } else {
+              console.warn('⚠️ pageRef or scrollAreaRef not available');
+            }
+          }}
+          className="p-2 hover:bg-gray-200 rounded-md transition-colors text-gray-600"
+          title="Comment"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
+          </svg>
+        </button>
+
         {/* Rewrite Refresh Button */}
         <button
           onClick={() => {
@@ -2306,37 +2420,10 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
             }
           }}
           className="p-2 hover:bg-gray-200 rounded-md transition-colors text-gray-600"
-          title="Generate AI rewrites for selected text (Cmd+4)"
+          title="Rewrite"
         >
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/>
-          </svg>
-        </button>
-
-        {/* Autocomplete Toggle */}
-        <button
-          onClick={() => {
-            const newState = !autocompleteEnabled;
-            setAutocompleteEnabled(newState);
-            // Update editor storage
-            if (editor && (editor.storage as any).tabAutocomplete) {
-              (editor.storage as any).tabAutocomplete.enabled = newState;
-            }
-            // Save to localStorage
-            try {
-              localStorage.setItem('autocompleteEnabled', newState.toString());
-            } catch (error) {
-              console.error('Failed to save autocomplete setting:', error);
-            }
-          }}
-          className={`p-2 hover:opacity-80 rounded-md transition-all ${
-            autocompleteEnabled ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'
-          }`}
-          title={autocompleteEnabled ? 'Autocomplete: ON (click to disable)' : 'Autocomplete: OFF (click to enable)'}
-        >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M12 2a10 10 0 1 0 10 10H12V2z"/>
-            <path d="M12 12h10a10 10 0 0 1-10 10V12z" opacity="0.5"/>
           </svg>
         </button>
 
@@ -2622,12 +2709,24 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
                         ) : (
                           <button
                             onClick={(e) => {
-                              if (editingMode === 'viewing') return;
+                              e.preventDefault();
                               e.stopPropagation();
+                              
+                              if (editingMode === 'viewing') return;
+                              
                               const commentId = item.id;
-                              const updatedComments = comments.map((c) =>
-                                c.id === commentId ? { ...c, resolved: !c.resolved } : c
-                              );
+                              console.log('🔍 Resolving comment:', commentId);
+                              console.log('📊 Current comments:', comments);
+                              
+                              const updatedComments = comments.map((c) => {
+                                if (c.id === commentId) {
+                                  console.log('✅ Found matching comment, toggling resolved:', !c.resolved);
+                                  return { ...c, resolved: !c.resolved };
+                                }
+                                return c;
+                              });
+                              
+                              console.log('📊 Updated comments:', updatedComments);
                               setComments(updatedComments);
                             }}
                             disabled={editingMode === 'viewing'}
@@ -2881,19 +2980,18 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
           onClick={(e) => e.stopPropagation()}
         >
           <button
+            onClick={handleRewriteText}
+            className="w-full px-4 py-2 text-left text-sm text-black hover:bg-gray-100 flex items-center gap-2"
+          >
+            <span>✨</span>
+            <span>Rewrite</span>
+          </button>
+          <button
             onClick={handleAddComment}
             className="w-full px-4 py-2 text-left text-sm text-black hover:bg-gray-100 flex items-center gap-2"
           >
             <span>💬</span>
             <span>Comment</span>
-          </button>
-          {/* Removed Ask AI for thoughts */}
-          <button
-            onClick={handleRewriteText}
-            className="w-full px-4 py-2 text-left text-sm text-black hover:bg-gray-100 flex items-center gap-2"
-          >
-            <span>✨</span>
-            <span>Rewrite (5 variations)</span>
           </button>
         </div>
       )}
@@ -3025,7 +3123,7 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
 
       {/* Link Modal */}
       {showLinkModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-95 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-gray-900 bg-opacity-95 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg shadow-xl w-96 p-6">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold text-black">Insert Link</h3>
@@ -3096,7 +3194,7 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
 
       {/* Context Page Modal */}
       {showContextPage && (
-        <div className="fixed inset-0 bg-black bg-opacity-95 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-gray-900 bg-opacity-95 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg shadow-xl w-full h-full max-w-6xl max-h-[90vh] overflow-hidden">
             <div className="flex items-center justify-between p-4 border-b border-gray-200">
               <h2 className="text-xl font-semibold text-black">Project Context & Settings</h2>

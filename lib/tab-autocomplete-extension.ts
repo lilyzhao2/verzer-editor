@@ -5,6 +5,9 @@ import { Decoration, DecorationSet } from '@tiptap/pm/view';
 interface TabAutocompleteOptions {
   enabled?: boolean;
   onRequestCompletion?: (context: string, styleHints: StyleAnalysis) => Promise<string>;
+  typingDelay?: number; // milliseconds to wait after typing stops
+  contextLength?: number; // characters of context to analyze
+  styleAdaptation?: boolean; // whether to adapt to user's writing style
 }
 
 interface TabAutocompleteState {
@@ -68,17 +71,17 @@ function analyzeWritingStyle(text: string): StyleAnalysis {
   return { avgSentenceLength, complexity, tone, preferredLength };
 }
 
-// Helper function to get current paragraph context (last 800 characters)
-function getCurrentParagraph(state: any, position: number): string {
+// Helper function to get current paragraph context
+function getCurrentParagraph(state: any, position: number, contextLength: number = 800): string {
   const { doc } = state;
   
   // Get text from start of document to cursor position
   const textContent = doc.textBetween(0, position, '\n', ' ');
   
-  // Take last 800 characters for context
-  const textBefore = textContent.slice(-800);
+  // Take last N characters for context (based on settings)
+  const textBefore = textContent.slice(-contextLength);
   
-  console.log('📖 Current context (800 chars):', textBefore.substring(Math.max(0, textBefore.length - 100)));
+  console.log(`📖 Current context (${contextLength} chars):`, textBefore.substring(Math.max(0, textBefore.length - 100)));
   return textBefore;
 }
 
@@ -89,6 +92,9 @@ export const TabAutocompleteExtension = Extension.create<TabAutocompleteOptions>
     return {
       enabled: true,
       onRequestCompletion: undefined,
+      typingDelay: 2500,
+      contextLength: 800,
+      styleAdaptation: true,
     };
   },
 
@@ -139,7 +145,7 @@ export const TabAutocompleteExtension = Extension.create<TabAutocompleteOptions>
     }
 
     const REQUEST_COOLDOWN = 1000; // 1 second cooldown between requests
-    const TYPING_DELAY = 2500; // 2.5 seconds after stopping typing
+    const TYPING_DELAY = extension.options.typingDelay || 2500; // Get from options or default to 2.5 seconds
     
     // Store view reference at plugin level
     let editorView: any = null;
@@ -304,8 +310,9 @@ export const TabAutocompleteExtension = Extension.create<TabAutocompleteOptions>
             try {
               const plugins = state.plugins;
               for (let plugin of plugins) {
-                if (plugin.key && plugin.key === 'aiRewrite') {
-                  const aiRewriteState = plugin.getState(state);
+                const pluginSpec = (plugin as any).spec;
+                if (pluginSpec?.key === 'aiRewrite' || (plugin as any).key === 'aiRewrite') {
+                  const aiRewriteState = (plugin as any).getState?.(state);
                   if (aiRewriteState?.menuVisible) {
                     console.log('🚫 AI rewrite menu is active, hiding autocomplete decorations');
                     return null;
@@ -361,7 +368,7 @@ export const TabAutocompleteExtension = Extension.create<TabAutocompleteOptions>
             if (event.key === 'Tab') {
               if (state.showSuggestion && state.suggestion) {
                 // Accept current suggestion
-                event.preventDefault();
+              event.preventDefault();
                 console.log('✅ Accepting ghost text:', state.suggestion);
                 
                 // Hide hint box
@@ -376,8 +383,8 @@ export const TabAutocompleteExtension = Extension.create<TabAutocompleteOptions>
                   showHint: false,
                 });
                 tr.setMeta('addToHistory', true);
-                
-                view.dispatch(tr);
+              
+              view.dispatch(tr);
                 extension.storage.requireNewInput = true;
                 return true;
               } else {
@@ -397,16 +404,16 @@ export const TabAutocompleteExtension = Extension.create<TabAutocompleteOptions>
                 // Hide hint box
                 hideHintBox();
                 
-                const tr = view.state.tr;
+              const tr = view.state.tr;
                 tr.setMeta('tabAutocomplete', {
                   suggestion: '',
                   showSuggestion: false,
                   isLoading: false,
                   showHint: false,
-                });
-                view.dispatch(tr);
-                return true;
-              }
+              });
+              view.dispatch(tr);
+              return true;
+            }
             }
 
             return false;
@@ -450,10 +457,26 @@ export const TabAutocompleteExtension = Extension.create<TabAutocompleteOptions>
             return;
           }
 
-          // Check if autocomplete is enabled
-          const isEnabled = extension.storage.tabAutocomplete?.enabled !== false;
+          // Check if autocomplete is enabled - access storage directly from the closure
+          // The extension.storage reference should be the live one being updated
+          const storageEnabled = extension.storage?.tabAutocomplete?.enabled;
+          const isEnabled = storageEnabled === true;
+          
+          // Also check localStorage as backup
+          let localStorageEnabled = true;
+          try {
+            const saved = localStorage.getItem('autocompleteEnabled');
+            if (saved !== null) {
+              localStorageEnabled = saved === 'true';
+            }
+          } catch (e) {
+            // Ignore
+          }
+          
+          console.log('🔍 Checking autocomplete - storage:', storageEnabled, 'localStorage:', localStorageEnabled, '→ isEnabled:', isEnabled);
+          
           if (!isEnabled) {
-            console.log('🚫 Autocomplete is disabled');
+            console.log('🚫 Autocomplete is disabled, skipping request');
             return;
           }
 
@@ -519,10 +542,20 @@ export const TabAutocompleteExtension = Extension.create<TabAutocompleteOptions>
 
       try {
         console.log('🚀 Making completion request...');
-        const context = getCurrentParagraph(view.state, currentPosition);
-        const styleAnalysis = analyzeWritingStyle(context);
+        const contextLen = extension.options.contextLength || 800;
+        const context = getCurrentParagraph(view.state, currentPosition, contextLen);
+        
+        // Only analyze style if style adaptation is enabled
+        const shouldAdaptStyle = extension.options.styleAdaptation !== false;
+        const styleAnalysis = shouldAdaptStyle ? analyzeWritingStyle(context) : {
+          avgSentenceLength: 12,
+          complexity: 'moderate' as const,
+          tone: 'casual' as const,
+          preferredLength: 'medium' as const
+        };
         
         console.log('📝 Context length:', context.length);
+        console.log('🎨 Style adaptation:', shouldAdaptStyle);
         console.log('🎨 Style analysis:', styleAnalysis);
         
         // Add timeout
