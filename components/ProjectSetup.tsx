@@ -95,7 +95,7 @@ export function ProjectSetup() {
   const [editingTemplate, setEditingTemplate] = useState<string | null>(null);
   const [editingValues, setEditingValues] = useState<{ label: string; description: string; prompt: string }>({ label: '', description: '', prompt: '' });
   
-  const [activeTab, setActiveTab] = useState<'context' | 'rewrites'>('context');
+  const [activeTab, setActiveTab] = useState<'context' | 'rewrites' | 'autosave'>('context');
   
   // Always use/create a single config
   const activeConfig = state.projectConfigs?.[0] || {
@@ -522,6 +522,16 @@ Be specific about the tone, audience, syntax style, and intended outcome based o
           >
             Rewrite Settings
           </button>
+          <button
+            onClick={() => setActiveTab('autosave')}
+            className={`px-6 py-3 font-medium transition-colors ${
+              activeTab === 'autosave'
+                ? 'text-[#1e3a8a] border-b-2 border-[#1e3a8a]'
+                : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            Auto Save
+          </button>
         </div>
 
         {/* Success Message */}
@@ -621,96 +631,6 @@ Be specific about the tone, audience, syntax style, and intended outcome based o
           </div>
         </div>
 
-            {/* Auto-Save Settings */}
-            <div className="bg-white rounded-lg border border-gray-200 p-6">
-              <h2 className="text-lg font-semibold text-black mb-4">
-                Auto-Save & Version Control
-              </h2>
-              <p className="text-sm text-gray-600 mb-6">
-                Configure how often your document auto-saves and creates version snapshots
-              </p>
-
-              <div className="space-y-4">
-                {/* Enable Auto-Save */}
-                <label className="flex items-center gap-3 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={versionSettings.autoSaveEnabled}
-                    onChange={(e) =>
-                      saveVersionSettings({ ...versionSettings, autoSaveEnabled: e.target.checked })
-                    }
-                    className="w-5 h-5 text-[#1e3a8a] rounded border-gray-300 focus:ring-[#1e3a8a]"
-                  />
-                  <div>
-                    <span className="text-sm font-medium text-black">Enable Auto-Save</span>
-                    <p className="text-xs text-gray-500">Automatically save versions while you work</p>
-                  </div>
-                </label>
-
-                {/* Auto-save Frequency */}
-                <div>
-                  <label className="block text-sm font-medium text-black mb-2">
-                    Auto-save every (minutes)
-                  </label>
-                  <input
-                    type="number"
-                    value={versionSettings.autoSaveFrequency}
-                    onChange={(e) =>
-                      saveVersionSettings({
-                        ...versionSettings,
-                        autoSaveFrequency: parseInt(e.target.value) || 10,
-                      })
-                    }
-                    className="w-full px-3 py-2 text-black border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1e3a8a]"
-                    min="1"
-                    disabled={!versionSettings.autoSaveEnabled}
-                  />
-                  <p className="text-xs text-gray-500 mt-1">
-                    Create a new version every {versionSettings.autoSaveFrequency} minutes of editing
-                  </p>
-                </div>
-
-                {/* Auto-save by Edit Count */}
-                <div>
-                  <label className="block text-sm font-medium text-black mb-2">
-                    Auto-save after (number of edits)
-                  </label>
-                  <input
-                    type="number"
-                    value={versionSettings.autoSaveByLineCount}
-                    onChange={(e) =>
-                      saveVersionSettings({
-                        ...versionSettings,
-                        autoSaveByLineCount: parseInt(e.target.value) || 50,
-                      })
-                    }
-                    className="w-full px-3 py-2 text-black border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1e3a8a]"
-                    min="1"
-                    disabled={!versionSettings.autoSaveEnabled}
-                  />
-                  <p className="text-xs text-gray-500 mt-1">
-                    Create a new version after {versionSettings.autoSaveByLineCount} significant edits
-                  </p>
-                </div>
-
-                {/* Info Box */}
-                <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                  <div className="flex gap-2">
-                    <svg className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-                    </svg>
-                    <div>
-                      <p className="text-sm font-medium text-blue-900 mb-1">How Auto-Save Works</p>
-                      <ul className="text-xs text-blue-800 space-y-1 list-disc list-inside">
-                        <li>Versions are saved automatically based on time or edit count</li>
-                        <li>You can manually save versions anytime using "Save Version"</li>
-                        <li>Access all versions in History to restore or compare</li>
-                      </ul>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
 
             {/* Save Button */}
             <div className="flex justify-end">
@@ -872,6 +792,116 @@ Be specific about the tone, audience, syntax style, and intended outcome based o
                 <li>Check/uncheck to enable up to 3 active rewrites</li>
                 <li>Delete custom templates using the X button</li>
               </ul>
+            </div>
+          </div>
+        )}
+
+        {/* Auto Save Tab */}
+        {activeTab === 'autosave' && (
+          <div className="space-y-6">
+            {/* Auto-Save Settings */}
+            <div className="bg-white rounded-lg border border-gray-200 p-6">
+              <h2 className="text-lg font-semibold text-black mb-4">
+                Auto Save Settings
+              </h2>
+              <p className="text-sm text-gray-600 mb-6">
+                Configure how often your document auto-saves and creates version snapshots
+              </p>
+
+              <div className="space-y-4">
+                {/* Enable Auto-Save */}
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={versionSettings.autoSaveEnabled}
+                    onChange={(e) =>
+                      saveVersionSettings({ ...versionSettings, autoSaveEnabled: e.target.checked })
+                    }
+                    className="w-5 h-5 text-[#1e3a8a] rounded border-gray-300 focus:ring-[#1e3a8a]"
+                  />
+                  <div>
+                    <span className="text-sm font-medium text-black">Enable Auto-Save</span>
+                    <p className="text-xs text-gray-500">Automatically save versions while you work</p>
+                  </div>
+                </label>
+
+                {/* Auto-save Frequency */}
+                <div>
+                  <label className="block text-sm font-medium text-black mb-2">
+                    Auto-save every (minutes)
+                  </label>
+                  <input
+                    type="number"
+                    value={versionSettings.autoSaveFrequency}
+                    onChange={(e) =>
+                      saveVersionSettings({
+                        ...versionSettings,
+                        autoSaveFrequency: parseInt(e.target.value) || 10,
+                      })
+                    }
+                    className="w-full px-3 py-2 text-black border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1e3a8a]"
+                    min="1"
+                    disabled={!versionSettings.autoSaveEnabled}
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Create a new version every {versionSettings.autoSaveFrequency} minutes of editing
+                  </p>
+                </div>
+
+                {/* Auto-save by Edit Count */}
+                <div>
+                  <label className="block text-sm font-medium text-black mb-2">
+                    Auto-save after (number of edits)
+                  </label>
+                  <input
+                    type="number"
+                    value={versionSettings.autoSaveByLineCount}
+                    onChange={(e) =>
+                      saveVersionSettings({
+                        ...versionSettings,
+                        autoSaveByLineCount: parseInt(e.target.value) || 50,
+                      })
+                    }
+                    className="w-full px-3 py-2 text-black border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1e3a8a]"
+                    min="1"
+                    disabled={!versionSettings.autoSaveEnabled}
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Create a new version after {versionSettings.autoSaveByLineCount} significant edits
+                  </p>
+                </div>
+
+                {/* Info Box */}
+                <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                  <div className="flex gap-2">
+                    <svg className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                    </svg>
+                    <div>
+                      <p className="text-sm font-medium text-blue-900 mb-1">How Auto-Save Works</p>
+                      <ul className="text-xs text-blue-800 space-y-1 list-disc list-inside">
+                        <li>Versions are saved automatically based on time or edit count</li>
+                        <li>You can manually save versions anytime using "Save Version"</li>
+                        <li>Access all versions in History to restore or compare</li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Save Button */}
+            <div className="flex justify-end">
+              <button
+                onClick={() => {
+                  setShowSuccess(true);
+                  setTimeout(() => setShowSuccess(false), 3000);
+                }}
+                className="px-6 py-2 bg-[#1e3a8a] text-white rounded-lg hover:bg-blue-800 flex items-center gap-2"
+              >
+                <Check className="w-4 h-4" />
+                Save Auto Save Settings
+              </button>
             </div>
           </div>
         )}
