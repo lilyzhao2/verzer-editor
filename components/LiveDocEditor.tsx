@@ -3294,48 +3294,50 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
           </svg>
         </button>
 
-        {/* Split View Button */}
-        <button
-          onClick={() => {
-            if (showSplitView) {
-              // Close split view
-              setShowSplitView(false);
-              setSplitViewData(null);
-            } else {
-              // Open split view showing unsaved changes from last version
-              const currentContent = editor?.getHTML() || '';
-              
-              // Get the last saved version's content
-              const lastSavedVersion = versions.find(v => v.id === currentVersionId);
-              const lastSavedContent = lastSavedVersion?.content || '';
-              
-              if (currentContent.trim() || lastSavedContent.trim()) {
-                setSplitViewData({
-                  originalContent: lastSavedContent,
-                  suggestedContent: currentContent,
-                  explanation: hasUnsavedChanges 
-                    ? `Showing ${changesSinceLastSave} unsaved changes since last save` 
-                    : 'No unsaved changes - document matches last saved version'
-                });
-                setShowSplitView(true);
+        {/* Split View Button - Only available on current version with changes */}
+        {viewingVersionId === currentVersionId && (hasUnsavedChanges || showSplitView) && (
+          <button
+            onClick={() => {
+              if (showSplitView) {
+                // Close split view
+                setShowSplitView(false);
+                setSplitViewData(null);
               } else {
-                showToast('No content to compare', 'info');
+                // Open split view showing unsaved changes from last version
+                const currentContent = editor?.getHTML() || '';
+                
+                // Get the last saved version's content
+                const lastSavedVersion = versions.find(v => v.id === currentVersionId);
+                const lastSavedContent = lastSavedVersion?.content || '';
+                
+                if (currentContent.trim() || lastSavedContent.trim()) {
+                  setSplitViewData({
+                    originalContent: lastSavedContent,
+                    suggestedContent: currentContent,
+                    explanation: hasUnsavedChanges 
+                      ? `Showing ${changesSinceLastSave} unsaved changes since last save` 
+                      : 'No unsaved changes - document matches last saved version'
+                  });
+                  setShowSplitView(true);
+                } else {
+                  showToast('No content to compare', 'info');
+                }
               }
-            }
-          }}
-          className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-            showSplitView 
-              ? 'bg-blue-100 text-blue-700' 
-              : hasUnsavedChanges
-                ? 'bg-orange-100 text-orange-700 hover:bg-orange-200'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-          }`}
-          title={hasUnsavedChanges 
-            ? `View ${changesSinceLastSave} unsaved changes` 
-            : "Split View - Compare versions"}
-        >
-          📊 {hasUnsavedChanges ? `${changesSinceLastSave} Changes` : 'Split View'}
-        </button>
+            }}
+            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+              showSplitView 
+                ? 'bg-blue-100 text-blue-700' 
+                : hasUnsavedChanges
+                  ? 'bg-orange-100 text-orange-700 hover:bg-orange-200'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+            title={hasUnsavedChanges 
+              ? `View ${changesSinceLastSave} unsaved changes` 
+              : "Split View - Compare versions"}
+          >
+            🔍 {hasUnsavedChanges ? `${changesSinceLastSave} Changes` : 'Split View'}
+          </button>
+        )}
 
         <div className="flex-1" />
 
