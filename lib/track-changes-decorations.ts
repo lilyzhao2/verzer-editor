@@ -26,6 +26,7 @@ export interface TrackedChange {
   userId: string;
   userName: string;
   timestamp: number;
+  originalFrom?: number; // Original position before mapping (for backspace detection)
 }
 
 export interface TrackChangesState {
@@ -41,8 +42,22 @@ export const trackChangesPluginKey = new PluginKey<TrackChangesState>('trackChan
 function mergeConsecutiveChanges(changes: TrackedChange[]): TrackedChange[] {
   if (changes.length === 0) return changes;
 
-  // Sort by position first
-  const sorted = [...changes].sort((a, b) => a.from - b.from);
+  console.log('🔍 BEFORE MERGE:', changes.map(c => ({
+    type: c.type,
+    text: c.text,
+    from: c.from,
+    timestamp: c.timestamp
+  })));
+
+  // CRITICAL: Sort by TIMESTAMP to preserve chronological order for backspace
+  const sorted = [...changes].sort((a, b) => a.timestamp - b.timestamp);
+
+  console.log('📊 AFTER SORT:', sorted.map(c => ({
+    type: c.type,
+    text: c.text,
+    from: c.from,
+    timestamp: c.timestamp
+  })));
 
   const merged: TrackedChange[] = [];
   let current = { ...sorted[0] };
@@ -77,13 +92,34 @@ function mergeConsecutiveChanges(changes: TrackedChange[]): TrackedChange[] {
           current.to = Math.max(current.to, next.to);
         }
       } else {
-        // For deletions, combine text and extend range
-        current.text += next.text;
-        current.from = Math.min(current.from, next.from);
+        // For deletions, combine text in chronological order (already sorted by timestamp)
+        // Use originalFrom if available (unmapped positions) for accurate backspace detection
+        const currentOriginal = current.originalFrom ?? current.from;
+        const nextOriginal = next.originalFrom ?? next.from;
+        const isBackspace = nextOriginal < currentOriginal;
+        
+        console.log('🔍 Deletion merge:', {
+          current: { text: current.text, from: current.from, originalFrom: currentOriginal, timestamp: current.timestamp },
+          next: { text: next.text, from: next.from, originalFrom: nextOriginal, timestamp: next.timestamp },
+          comparison: `${nextOriginal} < ${currentOriginal} = ${isBackspace}`,
+          isBackspace
+        });
+        if (isBackspace) {
+          // Backspace: prepend (this char was deleted before current)
+          current.text = next.text + current.text;
+          current.from = next.from;
+          current.originalFrom = nextOriginal; // Keep the earliest original position
+          console.log('⬅️ BACKSPACE: prepended, result:', current.text);
+        } else {
+          // Forward delete: append
+          current.text = current.text + next.text;
+          // Keep the original position from the first deletion
+          console.log('➡️ FORWARD DELETE: appended, result:', current.text);
+        }
         current.to = Math.max(current.to, next.to);
       }
       current.timestamp = next.timestamp;
-      console.log('🔗 Merged:', current.type, 'now has', current.text.length, 'chars');
+      console.log('🔗 Merged:', current.type, 'now has', current.text.length, 'chars, text:', JSON.stringify(current.text));
     } else {
       // Can't merge, push current and start new
       merged.push(current);
@@ -301,6 +337,7 @@ export const TrackChangesDecorationExtension = Extension.create<TrackChangesOpti
                     userId: state.userId,
                     userName: state.userName,
                     timestamp: Date.now(),
+                    originalFrom: from, // Store original position for backspace detection
                   });
                   hasNewChanges = true;
                   console.log('✨ Added deletion change');
