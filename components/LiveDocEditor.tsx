@@ -3642,17 +3642,91 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
               const diff = createWordDiff(originalText, suggestedText);
               operations = mergeConsecutiveOperations(diff.operations);
             } else if (diffLevel === 'line') {
-              // Line-level diff
+              // Line-level diff - compare line by line
               const originalLines = originalText.split('\n');
               const suggestedLines = suggestedText.split('\n');
-              const diff = createWordDiff(originalLines.join('\n'), suggestedLines.join('\n'));
-              operations = mergeConsecutiveOperations(diff.operations);
+              
+              // Create line-level operations
+              operations = [];
+              const maxLines = Math.max(originalLines.length, suggestedLines.length);
+              
+              for (let i = 0; i < maxLines; i++) {
+                const originalLine = originalLines[i] || '';
+                const suggestedLine = suggestedLines[i] || '';
+                
+                if (i >= originalLines.length) {
+                  // New line added
+                  operations.push({
+                    type: 'insert',
+                    text: suggestedLine + '\n'
+                  });
+                } else if (i >= suggestedLines.length) {
+                  // Line deleted
+                  operations.push({
+                    type: 'delete',
+                    text: originalLine + '\n'
+                  });
+                } else if (originalLine !== suggestedLine) {
+                  // Line modified - show as delete + insert
+                  operations.push({
+                    type: 'delete',
+                    text: originalLine + '\n'
+                  });
+                  operations.push({
+                    type: 'insert',
+                    text: suggestedLine + '\n'
+                  });
+                } else {
+                  // Line unchanged
+                  operations.push({
+                    type: 'equal',
+                    text: originalLine + '\n'
+                  });
+                }
+              }
             } else {
-              // Paragraph-level diff
-              const originalParagraphs = originalText.split(/\n\s*\n/);
-              const suggestedParagraphs = suggestedText.split(/\n\s*\n/);
-              const diff = createWordDiff(originalParagraphs.join('\n\n'), suggestedParagraphs.join('\n\n'));
-              operations = mergeConsecutiveOperations(diff.operations);
+              // Paragraph-level diff - compare paragraph by paragraph
+              const originalParagraphs = originalText.split(/\n\s*\n/).filter(p => p.trim());
+              const suggestedParagraphs = suggestedText.split(/\n\s*\n/).filter(p => p.trim());
+              
+              // Create paragraph-level operations
+              operations = [];
+              const maxParagraphs = Math.max(originalParagraphs.length, suggestedParagraphs.length);
+              
+              for (let i = 0; i < maxParagraphs; i++) {
+                const originalParagraph = originalParagraphs[i] || '';
+                const suggestedParagraph = suggestedParagraphs[i] || '';
+                
+                if (i >= originalParagraphs.length) {
+                  // New paragraph added
+                  operations.push({
+                    type: 'insert',
+                    text: suggestedParagraph + '\n\n'
+                  });
+                } else if (i >= suggestedParagraphs.length) {
+                  // Paragraph deleted
+                  operations.push({
+                    type: 'delete',
+                    text: originalParagraph + '\n\n'
+                  });
+                } else if (originalParagraph.trim() !== suggestedParagraph.trim()) {
+                  // Paragraph modified - show as delete + insert
+                  operations.push({
+                    type: 'delete',
+                    text: originalParagraph + '\n\n'
+                  });
+                  operations.push({
+                    type: 'insert',
+                    text: suggestedParagraph + '\n\n'
+                  });
+                } else {
+                  // Paragraph unchanged
+                  operations.push({
+                    type: 'equal',
+                    text: originalParagraph + '\n\n'
+                  });
+                }
+              }
             }
             
             // Left side: Clean original (no highlighting)
