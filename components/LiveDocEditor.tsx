@@ -3261,23 +3261,7 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
 
         <div className="w-px h-6 bg-gray-300 mx-2" />
 
-        {/* Versions Button */}
-        <button
-          onClick={() => {
-            setShowVersionHistory(!showVersionHistory);
-            // Don't close AI chat - they can both be open
-          }}
-          onMouseEnter={() => preloadHeavyComponents()}
-          className="p-2 hover:bg-gray-200 rounded-md transition-colors flex-shrink-0"
-          title="Versions"
-          style={{ minWidth: '40px' }}
-        >
-          <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-        </button>
-
-        {/* Verzer Chat Button */}
+        {/* Verzer Chat Button - Left Side */}
         <button 
           onClick={() => {
             setShowAIChatSidebar(!showAIChatSidebar);
@@ -3293,6 +3277,22 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+          </svg>
+        </button>
+
+        {/* History Button - Right Side */}
+        <button
+          onClick={() => {
+            setShowVersionHistory(!showVersionHistory);
+            // Don't close AI chat - they can both be open
+          }}
+          onMouseEnter={() => preloadHeavyComponents()}
+          className="p-2 hover:bg-gray-200 rounded-md transition-colors flex-shrink-0"
+          title="History"
+          style={{ minWidth: '40px' }}
+        >
+          <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
         </button>
 
