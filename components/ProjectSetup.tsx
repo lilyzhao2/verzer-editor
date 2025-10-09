@@ -632,6 +632,51 @@ Be specific about the tone, audience, syntax style, and intended outcome based o
         </div>
 
 
+            {/* Keyboard Shortcuts Section */}
+            <div className="bg-white rounded-lg border border-gray-200 p-6">
+              <h2 className="text-lg font-semibold text-black mb-4">
+                Keyboard Shortcuts
+              </h2>
+              <p className="text-sm text-gray-600 mb-4">
+                Learn keyboard shortcuts to work faster and more efficiently
+              </p>
+              
+              <div className="space-y-3">
+                <button
+                  onClick={() => {
+                    const event = new CustomEvent('showShortcuts');
+                    window.dispatchEvent(event);
+                  }}
+                  className="w-full px-4 py-3 bg-blue-50 text-blue-800 rounded-lg hover:bg-blue-100 flex items-center gap-3 transition-colors border border-blue-200"
+                >
+                  <span className="text-xl">⌨️</span>
+                  <div className="text-left">
+                    <div className="font-medium">View All Shortcuts</div>
+                    <div className="text-xs text-blue-600">Press Cmd+Shift+? or click here</div>
+                  </div>
+                </button>
+                
+                <div className="grid grid-cols-2 gap-2 text-xs text-gray-600">
+                  <div className="flex justify-between">
+                    <span>Save:</span>
+                    <span className="font-mono bg-gray-100 px-1 rounded">Cmd+S</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Undo:</span>
+                    <span className="font-mono bg-gray-100 px-1 rounded">Cmd+Z</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Find:</span>
+                    <span className="font-mono bg-gray-100 px-1 rounded">Cmd+F</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>AI Rewrite:</span>
+                    <span className="font-mono bg-gray-100 px-1 rounded">Cmd+4</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             {/* Save Button */}
             <div className="flex justify-end">
               <button

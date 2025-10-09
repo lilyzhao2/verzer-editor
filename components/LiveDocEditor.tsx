@@ -21,6 +21,7 @@ import { ProjectSetup } from '@/components/ProjectSetup';
 import { preloadCriticalComponents, preloadHeavyComponents } from '@/components/LazyComponents';
 import { TrackChangesDecorationExtension, TrackedChange } from '@/lib/track-changes-decorations';
 import { FontSize } from '@/lib/extensions/font-size';
+import { AIChatSidebar } from '@/components/AIChatSidebar';
 
 /**
  * MODE 1: LIVE DOC EDITOR
@@ -251,6 +252,9 @@ export default function LiveDocEditor() {
   const [comments, setComments] = useState<Comment[]>([]);
   const [showCommentSidebar, setShowCommentSidebar] = useState(false);
   const [showContextPage, setShowContextPage] = useState(false);
+  const [showAIChatSidebar, setShowAIChatSidebar] = useState(false);
+  const [selectedText, setSelectedText] = useState<string>('');
+  const [selectionRange, setSelectionRange] = useState<{ from: number; to: number } | undefined>();
   
   // Load autocomplete enabled state from localStorage
   const [autocompleteEnabled, setAutocompleteEnabled] = useState<boolean>(() => {
@@ -807,6 +811,18 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
     content: '<p></p>',
     immediatelyRender: false,
     editable: editorEditable,
+    onSelectionUpdate: ({ editor }) => {
+      const { from, to } = editor.state.selection;
+      const text = editor.state.doc.textBetween(from, to);
+      
+      if (text && text.length > 0) {
+        setSelectedText(text);
+        setSelectionRange({ from, to });
+      } else {
+        setSelectedText('');
+        setSelectionRange(undefined);
+      }
+    },
     editorProps: {
       editable: () => editorEditable,
       attributes: {
@@ -1164,12 +1180,25 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [showSearchReplace, showShortcutsPanel]);
 
+  // Listen for shortcuts event from settings page
+  useEffect(() => {
+    const handleShowShortcuts = () => {
+      setShowShortcutsPanel(true);
+    };
+
+    window.addEventListener('showShortcuts', handleShowShortcuts);
+    return () => {
+      window.removeEventListener('showShortcuts', handleShowShortcuts);
+    };
+  }, []);
+
   // Perform search when query changes
   React.useEffect(() => {
     if (searchQuery && showSearchReplace) {
       performSearch();
     }
   }, [searchQuery, caseSensitive, performSearch, showSearchReplace]);
+
 
   // Batch operations for track changes
   const toggleChangeSelection = useCallback((changeId: string) => {
@@ -1908,6 +1937,46 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
     return newVersion;
   };
 
+  // AI Chat Functions
+  const handleApplySuggestion = useCallback((suggestion: any) => {
+    if (!editor || !suggestion.from || !suggestion.to) return;
+
+    try {
+      // Apply the suggestion as a tracked change
+      const tr = editor.state.tr;
+      
+      // Replace the text
+      tr.replaceWith(suggestion.from, suggestion.to, editor.schema.text(suggestion.suggestedText));
+      
+      // Add metadata for AI edit tracking
+      tr.setMeta('trackChanges', {
+        type: 'ai-edit',
+        model: suggestion.model || 'unknown',
+        timestamp: new Date(),
+        conversationId: suggestion.conversationId,
+        originalSuggestion: suggestion
+      });
+      
+      editor.view.dispatch(tr);
+      
+      // Create a new version for AI edits
+      setTimeout(() => {
+        const content = editor.getHTML();
+        createNewVersion(content, false); // Not auto-saved, manual AI edit
+      }, 100);
+      
+      showToast('AI suggestion applied successfully', 'success');
+    } catch (error) {
+      console.error('Error applying AI suggestion:', error);
+      showToast('Failed to apply AI suggestion', 'error');
+    }
+  }, [editor, createNewVersion, showToast]);
+
+  const handleRejectSuggestion = useCallback((suggestionId: string) => {
+    // Just show a toast for now - the suggestion will be marked as rejected in the chat
+    showToast('AI suggestion rejected', 'info');
+  }, [showToast]);
+
   const handleRestoreConfirm = () => {
     if (!versionToRestore || !editor) return;
     
@@ -2445,7 +2514,7 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
 
   return (
     <EditorErrorBoundary>
-      <div className="flex flex-col h-screen bg-gray-100">
+      <div className="flex flex-col h-screen bg-gray-100 overflow-hidden">
       {/* Top Bar - Like Google Docs */}
       <div className="bg-white border-b border-gray-200 px-6 py-2">
         <div className="flex items-center gap-4">
@@ -2525,10 +2594,20 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
             Settings
           </button>
           
-          {/* Placeholder for future modes */}
-          <button className="text-gray-400 px-3 py-1 rounded cursor-not-allowed opacity-50" disabled title="Coming soon">
-            AI Mode <span className="text-xs">(Coming Soon)</span>
+          {/* AI Chat Button */}
+          <button 
+            onClick={() => setShowAIChatSidebar(!showAIChatSidebar)}
+            className={`px-3 py-1.5 text-xs font-medium border rounded hover:bg-gray-50 ${
+              showAIChatSidebar 
+                ? 'text-blue-600 bg-blue-50 border-blue-300' 
+                : 'text-black bg-white border-gray-300'
+            }`}
+            title="AI Assistant"
+          >
+            AI Chat
           </button>
+          
+          {/* Placeholder for future modes */}
           <button className="text-gray-400 px-3 py-1 rounded cursor-not-allowed opacity-50" disabled title="Coming soon">
             Diff Mode <span className="text-xs">(Coming Soon)</span>
           </button>
@@ -3304,7 +3383,24 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
       )}
 
       {/* Document Area + Comments Sidebar */}
-      <div ref={scrollAreaRef} className={`flex-1 overflow-auto flex relative transition-all duration-300 ${showVersionHistory ? 'ml-96' : 'ml-0'}`}>
+      <div className="flex-1 flex relative">
+        {/* AI Chat Sidebar */}
+        {showAIChatSidebar && (
+          <AIChatSidebar
+            isOpen={showAIChatSidebar}
+            onClose={() => setShowAIChatSidebar(false)}
+            editor={editor}
+            documentContent={editor?.getHTML() || ''}
+            selectedText={selectedText}
+            selectionRange={selectionRange}
+            onApplySuggestion={handleApplySuggestion}
+            onRejectSuggestion={handleRejectSuggestion}
+            isCurrentVersion={viewingVersionId === currentVersionId}
+            editingMode={editingMode}
+          />
+        )}
+        
+        <div ref={scrollAreaRef} className={`flex-1 overflow-auto flex relative transition-all duration-300 ${showVersionHistory ? 'ml-96' : 'ml-0'} min-h-0`}>
         {/* Page-like white container */}
         <div className="flex-1 relative">
           {/* Old Version Warning Banner */}
@@ -4478,23 +4574,17 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
         </div>
       )}
 
-      {/* Debug Toggle Button */}
-      <button
-        onClick={() => setDebugMode(!debugMode)}
-        className="fixed bottom-4 left-4 bg-gray-800 text-white p-2 rounded-full shadow-lg hover:bg-gray-700 text-xs"
-        title="Toggle Debug Panel"
-      >
-        🐛
-      </button>
+      {/* Debug Toggle Button - Hidden in production */}
+      {process.env.NODE_ENV === 'development' && (
+        <button
+          onClick={() => setDebugMode(!debugMode)}
+          className="fixed bottom-4 left-4 bg-gray-800 text-white p-2 rounded-full shadow-lg hover:bg-gray-700 text-xs opacity-50 hover:opacity-100"
+          title="Toggle Debug Panel (Dev Only)"
+        >
+          🐛
+        </button>
+      )}
       
-      {/* Help/Shortcuts Button */}
-      <button
-        onClick={() => setShowShortcutsPanel(true)}
-        className="fixed bottom-6 left-6 bg-blue-600 text-white p-3 rounded-full shadow-lg hover:bg-blue-700 transition-all hover:scale-110 z-40"
-        title="Keyboard Shortcuts (Cmd+Shift+?)"
-      >
-        <span className="text-lg">⌨️</span>
-      </button>
       
       {/* Skeleton Loader - Initial Loading */}
       {isInitialLoading && (
@@ -4977,6 +5067,7 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
           </div>
         </div>
       )}
+      </div>
       </div>
     </EditorErrorBoundary>
   );
