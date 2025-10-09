@@ -520,7 +520,7 @@ Be specific about the tone, audience, syntax style, and intended outcome based o
                 : 'text-gray-600 hover:text-gray-900'
             }`}
           >
-            Rewrite Settings
+            Rewrite
           </button>
           <button
             onClick={() => setActiveTab('autosave')}

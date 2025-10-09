@@ -1998,7 +1998,7 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
       
       // Only update current if making active
       if (makeActive) {
-        setCurrentVersionId(versionId);
+      setCurrentVersionId(versionId);
         // Switch to editing mode if in viewing mode
         if (editingMode === 'viewing') {
           setEditingMode('editing');
@@ -2293,7 +2293,10 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${documentName || 'document'}.html`;
+    const currentVersion = versions.find(v => v.id === currentVersionId);
+    const versionNum = currentVersion?.versionNumber || 0;
+    const username = 'user'; // TODO: Replace with actual username when user system is implemented
+    a.download = `${documentName || 'Untitled Document'}_v${versionNum}_${username}.html`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -2311,7 +2314,10 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${documentName || 'document'}.doc`;
+    const currentVersion = versions.find(v => v.id === currentVersionId);
+    const versionNum = currentVersion?.versionNumber || 0;
+    const username = 'user'; // TODO: Replace with actual username when user system is implemented
+    a.download = `${documentName || 'Untitled Document'}_v${versionNum}_${username}.doc`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -2325,11 +2331,16 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
     const printWindow = window.open('', '_blank');
     if (printWindow) {
       const content = editor.getHTML();
+      const currentVersion = versions.find(v => v.id === currentVersionId);
+      const versionNum = currentVersion?.versionNumber || 0;
+      const username = 'user'; // TODO: Replace with actual username when user system is implemented
+      const pdfTitle = `${documentName || 'Untitled Document'}_v${versionNum}_${username}`;
+      
       printWindow.document.write(`
         <!DOCTYPE html>
         <html>
         <head>
-          <title>${documentName}</title>
+          <title>${pdfTitle}</title>
           <style>
             body { font-family: Arial, sans-serif; line-height: 1.6; margin: 40px; }
             h1, h2, h3 { color: #333; }
@@ -2337,7 +2348,7 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
           </style>
         </head>
         <body>
-          <h1>${documentName}</h1>
+          <h1>${pdfTitle}</h1>
           ${content}
         </body>
         </html>
@@ -2355,8 +2366,12 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
   const sendAsEmail = () => {
     if (!editor) return;
     const content = editor.getText();
-    const subject = encodeURIComponent(documentName || 'Document');
-    const body = encodeURIComponent(`Hi,\n\nPlease find the document "${documentName}" below:\n\n${content}\n\nBest regards`);
+    const currentVersion = versions.find(v => v.id === currentVersionId);
+    const versionNum = currentVersion?.versionNumber || 0;
+    const username = 'user'; // TODO: Replace with actual username when user system is implemented
+    const emailTitle = `${documentName || 'Untitled Document'}_v${versionNum}_${username}`;
+    const subject = encodeURIComponent(emailTitle);
+    const body = encodeURIComponent(`Hi,\n\nPlease find the document "${emailTitle}" below:\n\n${content}\n\nBest regards`);
     
     window.open(`mailto:?subject=${subject}&body=${body}`);
     setShowSaveMenu(false);
@@ -2528,7 +2543,7 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
                 <span className="text-orange-600 font-semibold">⚠️ Unsaved Changes</span>
               ) : (
                 <>
-                  {currentVersion?.autoSaved ? '☁️ Auto-saved' : '💾 Saved'} • V{currentVersion?.versionNumber}
+              {currentVersion?.autoSaved ? '☁️ Auto-saved' : '💾 Saved'} • V{currentVersion?.versionNumber}
                 </>
               )}
             </span>
@@ -3469,9 +3484,9 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
                         >
                           Cancel
                 </button>
-                      </div>
               </div>
-              
+            </div>
+
                     <textarea
                       value={commentInputValue}
                       onChange={(e) => setCommentInputValue(e.target.value)}
@@ -3487,15 +3502,15 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
                     
                     <div className="flex items-center justify-between mt-2">
                       <span className="text-xs text-slate-500">Cmd+Enter to submit</span>
-                <button
+                          <button
                         onClick={submitComment}
                         className="px-2 py-1 text-xs font-medium text-white bg-blue-900 rounded hover:bg-blue-800"
                       >
                         Add Comment
-                </button>
-              </div>
-            </div>
-                </div>
+                          </button>
+                        </div>
+                        </div>
+                      </div>
               )}
               
               {memoizedFloatingItems.map(item => (
@@ -3809,13 +3824,13 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
             </button>
-            </div>
+          </div>
             <p className="text-sm text-gray-500">{versions.length} versions</p>
             
             {/* Filters */}
             <div className="mt-4 space-y-3">
               {/* Search */}
-              <input
+                <input
                 type="text"
                 placeholder="Search versions..."
                 value={versionFilters.searchQuery}
@@ -4107,20 +4122,20 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
                               <div className="flex flex-col gap-1 min-w-0">
                                 <div className="flex items-center gap-2 flex-wrap">
                                   <span className="font-semibold text-gray-600 text-sm">
-                                    Version {version.versionNumber}
-                                  </span>
+                      Version {version.versionNumber}
+                    </span>
                                   <span className="px-1.5 py-0.5 text-xs font-medium text-gray-500 bg-gray-200 rounded flex items-center gap-1 whitespace-nowrap">
                                     <span>🔒</span>
                                     <span>Archived</span>
-                                  </span>
+                    </span>
                                   {isViewingVersion && (
                                     <span className="px-1.5 py-0.5 text-xs font-semibold text-amber-700 bg-amber-100 rounded whitespace-nowrap">
                                       VIEWING
                                     </span>
                                   )}
-                                </div>
-                              </div>
-                            </div>
+                  </div>
+                  </div>
+                  </div>
                             
                             <div className="flex items-center gap-2">
                               {/* Star Toggle */}
@@ -4148,7 +4163,7 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
                               >
                                 Unarchive
                               </button>
-                            </div>
+                    </div>
                           </div>
                           
                           {/* Save Type */}
@@ -4182,14 +4197,14 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
                               hour12: true
                             })}
                           </p>
-                    </div>
-                      </div>
+                </div>
+            </div>
                     );
                   })}
                 </div>
               </>
                   )}
-                </div>
+          </div>
         </div>
       )}
 
