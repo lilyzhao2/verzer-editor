@@ -53,8 +53,11 @@ export async function POST(request: NextRequest) {
     // In agent mode, always generate suggestions that can be applied to the document
     const shouldGenerateSuggestions = mode === 'agent';
 
+    // Build version context info
+    const versionInfo = `Current document version: ${body.currentVersion || 'unknown'}. Recent changes: ${body.recentChanges || 'none'}.`;
+    
     // Build system prompt
-    const systemPrompt = buildSystemPrompt(mode, shouldGenerateSuggestions, context);
+    const systemPrompt = buildSystemPrompt(mode, shouldGenerateSuggestions, context, versionInfo);
 
     // Prepare messages for API
     const apiMessages = [
@@ -62,17 +65,53 @@ export async function POST(request: NextRequest) {
       ...messages.slice(-10) // Keep last 10 messages for context
     ];
 
-    // Call appropriate AI model
+    // Call appropriate AI model with retry logic
     console.log(`🤖 Calling AI model: ${model}`);
     let response;
-    if (model.startsWith('claude')) {
-      console.log('📞 Using Claude API');
-      response = await callClaude(model, apiMessages, shouldGenerateSuggestions);
-    } else {
-      console.log('📞 Using OpenAI API');
-      response = await callOpenAI(model, apiMessages, shouldGenerateSuggestions);
+    
+    const maxRetries = 3;
+    let lastError: Error | null = null;
+    
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        if (model.startsWith('claude')) {
+          console.log(`📞 Using Claude API (attempt ${attempt + 1}/${maxRetries})`);
+          response = await callClaude(model, apiMessages, shouldGenerateSuggestions);
+        } else {
+          console.log(`📞 Using OpenAI API (attempt ${attempt + 1}/${maxRetries})`);
+          response = await callOpenAI(model, apiMessages, shouldGenerateSuggestions);
+        }
+        console.log('✅ AI response received');
+        break; // Success, exit retry loop
+        
+      } catch (error) {
+        lastError = error as Error;
+        console.error(`❌ API call failed (attempt ${attempt + 1}/${maxRetries}):`, error);
+        
+        if (attempt < maxRetries - 1) {
+          // Exponential backoff: 1s, 3s, 9s
+          const delay = Math.pow(3, attempt) * 1000;
+          console.log(`⏳ Retrying in ${delay}ms...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+      }
     }
-    console.log('✅ AI response received');
+    
+    // If all retries failed, try fallback model
+    if (!response && lastError) {
+      if (model === 'gpt-4o') {
+        console.log('🔄 GPT-4o failed, trying Claude as fallback...');
+        try {
+          response = await callClaude('claude-3-5-sonnet', apiMessages, shouldGenerateSuggestions);
+          console.log('✅ Fallback to Claude successful');
+        } catch (fallbackError) {
+          console.error('❌ Fallback also failed:', fallbackError);
+          throw lastError; // Throw original error
+        }
+      } else {
+        throw lastError; // No fallback available
+      }
+    }
 
     // Parse response and generate suggestions if needed
     let suggestions: AISuggestion[] = [];
@@ -177,8 +216,12 @@ function buildContext(
   return context;
 }
 
-function buildSystemPrompt(mode: string, shouldGenerateSuggestions: boolean, context: string): string {
+function buildSystemPrompt(mode: string, shouldGenerateSuggestions: boolean, context: string, versionInfo?: string): string {
   let prompt = `You are an AI writing assistant helping with document editing. `;
+  
+  if (versionInfo) {
+    prompt += `${versionInfo}\n\n`;
+  }
   
   if (mode === 'agent') {
     prompt += `You are in Agent mode. When the user asks for changes, you should:

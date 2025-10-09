@@ -1903,7 +1903,7 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
   }, [comments]);
 
   // Version History Functions
-  const createNewVersion = (content: string, autoSaved: boolean = false) => {
+  const createNewVersion = (content: string, autoSaved: boolean = false, aiEditInfo?: { model?: string; type?: string }) => {
     // Get current version for baseline
     const currentVersion = versions.find(v => v.id === currentVersionId);
     
@@ -1924,8 +1924,8 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
       autoSaved,
       archived: false,
       isStarred: false,
-      saveType: autoSaved ? 'auto' : 'manual',
-      description,
+      saveType: aiEditInfo ? 'ai' : (autoSaved ? 'auto' : 'manual'),
+      description: aiEditInfo ? `AI edit (${aiEditInfo.model || 'unknown'})` : description,
       changesSinceLastVersion: changesSinceLastSave,
       // OPTION C: Save pending suggestions to carry over
       pendingSuggestions: trackedChanges.length > 0 ? trackedChanges : undefined,
@@ -1967,6 +1967,26 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
     
     setShowSplitView(true);
   }, [editor]);
+
+  // Update split view when new suggestions come in (if split view is already open)
+  const updateSplitViewWithSuggestion = useCallback((suggestion: any) => {
+    if (!editor || !showSplitView) return;
+    
+    // Get the current document content
+    const currentContent = editor.getText();
+    
+    // Create the suggested version by replacing the original text
+    const suggestedContent = currentContent.replace(
+      suggestion.originalText, 
+      suggestion.suggestedText
+    );
+    
+    setSplitViewData({
+      originalContent: currentContent,
+      suggestedContent: suggestedContent,
+      explanation: suggestion.explanation || 'AI suggested changes'
+    });
+  }, [editor, showSplitView]);
 
   const handleApplySuggestion = useCallback((suggestion: any) => {
     if (!editor || suggestion.from === undefined || suggestion.to === undefined) return;
@@ -2053,7 +2073,12 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
       // Create a new version for AI edits
       setTimeout(() => {
         const content = editor.getHTML();
-        createNewVersion(content, false); // Not auto-saved, manual AI edit
+        console.log('🎯 Creating new version for AI edit');
+        const newVersion = createNewVersion(content, false, { 
+          model: suggestion.model || 'claude-3-5-sonnet', 
+          type: 'agent-edit' 
+        });
+        console.log('✅ Created AI edit version:', newVersion.id, 'V' + newVersion.versionNumber);
       }, 100);
       
       showToast('AI suggestion applied successfully', 'success');
@@ -3397,7 +3422,30 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
 
         {/* Split View Button */}
         <button
-          onClick={() => setShowSplitView(!showSplitView)}
+          onClick={() => {
+            if (showSplitView) {
+              // Close split view
+              setShowSplitView(false);
+              setSplitViewData(null);
+            } else {
+              // Open split view with current document
+              const currentContent = editor?.getText() || '';
+              if (currentContent.trim()) {
+                setSplitViewData({
+                  originalContent: currentContent,
+                  suggestedContent: currentContent, // Start with same content
+                  explanation: 'Use AI Chat in Agent mode to generate suggestions, then view them here.'
+                });
+                setShowSplitView(true);
+                // Also open AI chat if not already open
+                if (!showAIChatSidebar) {
+                  setShowAIChatSidebar(true);
+                }
+              } else {
+                showToast('Add some content to the document first', 'info');
+              }
+            }
+          }}
           className={`px-3 py-1.5 text-xs font-medium border rounded ml-2 ${
             showSplitView 
               ? 'text-blue-600 bg-blue-50 border-blue-300' 
@@ -3500,6 +3548,7 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
             onApplySuggestion={handleApplySuggestion}
             onRejectSuggestion={handleRejectSuggestion}
             onShowSplitView={handleShowSplitView}
+            onUpdateSplitView={updateSplitViewWithSuggestion}
             isCurrentVersion={viewingVersionId === currentVersionId}
             editingMode={editingMode}
           />
@@ -5172,7 +5221,12 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
               // Create new version
               setTimeout(() => {
                 const content = editor.getHTML();
-                createNewVersion(content, false);
+                console.log('🎯 Creating new version for Split View AI edit');
+                const newVersion = createNewVersion(content, false, { 
+                  model: 'claude-3-5-sonnet', 
+                  type: 'split-view-edit' 
+                });
+                console.log('✅ Created Split View AI edit version:', newVersion.id, 'V' + newVersion.versionNumber);
               }, 100);
               
               showToast('AI changes applied successfully', 'success');

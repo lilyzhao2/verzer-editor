@@ -41,6 +41,8 @@ export function SplitDiffView({
     }
   }, [originalContent, suggestedContent]);
 
+  const hasChanges = originalContent !== suggestedContent;
+
   if (!isOpen || !diffData) return null;
 
   const changeCount = diffData.operations.filter(op => op.type !== 'equal').length;
@@ -102,54 +104,80 @@ export function SplitDiffView({
 
         {/* Split View Content */}
         <div className="flex-1 flex overflow-hidden">
-          {/* Original Content (Left) */}
-          <div className="flex-1 flex flex-col border-r border-gray-200">
-            <div className="p-3 bg-red-50 border-b border-red-200">
-              <h3 className="text-sm font-semibold text-red-800 flex items-center gap-2">
-                <div className="w-3 h-3 bg-red-500 rounded-full"></div>
-                Original
-              </h3>
+          {!hasChanges && (
+            <div className="flex-1 flex items-center justify-center bg-gray-50">
+              <div className="text-center text-gray-500 max-w-md">
+                <div className="text-4xl mb-4">🤖💬</div>
+                <h3 className="text-lg font-semibold mb-2">No AI suggestions yet</h3>
+                <p className="text-sm">
+                  Use the AI Chat in Agent mode to generate suggestions. 
+                  When AI provides suggestions, they'll appear here for detailed comparison.
+                </p>
+                <div className="mt-4 text-xs text-gray-400">
+                  Try asking: "make this more concise" or "improve the tone"
+                </div>
+              </div>
             </div>
-            <div className="flex-1 overflow-auto p-4">
-              <div 
-                className="prose prose-sm max-w-none leading-relaxed"
-                dangerouslySetInnerHTML={{ __html: diffData.leftHTML }}
-              />
-            </div>
-          </div>
+          )}
+          
+          {hasChanges && (
+            <>
+              {/* Original Content (Left) */}
+              <div className="flex-1 flex flex-col border-r border-gray-200">
+                <div className="p-3 bg-red-50 border-b border-red-200">
+                  <h3 className="text-sm font-semibold text-red-800 flex items-center gap-2">
+                    <div className="w-3 h-3 bg-red-500 rounded-full"></div>
+                    Original
+                  </h3>
+                </div>
+                <div className="flex-1 overflow-auto p-4">
+                  <div 
+                    className="prose prose-sm max-w-none leading-relaxed"
+                    dangerouslySetInnerHTML={{ __html: diffData.leftHTML }}
+                  />
+                </div>
+              </div>
 
-          {/* Suggested Content (Right) */}
-          <div className="flex-1 flex flex-col">
-            <div className="p-3 bg-green-50 border-b border-green-200">
-              <h3 className="text-sm font-semibold text-green-800 flex items-center gap-2">
-                <div className="w-3 h-3 bg-green-500 rounded-full"></div>
-                AI Suggestion
-              </h3>
-            </div>
-            <div className="flex-1 overflow-auto p-4">
-              <div 
-                className="prose prose-sm max-w-none leading-relaxed"
-                dangerouslySetInnerHTML={{ __html: diffData.rightHTML }}
-              />
-            </div>
-          </div>
+              {/* Suggested Content (Right) */}
+              <div className="flex-1 flex flex-col">
+                <div className="p-3 bg-green-50 border-b border-green-200">
+                  <h3 className="text-sm font-semibold text-green-800 flex items-center gap-2">
+                    <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+                    AI Suggestion
+                  </h3>
+                </div>
+                <div className="flex-1 overflow-auto p-4">
+                  <div 
+                    className="prose prose-sm max-w-none leading-relaxed"
+                    dangerouslySetInnerHTML={{ __html: diffData.rightHTML }}
+                  />
+                </div>
+              </div>
+            </>
+          )}
         </div>
 
         {/* Footer with Stats */}
         <div className="p-4 bg-gray-50 border-t border-gray-200">
           <div className="flex items-center justify-between text-sm text-gray-600">
-            <div className="flex items-center gap-4">
-              <span className="flex items-center gap-1">
-                <div className="w-3 h-3 bg-red-500 rounded-sm"></div>
-                {diffData.operations.filter(op => op.type === 'delete').length} deletions
-              </span>
-              <span className="flex items-center gap-1">
-                <div className="w-3 h-3 bg-green-500 rounded-sm"></div>
-                {diffData.operations.filter(op => op.type === 'insert').length} additions
-              </span>
-            </div>
+            {hasChanges ? (
+              <div className="flex items-center gap-4">
+                <span className="flex items-center gap-1">
+                  <div className="w-3 h-3 bg-red-500 rounded-sm"></div>
+                  {diffData.operations.filter(op => op.type === 'delete').length} deletions
+                </span>
+                <span className="flex items-center gap-1">
+                  <div className="w-3 h-3 bg-green-500 rounded-sm"></div>
+                  {diffData.operations.filter(op => op.type === 'insert').length} additions
+                </span>
+              </div>
+            ) : (
+              <div className="text-gray-500">
+                Waiting for AI suggestions...
+              </div>
+            )}
             <div className="text-xs text-gray-500">
-              Press Esc to close • Enter to accept • Backspace to reject
+              Press Esc to close {hasChanges ? '• Enter to accept • Backspace to reject' : ''}
             </div>
           </div>
         </div>

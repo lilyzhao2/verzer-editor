@@ -45,6 +45,7 @@ interface AIChatSidebarProps {
   onApplySuggestion: (suggestion: AISuggestion) => void;
   onRejectSuggestion: (suggestionId: string) => void;
   onShowSplitView: (suggestion: AISuggestion) => void;
+  onUpdateSplitView?: (suggestion: AISuggestion) => void;
   isCurrentVersion?: boolean;
   editingMode?: string;
 }
@@ -70,6 +71,7 @@ export function AIChatSidebar({
   onApplySuggestion,
   onRejectSuggestion,
   onShowSplitView,
+  onUpdateSplitView,
   isCurrentVersion = true,
   editingMode = 'editing'
 }: AIChatSidebarProps) {
@@ -82,6 +84,8 @@ export function AIChatSidebar({
   const [showModeDropdown, setShowModeDropdown] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(320);
   const [isResizing, setIsResizing] = useState(false);
+  const [requestQueue, setRequestQueue] = useState<string[]>([]);
+  const [abortController, setAbortController] = useState<AbortController | null>(null);
 
   // Check if Agent mode is available
   const isAgentModeAvailable = isCurrentVersion && editingMode !== 'viewing';
@@ -161,6 +165,16 @@ export function AIChatSidebar({
   const sendMessage = async () => {
     if (!inputMessage.trim() || isLoading) return;
 
+    // Cancel any pending request
+    if (abortController) {
+      abortController.abort();
+      console.log('🚫 Cancelled previous request');
+    }
+
+    // Create new abort controller
+    const newAbortController = new AbortController();
+    setAbortController(newAbortController);
+
     const userMessage: ChatMessage = {
       id: `msg-${Date.now()}`,
       role: 'user',
@@ -177,6 +191,7 @@ export function AIChatSidebar({
       const response = await fetch('/api/ai-chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: newAbortController.signal,
         body: JSON.stringify({
           messages: newMessages.map(msg => ({
             role: msg.role,
@@ -209,7 +224,18 @@ export function AIChatSidebar({
       setMessages(updatedMessages);
       saveConversation(updatedMessages);
 
+      // If split view is open and we have suggestions, update it automatically
+      if (aiMessage.suggestions && aiMessage.suggestions.length > 0 && onUpdateSplitView) {
+        onUpdateSplitView(aiMessage.suggestions[0]);
+      }
+
     } catch (error) {
+      // Don't show error if request was aborted (user cancelled)
+      if (error instanceof Error && error.name === 'AbortError') {
+        console.log('🚫 Request was cancelled');
+        return;
+      }
+      
       console.error('AI chat error:', error);
       
       let errorContent = 'Sorry, I encountered an error. Please try again.';
@@ -218,6 +244,8 @@ export function AIChatSidebar({
           errorContent = 'AI service is temporarily unavailable. Please check your API keys and try again.';
         } else if (error.message.includes('401')) {
           errorContent = 'Authentication failed. Please check your API configuration.';
+        } else if (error.message.includes('429')) {
+          errorContent = 'Rate limit exceeded. Please wait a moment and try again.';
         }
       }
       
@@ -234,6 +262,7 @@ export function AIChatSidebar({
       saveConversation(updatedMessages);
     } finally {
       setIsLoading(false);
+      setAbortController(null);
     }
   };
 
