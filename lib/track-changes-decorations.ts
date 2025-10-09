@@ -74,9 +74,13 @@ function mergeConsecutiveChanges(changes: TrackedChange[]): TrackedChange[] {
     const isAdjacentInsertion = current.type === 'insertion' && 
                                 (next.from === current.to || Math.abs(next.from - current.to) <= 5);
     
-    // For deletions: check if positions are close
+    // For deletions: check if they should be merged
+    // Only merge single-char deletions (backspace/delete key) or if positions are very close
+    const isSingleCharDeletion = current.type === 'deletion' && 
+                                 current.text.length === 1 && 
+                                 next.text.length === 1;
     const isCloseDeletion = current.type === 'deletion' &&
-                           Math.abs(next.from - current.from) < 20;
+                           (isSingleCharDeletion || Math.abs(next.from - current.from) < 5);
 
     if (sameTypeAndUser && isRecent && (isAdjacentInsertion || isCloseDeletion)) {
       // Merge into current
@@ -93,30 +97,39 @@ function mergeConsecutiveChanges(changes: TrackedChange[]): TrackedChange[] {
         }
       } else {
         // For deletions, combine text in chronological order (already sorted by timestamp)
-        // Use originalFrom if available (unmapped positions) for accurate backspace detection
-        const currentOriginal = current.originalFrom ?? current.from;
-        const nextOriginal = next.originalFrom ?? next.from;
-        const isBackspace = nextOriginal < currentOriginal;
-        
-        console.log('🔍 Deletion merge:', {
-          current: { text: current.text, from: current.from, originalFrom: currentOriginal, timestamp: current.timestamp },
-          next: { text: next.text, from: next.from, originalFrom: nextOriginal, timestamp: next.timestamp },
-          comparison: `${nextOriginal} < ${currentOriginal} = ${isBackspace}`,
-          isBackspace
-        });
-        if (isBackspace) {
-          // Backspace: prepend (this char was deleted before current)
-          current.text = next.text + current.text;
-          current.from = next.from;
-          current.originalFrom = nextOriginal; // Keep the earliest original position
-          console.log('⬅️ BACKSPACE: prepended, result:', current.text);
+        // Only merge if both are reasonably sized (not large block deletions)
+        const isLargeBlock = current.text.length > 10 || next.text.length > 10;
+        if (isLargeBlock) {
+          console.log('🚫 Not merging large block deletions:', current.text.length, 'and', next.text.length, 'chars');
+          // Don't merge large blocks - push current and start new
+          merged.push(current);
+          current = { ...next };
         } else {
-          // Forward delete: append
-          current.text = current.text + next.text;
-          // Keep the original position from the first deletion
-          console.log('➡️ FORWARD DELETE: appended, result:', current.text);
+          // Use originalFrom if available (unmapped positions) for accurate backspace detection
+          const currentOriginal = current.originalFrom ?? current.from;
+          const nextOriginal = next.originalFrom ?? next.from;
+          const isBackspace = nextOriginal < currentOriginal;
+          
+          console.log('🔍 Deletion merge:', {
+            current: { text: current.text, from: current.from, originalFrom: currentOriginal, timestamp: current.timestamp },
+            next: { text: next.text, from: next.from, originalFrom: nextOriginal, timestamp: next.timestamp },
+            comparison: `${nextOriginal} < ${currentOriginal} = ${isBackspace}`,
+            isBackspace
+          });
+            if (isBackspace) {
+            // Backspace: prepend (this char was deleted before current)
+            current.text = next.text + current.text;
+            current.from = next.from;
+            current.originalFrom = nextOriginal; // Keep the earliest original position
+            console.log('⬅️ BACKSPACE: prepended, result:', current.text);
+          } else {
+            // Forward delete: append
+            current.text = current.text + next.text;
+            // Keep the original position from the first deletion
+            console.log('➡️ FORWARD DELETE: appended, result:', current.text);
+          }
+          current.to = Math.max(current.to, next.to);
         }
-        current.to = Math.max(current.to, next.to);
       }
       current.timestamp = next.timestamp;
       console.log('🔗 Merged:', current.type, 'now has', current.text.length, 'chars, text:', JSON.stringify(current.text));
@@ -318,8 +331,9 @@ export const TrackChangesDecorationExtension = Extension.create<TrackChangesOpti
 
                 if (overlappingInsertions.length > 0) {
                   // Remove or trim the overlapping insertions
+                  console.log('⚠️ OVERLAP DETECTED - cancelling insertions instead of tracking deletion');
                   overlappingInsertions.forEach(insertion => {
-                    console.log('✅ Cancelling insertion:', insertion.text);
+                    console.log('✅ Cancelling insertion:', insertion.text, 'at', insertion.from, '-', insertion.to);
                     const index = newChanges.indexOf(insertion);
                     if (index > -1) {
                       newChanges.splice(index, 1);
