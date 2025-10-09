@@ -23,6 +23,8 @@ export interface DocumentVersion {
   archived?: boolean; // true if archived (when making older version active)
   isStarred?: boolean; // true if user starred/bookmarked this version
   saveType?: 'initial' | 'manual' | 'auto' | 'ai'; // Type of save that created this version
+  actionDescription?: string; // Description of the action that created this version (e.g., "Restored from V3")
+  description?: string; // User-provided or AI-generated description of changes (e.g., "Major revision based on v2")
   changesSinceLastVersion?: number; // number of edits since last version
   pendingSuggestions?: TrackedChange[]; // Unresolved suggestions that carry over
   baselineContent?: string; // Previous version content (for showing diffs)

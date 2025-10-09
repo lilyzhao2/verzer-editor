@@ -80,8 +80,11 @@ function isAutocompleteEnabled(): boolean {
     if (saved !== null) {
       return saved === 'true';
     }
+    // Default to true (enabled) if not set
+    return true;
   } catch (error) {
     console.error('Failed to read autocomplete setting:', error);
+    return true; // Default to enabled on error
   }
   return true; // Default to enabled
 }

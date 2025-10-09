@@ -32,16 +32,19 @@ type EditingMode = 'editing' | 'suggesting' | 'viewing';
 const TrackedChangesList = React.memo(({ 
   changes, 
   onAcceptChange, 
-  onRejectChange 
+  onRejectChange,
+  onCardClick
 }: { 
   changes: TrackedChange[]; 
   onAcceptChange: (id: string) => void; 
   onRejectChange: (id: string) => void; 
+  onCardClick?: (change: TrackedChange) => void;
 }) => (
   <>
     {changes.map((change) => (
       <div
         key={`change-${change.id}`}
+        onClick={() => onCardClick?.(change)}
         className="p-3 bg-white border border-gray-200 rounded-lg hover:shadow-md transition-shadow cursor-pointer"
       >
         <div className="flex items-start justify-between mb-2">
@@ -96,16 +99,19 @@ const TrackedChangesList = React.memo(({
 const CommentList = React.memo(({ 
   comments, 
   onResolveComment, 
-  onAddReply 
+  onAddReply,
+  onCardClick
 }: { 
   comments: Comment[]; 
   onResolveComment: (id: string) => void; 
   onAddReply: (id: string, reply: CommentReply) => void; 
+  onCardClick?: (comment: Comment) => void;
 }) => (
   <>
     {comments.map((comment) => (
       <div
         key={`comment-${comment.id}`}
+        onClick={() => onCardClick?.(comment)}
         className={`p-3 rounded-lg border cursor-pointer ${
           comment.resolved
             ? 'bg-gray-100 border-gray-300 opacity-60'
@@ -505,6 +511,19 @@ export default function LiveDocEditor() {
       }
     }
   }, [currentVersionId, versions, archivedVersions]);
+  
+  // Restore confirmation
+  const [showRestoreConfirm, setShowRestoreConfirm] = useState(false);
+  const [versionToRestore, setVersionToRestore] = useState<DocumentVersion | null>(null);
+  
+  // Version filtering
+  const [versionFilters, setVersionFilters] = useState({
+    saveType: 'all' as 'all' | 'initial' | 'manual' | 'auto' | 'ai',
+    starred: false,
+    showArchived: true,
+    searchQuery: '',
+  });
+  
   const [versionSettings, setVersionSettings] = useState<VersionHistorySettings>({
     autoSaveFrequency: 10, // minutes
     autoSaveByLineCount: 50,
@@ -512,10 +531,12 @@ export default function LiveDocEditor() {
   });
   const [lastSaveTime, setLastSaveTime] = useState(new Date());
   const [changesSinceLastSave, setChangesSinceLastSave] = useState(0);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
   // Track Changes is ONLY enabled in Suggesting mode
   const trackChangesEnabled = editingMode === 'suggesting';
-  const editorEditable = editingMode !== 'viewing';
+  // Editor is editable only if: 1) not in viewing mode, AND 2) viewing the current version
+  const editorEditable = editingMode !== 'viewing' && viewingVersionId === currentVersionId;
   const isSuggestingMode = editingMode === 'suggesting';
 
   const editor = useTiptapEditor({
@@ -1690,7 +1711,6 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
     if (editor) {
       const content = editor.getHTML();
       createNewVersion(content, false);
-      showToast('✓ Version saved!', 'success');
     }
   };
 
@@ -1793,6 +1813,7 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
     }]);
     setArchivedVersions([]);
     setCurrentVersionId('v0');
+    setViewingVersionId('v0');
     setHighestVersionNumber(0);
     setComments([]);
     setTrackedChanges([]);
@@ -1802,11 +1823,13 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
     setShowVersionHistory(false);
     setZoomLevel(100);
 
-    // Clear localStorage if you're using it
+    // Clear all localStorage related to this document
     try {
       localStorage.removeItem('verzer-live-doc-state');
+      localStorage.removeItem('verzer-document-backup');
+      localStorage.removeItem('verzer-autocomplete-cache');
     } catch (e) {
-      // Ignore
+      // Ignore localStorage errors
     }
 
     showToast('✓ Everything has been wiped. Starting fresh!', 'success');
@@ -1849,6 +1872,11 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
     // Use global counter that always increments
     const newVersionNumber = highestVersionNumber + 1;
     
+    // Generate description based on current version
+    const description = currentVersion 
+      ? `Major revision based on v${currentVersion.versionNumber}`
+      : 'Initial version';
+    
     const newVersion: DocumentVersion = {
       id: `v${Date.now()}`,
       versionNumber: newVersionNumber,
@@ -1859,6 +1887,7 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
       archived: false,
       isStarred: false,
       saveType: autoSaved ? 'auto' : 'manual',
+      description,
       changesSinceLastVersion: changesSinceLastSave,
       // OPTION C: Save pending suggestions to carry over
       pendingSuggestions: trackedChanges.length > 0 ? trackedChanges : undefined,
@@ -1874,8 +1903,76 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
     setHighestVersionNumber(newVersionNumber); // Update global counter
     setLastSaveTime(new Date());
     setChangesSinceLastSave(0);
+    setHasUnsavedChanges(false);
 
     return newVersion;
+  };
+
+  const handleRestoreConfirm = () => {
+    if (!versionToRestore || !editor) return;
+    
+    const version = versionToRestore;
+    const hasFutureVersions = versions.some(v => v.versionNumber > version.versionNumber);
+    const isArchived = archivedVersions.some(v => v.id === version.id);
+    
+    // Archive future versions (only from active versions)
+    const futureVersions = versions.filter(v => v.versionNumber > version.versionNumber);
+    let remainingVersions = versions.filter(v => v.versionNumber < version.versionNumber);
+    
+    // Always add the restored version to active versions with updated timestamp and action description
+    const actionDescription = isArchived ? `Unarchived from archive` : `Restored from V${version.versionNumber}`;
+    const restoredVersion = { ...version, archived: false, actionDescription, timestamp: new Date() };
+    remainingVersions = [...remainingVersions, restoredVersion].sort((a, b) => a.versionNumber - b.versionNumber);
+    
+    // Mark future versions as archived
+    const markedAsArchived = futureVersions.map(v => ({ ...v, archived: true }));
+    
+    // Remove the restored version from archived list (if it was archived)
+    // Also remove any versions that are about to be archived (to prevent duplicates)
+    const futureVersionIds = new Set(futureVersions.map(v => v.id));
+    const updatedArchivedVersions = archivedVersions.filter(v => v.id !== version.id && !futureVersionIds.has(v.id));
+    
+    // Update both lists
+    setVersions(remainingVersions);
+    setArchivedVersions([...updatedArchivedVersions, ...markedAsArchived]);
+    
+    // Load the version content
+    editor.commands.setContent(version.content);
+    setCurrentVersionId(version.id);
+    setViewingVersionId(version.id);
+    
+    // Switch to editing mode if in viewing mode
+    if (editingMode === 'viewing') {
+      setEditingMode('editing');
+    }
+    editor.setEditable(true);
+    
+    // Restore pending suggestions if they exist
+    if (version.pendingSuggestions && version.pendingSuggestions.length > 0) {
+      const tr = editor.state.tr;
+      tr.setMeta('trackChangesUpdate', version.pendingSuggestions);
+      editor.view.dispatch(tr);
+      setTrackedChanges(version.pendingSuggestions);
+      
+      if (editingMode === 'suggesting') {
+        setShowCommentSidebar(true);
+      }
+    } else {
+      // @ts-ignore
+      editor.commands.clearAllChanges();
+      setTrackedChanges([]);
+    }
+    
+    // Show toast notification
+    if (isArchived) {
+      showToast(`Unarchived V${version.versionNumber}. ${futureVersions.length} version(s) archived.`, 'success');
+    } else {
+      showToast(`Restored V${version.versionNumber}. ${futureVersions.length} version(s) archived.`, 'success');
+    }
+    
+    // Close modal
+    setShowRestoreConfirm(false);
+    setVersionToRestore(null);
   };
 
   const loadVersion = (versionId: string, makeActive: boolean = false) => {
@@ -1887,29 +1984,10 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
       const isArchived = archivedVersions.some(v => v.id === versionId);
       
       if (makeActive && (hasFutureVersions || isArchived)) {
-        // Directly restore without modal - archive future versions
-        const futureVersions = versions.filter(v => v.versionNumber > version.versionNumber);
-        let remainingVersions = versions.filter(v => v.versionNumber < version.versionNumber);
-        
-        // Always add the restored version to active versions
-        remainingVersions = [...remainingVersions, { ...version, archived: false }].sort((a, b) => a.versionNumber - b.versionNumber);
-        
-        // Mark future versions as archived
-        const markedAsArchived = futureVersions.map(v => ({ ...v, archived: true }));
-        
-        // Remove the restored version from archived list (if it was archived)
-        const updatedArchivedVersions = archivedVersions.filter(v => v.id !== version.id);
-        
-        // Update both lists
-        setVersions(remainingVersions);
-        setArchivedVersions([...updatedArchivedVersions, ...markedAsArchived]);
-        
-        // Show toast notification
-        if (isArchived) {
-          showToast(`Unarchived V${version.versionNumber}. ${futureVersions.length} version(s) archived.`, 'success');
-        } else {
-          showToast(`Restored V${version.versionNumber}. ${futureVersions.length} version(s) archived.`, 'success');
-        }
+        // Show confirmation modal before restoring
+        setVersionToRestore(version);
+        setShowRestoreConfirm(true);
+        return; // Wait for user confirmation
       }
       
       // Load the version content
@@ -1975,6 +2053,7 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
       if (currentVersion && currentContent !== currentVersion.content) {
         createNewVersion(currentContent, true);
         setChangesSinceLastSave(0); // Reset counter after auto-save
+        setHasUnsavedChanges(false);
       }
     }, versionSettings.autoSaveFrequency * 60 * 1000); // Convert minutes to ms
 
@@ -2289,12 +2368,14 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
 
     const handleUpdate = () => {
       setChangesSinceLastSave((prev) => prev + 1);
+      setHasUnsavedChanges(true);
 
       // Auto-save if reached line threshold
       if (versionSettings.autoSaveEnabled && changesSinceLastSave >= versionSettings.autoSaveByLineCount) {
         const currentContent = editor.getHTML();
         createNewVersion(currentContent, true);
         setChangesSinceLastSave(0); // Reset counter after auto-save
+        setHasUnsavedChanges(false);
       }
     };
 
@@ -2443,11 +2524,25 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
           <div className="flex items-center gap-2">
             {/* Current Version Display */}
             <span className="text-xs text-gray-600">
-              {currentVersion?.autoSaved ? '☁️ Auto-saved' : '💾 Saved'} • V{currentVersion?.versionNumber}
-              {viewingVersionId !== currentVersionId && (
-                <span className="text-yellow-600 font-semibold"> (Viewing V{versions.find(v => v.id === viewingVersionId)?.versionNumber || archivedVersions.find(v => v.id === viewingVersionId)?.versionNumber})</span>
+              {hasUnsavedChanges ? (
+                <span className="text-orange-600 font-semibold">⚠️ Unsaved Changes</span>
+              ) : (
+                <>
+                  {currentVersion?.autoSaved ? '☁️ Auto-saved' : '💾 Saved'} • V{currentVersion?.versionNumber}
+                </>
               )}
             </span>
+
+            {/* Jump to Current Button (when viewing old version) */}
+            {viewingVersionId !== currentVersionId && (
+              <button
+                onClick={() => loadVersion(currentVersionId, false)}
+                className="px-2 py-1 text-xs font-medium text-blue-600 bg-blue-50 border border-blue-300 rounded hover:bg-blue-100 transition-colors"
+                title="Jump to current version"
+              >
+                Jump to Current
+              </button>
+            )}
 
             {/* Version Dropdown */}
             <select
@@ -2458,18 +2553,9 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
             >
               {versions.map((v) => (
                 <option key={`active-${v.id}`} value={v.id}>
-                  V{v.versionNumber} {v.autoSaved ? '(auto)' : ''} {v.id === currentVersionId ? '★' : ''}
+                  {v.isStarred ? '⭐ ' : ''}V{v.versionNumber} {v.id === currentVersionId ? '(current)' : v.actionDescription?.includes('Restored') || v.actionDescription?.includes('Unarchived') ? '(restored)' : v.autoSaved ? '(auto)' : ''}
                 </option>
               ))}
-              {archivedVersions.filter(av => !versions.some(v => v.id === av.id)).length > 0 && (
-                <optgroup label="📦 Archived">
-                  {archivedVersions.filter(av => !versions.some(v => v.id === av.id)).map((v) => (
-                    <option key={`archived-${v.id}`} value={v.id}>
-                      V{v.versionNumber} {v.autoSaved ? '(auto)' : ''} (archived)
-                    </option>
-                  ))}
-                </optgroup>
-              )}
             </select>
 
             {/* Manual Save Button */}
@@ -2478,11 +2564,15 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
                 if (editor) {
                   const content = editor.getHTML();
                   createNewVersion(content, false);
-                  showToast('Version saved!', 'success');
                 }
               }}
-              className="px-3 py-1.5 text-xs font-medium text-black bg-white border border-gray-300 rounded hover:bg-gray-50"
-              title="Save new version"
+              disabled={viewingVersionId !== currentVersionId}
+              className={`px-3 py-1.5 text-xs font-medium border border-gray-300 rounded ${
+                viewingVersionId !== currentVersionId
+                  ? 'text-gray-400 bg-gray-100 cursor-not-allowed opacity-50'
+                  : 'text-black bg-white hover:bg-gray-50'
+              }`}
+              title={viewingVersionId !== currentVersionId ? 'Restore this version to save changes' : 'Save new version'}
             >
               💾 Save Version
             </button>
@@ -2490,13 +2580,13 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
             {/* Wipe Everything Button */}
             <button
               onClick={handleWipeEverything}
-              disabled={editingMode === 'viewing'}
+              disabled={viewingVersionId !== currentVersionId}
               className={`px-3 py-1.5 text-xs font-medium border border-gray-300 rounded ${
-                editingMode === 'viewing'
+                viewingVersionId !== currentVersionId
                   ? 'text-gray-400 bg-gray-100 cursor-not-allowed opacity-50'
                   : 'text-black bg-white hover:bg-gray-50'
               }`}
-              title={editingMode === 'viewing' ? 'Disabled in viewing mode' : 'Wipe everything (reset to blank)'}
+              title={viewingVersionId !== currentVersionId ? 'Disabled when viewing old versions' : 'Wipe everything (reset to blank)'}
             >
               🗑️ Wipe All
             </button>
@@ -2947,17 +3037,17 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
             {/* Bulk actions */}
             <button
               onClick={() => setConfirmModal({ open: true, action: 'acceptAll' })}
-              disabled={trackedChanges.length === 0}
+              disabled={trackedChanges.length === 0 || viewingVersionId !== currentVersionId}
               className="px-3 py-1.5 text-xs font-medium text-white bg-emerald-500 rounded-md hover:bg-emerald-600 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-              title="Accept all changes"
+              title={viewingVersionId !== currentVersionId ? 'Disabled when viewing old versions' : 'Accept all changes'}
             >
               ✓ Accept All
             </button>
             <button
               onClick={() => setConfirmModal({ open: true, action: 'rejectAll' })}
-              disabled={trackedChanges.length === 0}
+              disabled={trackedChanges.length === 0 || viewingVersionId !== currentVersionId}
               className="px-3 py-1.5 text-xs font-medium text-white bg-rose-500 rounded-md hover:bg-rose-600 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-              title="Reject all changes"
+              title={viewingVersionId !== currentVersionId ? 'Disabled when viewing old versions' : 'Reject all changes'}
             >
               ✕ Reject All
         </button>
@@ -3291,6 +3381,22 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
                 border-bottom: 2px solid #64748b;
                 padding: 1px 2px;
                 border-radius: 2px;
+              }
+              
+              /* Flash animation for jump-to-change highlighting */
+              @keyframes fadeOutFlash {
+                0% {
+                  opacity: 1;
+                  transform: scale(1);
+                }
+                50% {
+                  opacity: 0.8;
+                  transform: scale(1.02);
+                }
+                100% {
+                  opacity: 0;
+                  transform: scale(1);
+                }
               }
             `}</style>
             
@@ -3705,19 +3811,102 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
             </button>
             </div>
             <p className="text-sm text-gray-500">{versions.length} versions</p>
+            
+            {/* Filters */}
+            <div className="mt-4 space-y-3">
+              {/* Search */}
+              <input
+                type="text"
+                placeholder="Search versions..."
+                value={versionFilters.searchQuery}
+                onChange={(e) => setVersionFilters({...versionFilters, searchQuery: e.target.value})}
+                className="w-full px-3 py-2 text-sm text-gray-900 placeholder-gray-500 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              
+              {/* Filter buttons */}
+              <div className="flex flex-wrap gap-2">
+                {/* Save Type Filter */}
+                <select
+                  value={versionFilters.saveType}
+                  onChange={(e) => setVersionFilters({...versionFilters, saveType: e.target.value as any})}
+                  className="px-2 py-1 text-xs border border-gray-300 rounded-md bg-white"
+                >
+                  <option value="all">All Types</option>
+                  <option value="initial">✏️ Initial</option>
+                  <option value="manual">📝 Manual</option>
+                  <option value="auto">⏰ Auto</option>
+                  <option value="ai">🤖 AI</option>
+                </select>
+                
+                {/* Starred Filter */}
+                <button
+                  onClick={() => setVersionFilters({...versionFilters, starred: !versionFilters.starred})}
+                  className={`px-2 py-1 text-xs font-medium border rounded-md transition-colors ${
+                    versionFilters.starred 
+                      ? 'bg-yellow-100 border-yellow-400 text-yellow-900' 
+                      : 'bg-white border-gray-400 text-gray-800 hover:bg-gray-50'
+                  }`}
+                >
+                  {versionFilters.starred ? '⭐ Starred Only' : '☆ All'}
+                </button>
+                
+                {/* Archived Filter */}
+                <button
+                  onClick={() => setVersionFilters({...versionFilters, showArchived: !versionFilters.showArchived})}
+                  className={`px-2 py-1 text-xs font-medium border rounded-md transition-colors ${
+                    versionFilters.showArchived 
+                      ? 'bg-gray-100 border-gray-400 text-gray-800' 
+                      : 'bg-white border-gray-400 text-gray-800 hover:bg-gray-50'
+                  }`}
+                >
+                  {versionFilters.showArchived ? '📦 Hide Archived' : '📦 Show Archived'}
+                </button>
+                
+                {/* Clear Filters */}
+                {(versionFilters.saveType !== 'all' || versionFilters.starred || versionFilters.searchQuery || !versionFilters.showArchived) && (
+                  <button
+                    onClick={() => setVersionFilters({ saveType: 'all', starred: false, showArchived: true, searchQuery: '' })}
+                    className="px-2 py-1 text-xs font-medium text-gray-700 hover:text-gray-900"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
 
           {/* Version List */}
           <div className="flex-1 overflow-auto px-6 py-6">
             {/* Active Versions */}
             <div className="space-y-3">
-              {[...versions].sort((a, b) => {
+              {[...versions]
+                .filter(version => {
+                  // Save type filter
+                  if (versionFilters.saveType !== 'all' && version.saveType !== versionFilters.saveType) return false;
+                  // Starred filter
+                  if (versionFilters.starred && !version.isStarred) return false;
+                  // Search filter
+                  if (versionFilters.searchQuery) {
+                    const query = versionFilters.searchQuery.toLowerCase();
+                    const matchesNumber = `v${version.versionNumber}`.toLowerCase().includes(query);
+                    const matchesDescription = version.description?.toLowerCase().includes(query);
+                    const matchesAction = version.actionDescription?.toLowerCase().includes(query);
+                    // Search in document content (extract text from HTML)
+                    const tempDiv = document.createElement('div');
+                    tempDiv.innerHTML = version.content;
+                    const textContent = tempDiv.textContent || tempDiv.innerText || '';
+                    const matchesContent = textContent.toLowerCase().includes(query);
+                    if (!matchesNumber && !matchesDescription && !matchesAction && !matchesContent) return false;
+                  }
+                  return true;
+                })
+                .sort((a, b) => {
                 const timeA = a.timestamp instanceof Date ? a.timestamp.getTime() : new Date(a.timestamp).getTime();
                 const timeB = b.timestamp instanceof Date ? b.timestamp.getTime() : new Date(b.timestamp).getTime();
                 return timeB - timeA;
               }).map((version) => {
                 const isCurrentVersion = version.id === currentVersionId;
-                const isViewingVersion = version.id === viewingVersionId && version.id !== currentVersionId;
+                const isViewingVersion = version.id === viewingVersionId;
                 const saveTypeIcons = {
                   initial: '✏️',
                   manual: '📝',
@@ -3771,24 +3960,27 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
                           </button>
                           
                           {/* Badges and Restore Button */}
-                          {isCurrentVersion ? (
-                            <span className="px-2 py-1 text-xs font-semibold text-blue-600 bg-blue-100 rounded">
-                              CURRENT
-                            </span>
-                          ) : isViewingVersion ? (
+                          {isViewingVersion ? (
                             <>
                               <span className="px-2 py-1 text-xs font-semibold text-gray-600 bg-gray-200 rounded">
                                 VIEWING
                               </span>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  loadVersion(version.id, true);
-                                }}
-                                className="px-3 py-1 text-xs font-medium text-blue-600 border border-blue-300 rounded hover:bg-blue-50 transition-colors"
-                              >
-                                Restore
-                              </button>
+                              {isCurrentVersion && (
+                                <span className="px-2 py-1 text-xs font-semibold text-blue-600 bg-blue-100 rounded">
+                                  CURRENT
+                                </span>
+                              )}
+                              {!isCurrentVersion && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    loadVersion(version.id, true);
+                                  }}
+                                  className="px-3 py-1 text-xs font-medium text-blue-600 border border-blue-300 rounded hover:bg-blue-50 transition-colors"
+                                >
+                                  Restore
+                                </button>
+                              )}
                             </>
                           ) : (
                             <button
@@ -3810,6 +4002,20 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
                         <span>{saveTypeLabels[(version.saveType || 'manual') as keyof typeof saveTypeLabels]}</span>
           </div>
 
+                      {/* Description (what changed) */}
+                      {version.description && (
+                        <p className="text-sm text-gray-700 mb-1 italic">
+                          📝 {version.description}
+                        </p>
+                      )}
+
+                      {/* Action Description (restore/unarchive action) */}
+                      {version.actionDescription && (
+                        <p className="text-xs text-blue-600 font-medium mb-1">
+                          {version.actionDescription}
+                        </p>
+                      )}
+
                       {/* Timestamp */}
                       <p className="text-xs text-gray-500">
                         {new Date(version.timestamp).toLocaleString('en-US', {
@@ -3828,7 +4034,7 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
             </div>
 
             {/* Archived Versions Section */}
-            {archivedVersions.length > 0 && (
+            {archivedVersions.length > 0 && versionFilters.showArchived && (
               <>
                 {/* Divider */}
                 <div className="my-6 px-6">
@@ -3846,12 +4052,33 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
 
                 {/* Archived Version List */}
                 <div className="space-y-3 px-6">
-                  {[...archivedVersions].sort((a, b) => {
+                  {[...archivedVersions]
+                    .filter(version => {
+                      // Save type filter
+                      if (versionFilters.saveType !== 'all' && version.saveType !== versionFilters.saveType) return false;
+                      // Starred filter
+                      if (versionFilters.starred && !version.isStarred) return false;
+                      // Search filter
+                      if (versionFilters.searchQuery) {
+                        const query = versionFilters.searchQuery.toLowerCase();
+                        const matchesNumber = `v${version.versionNumber}`.toLowerCase().includes(query);
+                        const matchesDescription = version.description?.toLowerCase().includes(query);
+                        const matchesAction = version.actionDescription?.toLowerCase().includes(query);
+                        // Search in document content (extract text from HTML)
+                        const tempDiv = document.createElement('div');
+                        tempDiv.innerHTML = version.content;
+                        const textContent = tempDiv.textContent || tempDiv.innerText || '';
+                        const matchesContent = textContent.toLowerCase().includes(query);
+                        if (!matchesNumber && !matchesDescription && !matchesAction && !matchesContent) return false;
+                      }
+                      return true;
+                    })
+                    .sort((a, b) => {
                     const timeA = a.timestamp instanceof Date ? a.timestamp.getTime() : new Date(a.timestamp).getTime();
                     const timeB = b.timestamp instanceof Date ? b.timestamp.getTime() : new Date(b.timestamp).getTime();
                     return timeB - timeA;
                   }).map((version) => {
-                    const isViewingVersion = version.id === viewingVersionId && version.id !== currentVersionId;
+                    const isViewingVersion = version.id === viewingVersionId;
                     const saveTypeIcons = {
                       initial: '✏️',
                       manual: '📝',
@@ -3929,6 +4156,20 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
                             <span>{saveTypeIcons[(version.saveType || 'manual') as keyof typeof saveTypeIcons]}</span>
                             <span>{saveTypeLabels[(version.saveType || 'manual') as keyof typeof saveTypeLabels]}</span>
                   </div>
+                          
+                          {/* Description (what changed) */}
+                          {version.description && (
+                            <p className="text-sm text-gray-600 mb-1 italic">
+                              📝 {version.description}
+                            </p>
+                          )}
+                          
+                          {/* Action Description (restore/unarchive action) */}
+                          {version.actionDescription && (
+                            <p className="text-xs text-blue-500 font-medium mb-1">
+                              {version.actionDescription}
+                            </p>
+                          )}
                           
                           {/* Timestamp */}
                           <p className="text-xs text-gray-400">
@@ -4671,6 +4912,40 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
       )}
 
       {/* Toast Notification */}
+      {/* Restore Confirmation Modal */}
+      {showRestoreConfirm && versionToRestore && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4 p-6">
+            <h3 className="text-lg font-bold text-gray-900 mb-2">
+              {archivedVersions.some(v => v.id === versionToRestore.id) ? 'Unarchive' : 'Restore'} Version {versionToRestore.versionNumber}?
+            </h3>
+            <p className="text-sm text-gray-600 mb-4">
+              {versions.filter(v => v.versionNumber > versionToRestore.versionNumber).length > 0 
+                ? `This will archive ${versions.filter(v => v.versionNumber > versionToRestore.versionNumber).length} newer version(s) and make V${versionToRestore.versionNumber} your current version.`
+                : `This will make V${versionToRestore.versionNumber} your current version.`
+              }
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setShowRestoreConfirm(false);
+                  setVersionToRestore(null);
+                }}
+                className="flex-1 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleRestoreConfirm}
+                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors"
+              >
+                {archivedVersions.some(v => v.id === versionToRestore.id) ? 'Unarchive' : 'Restore'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {toast && (
         <div 
           className={`fixed top-4 right-4 px-6 py-3 rounded-lg shadow-lg z-50 animate-in fade-in slide-in-from-top-2 duration-300 ${
