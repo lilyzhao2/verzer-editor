@@ -3618,65 +3618,118 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
         <div ref={scrollAreaRef} className={`flex-1 overflow-auto flex relative transition-all duration-300 ${showVersionHistory ? 'mr-96' : 'mr-0'} min-h-0`}>
         {/* Split View - Shown instead of normal editor when active */}
         {showSplitView && splitViewData ? (
-          <div className="flex-1 flex flex-col bg-white">
-            {/* Split View Header */}
-            <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="text-lg font-semibold text-gray-900">Document Comparison</h2>
-                  <p className="text-sm text-gray-600 mt-1">{splitViewData.explanation}</p>
-                </div>
-                <button
-                  onClick={() => {
-                    setShowSplitView(false);
-                    setSplitViewData(null);
-                  }}
-                  className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-md transition-colors"
-                  title="Close Split View"
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-            </div>
+          (() => {
+            // Convert HTML to plain text for diffing
+            const htmlToText = (html: string): string => {
+              if (typeof window === 'undefined') return html;
+              const tempDiv = document.createElement('div');
+              tempDiv.innerHTML = html;
+              return tempDiv.textContent || tempDiv.innerText || '';
+            };
 
-            {/* Split View Content */}
-            <div className="flex-1 flex overflow-hidden">
-              {/* Left: Last Saved Version */}
-              <div className="flex-1 flex flex-col border-r border-gray-200">
-                <div className="px-4 py-2 bg-gray-50 border-b border-gray-200 flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full bg-blue-400"></div>
-                  <span className="text-sm font-medium text-gray-700">Last Saved Version</span>
-                </div>
-                <div className="flex-1 overflow-auto">
-                  <div className="p-8">
-                    <div 
-                      className="prose max-w-none text-gray-900 leading-relaxed"
-                      dangerouslySetInnerHTML={{ __html: splitViewData.originalContent }}
-                    />
+            // Generate word-level diff
+            const { createWordDiff, mergeConsecutiveOperations } = require('@/lib/word-level-diff');
+            const originalText = htmlToText(splitViewData.originalContent);
+            const suggestedText = htmlToText(splitViewData.suggestedContent);
+            const diff = createWordDiff(originalText, suggestedText);
+            const operations = mergeConsecutiveOperations(diff.operations);
+            
+            // Left side: Clean original (no highlighting)
+            const leftHTML = operations
+              .filter((op: any) => op.type !== 'insert')
+              .map((op: any) => {
+                const escapedText = op.text.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
+                return `<span>${escapedText}</span>`;
+              })
+              .join('');
+            
+            // Right side: Show all changes (deletions + insertions highlighted)
+            const rightHTML = operations.map((op: any) => {
+              const escapedText = op.text.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
+              if (op.type === 'delete') {
+                return `<span class="diff-delete" style="background-color: #fee; text-decoration: line-through; color: #c33;">${escapedText}</span>`;
+              } else if (op.type === 'insert') {
+                return `<span class="diff-insert" style="background-color: #dfd; color: #060; font-weight: 500;">${escapedText}</span>`;
+              } else {
+                return `<span>${escapedText}</span>`;
+              }
+            }).join('');
+            
+            const diffResult = { leftHTML, rightHTML, operations };
+
+            // Get version numbers for display
+            const currentVersion = versions.find(v => v.id === currentVersionId);
+            const currentVersionNumber = currentVersion?.versionNumber || 0;
+            const nextVersionNumber = currentVersionNumber + 1;
+
+            return (
+              <div className="flex-1 flex flex-col bg-white">
+                {/* Split View Header */}
+                <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h2 className="text-lg font-semibold text-gray-900">Split View</h2>
+                      <p className="text-sm text-gray-600 mt-1">AI Suggested Changes</p>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setShowSplitView(false);
+                        setSplitViewData(null);
+                      }}
+                      className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-md transition-colors"
+                      title="Close Split View"
+                    >
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
                   </div>
                 </div>
-              </div>
 
-              {/* Right: AI Suggested Changes */}
-              <div className="flex-1 flex flex-col">
-                <div className="px-4 py-2 bg-gray-50 border-b border-gray-200 flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full bg-green-400"></div>
-                  <span className="text-sm font-medium text-gray-700">AI Suggested Changes</span>
-                </div>
-                <div className="flex-1 overflow-auto">
-                  <div className="p-8">
-                    <div 
-                      className="prose max-w-none text-gray-900 leading-relaxed"
-                      dangerouslySetInnerHTML={{ __html: splitViewData.suggestedContent }}
-                    />
+                {/* Split View Content */}
+                <div className="flex-1 flex overflow-hidden">
+                  {/* Left: Last Saved Version */}
+                  <div className="flex-1 flex flex-col border-r border-gray-200">
+                    <div className="px-4 py-3 bg-gray-50 border-b border-gray-200">
+                      <div className="flex items-center gap-2 mb-1">
+                        <div className="w-3 h-3 rounded-full bg-blue-400"></div>
+                        <span className="text-sm font-semibold text-gray-900">V{currentVersionNumber} (Current)</span>
+                      </div>
+                      <p className="text-xs text-gray-600 ml-5">If rejected, you stay on this version</p>
+                    </div>
+                    <div className="flex-1 overflow-auto bg-white">
+                      <div className="p-8">
+                        <div 
+                          className="text-gray-900 leading-relaxed whitespace-pre-wrap"
+                          style={{ lineHeight: '1.8', fontSize: '15px' }}
+                          dangerouslySetInnerHTML={{ __html: diffResult.leftHTML }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Right: AI Suggested Changes */}
+                  <div className="flex-1 flex flex-col">
+                    <div className="px-4 py-3 bg-gray-50 border-b border-gray-200">
+                      <div className="flex items-center gap-2 mb-1">
+                        <div className="w-3 h-3 rounded-full bg-green-400"></div>
+                        <span className="text-sm font-semibold text-gray-900">V{nextVersionNumber} (AI Suggested)</span>
+                      </div>
+                      <p className="text-xs text-gray-600 ml-5">If accepted, this becomes your new version</p>
+                    </div>
+                    <div className="flex-1 overflow-auto bg-white">
+                      <div className="p-8">
+                        <div 
+                          className="text-gray-900 leading-relaxed whitespace-pre-wrap"
+                          style={{ lineHeight: '1.8', fontSize: '15px' }}
+                          dangerouslySetInnerHTML={{ __html: diffResult.rightHTML }}
+                        />
+                      </div>
+                    </div>
                   </div>
                 </div>
-              </div>
-            </div>
 
-            {/* Split View Actions */}
+                {/* Split View Actions */}
             <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex items-center justify-between">
               <button
                 onClick={() => {
@@ -3752,10 +3805,12 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
                 </button>
               </div>
             </div>
-          </div>
+              </div>
+            );
+          })()
         ) : (
           /* Normal Editor - Shown when Split View is not active */
-          <>
+          <div className="flex-1 relative">
           {/* Old Version Warning Banner */}
           {isCurrentVersionLocked && (
             <div className="max-w-[8.5in] mx-auto mt-6 mb-2 px-4 py-3 bg-yellow-100 border-l-4 border-yellow-500 rounded-r">
@@ -4144,7 +4199,7 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
             ))}
           </div>
         )}
-          </>
+          </div>
         )}
         </div>
 
