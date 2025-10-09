@@ -263,6 +263,7 @@ export default function LiveDocEditor() {
     suggestedContent: string;
     explanation: string;
   } | null>(null);
+  const [diffLevel, setDiffLevel] = useState<'word' | 'line' | 'paragraph'>('word');
   
   // Load autocomplete enabled state from localStorage
   const [autocompleteEnabled, setAutocompleteEnabled] = useState<boolean>(() => {
@@ -3258,6 +3259,22 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
 
         <div className="w-px h-6 bg-gray-300 mx-2" />
 
+        {/* Versions Button */}
+        <button
+          onClick={() => {
+            setShowVersionHistory(!showVersionHistory);
+            // Don't close AI chat - they can both be open
+          }}
+          onMouseEnter={() => preloadHeavyComponents()}
+          className="p-2 hover:bg-gray-200 rounded-md transition-colors flex-shrink-0"
+          title="Versions"
+          style={{ minWidth: '40px' }}
+        >
+          <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+        </button>
+
         {/* Verzer Chat Button */}
         <button 
           onClick={() => {
@@ -3274,22 +3291,6 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-          </svg>
-        </button>
-
-        {/* Versions Button */}
-        <button
-          onClick={() => {
-            setShowVersionHistory(!showVersionHistory);
-            // Don't close AI chat - they can both be open
-          }}
-          onMouseEnter={() => preloadHeavyComponents()}
-          className="p-2 hover:bg-gray-200 rounded-md transition-colors flex-shrink-0"
-          title="Versions"
-          style={{ minWidth: '40px' }}
-        >
-          <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
         </button>
 
@@ -3627,12 +3628,30 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
               return tempDiv.textContent || tempDiv.innerText || '';
             };
 
-            // Generate word-level diff
+            // Generate diff based on selected level
             const { createWordDiff, mergeConsecutiveOperations } = require('@/lib/word-level-diff');
             const originalText = htmlToText(splitViewData.originalContent);
             const suggestedText = htmlToText(splitViewData.suggestedContent);
-            const diff = createWordDiff(originalText, suggestedText);
-            const operations = mergeConsecutiveOperations(diff.operations);
+            
+            let operations: any[];
+            
+            if (diffLevel === 'word') {
+              // Word-level diff
+              const diff = createWordDiff(originalText, suggestedText);
+              operations = mergeConsecutiveOperations(diff.operations);
+            } else if (diffLevel === 'line') {
+              // Line-level diff
+              const originalLines = originalText.split('\n');
+              const suggestedLines = suggestedText.split('\n');
+              const diff = createWordDiff(originalLines.join('\n'), suggestedLines.join('\n'));
+              operations = mergeConsecutiveOperations(diff.operations);
+            } else {
+              // Paragraph-level diff
+              const originalParagraphs = originalText.split(/\n\s*\n/);
+              const suggestedParagraphs = suggestedText.split(/\n\s*\n/);
+              const diff = createWordDiff(originalParagraphs.join('\n\n'), suggestedParagraphs.join('\n\n'));
+              operations = mergeConsecutiveOperations(diff.operations);
+            }
             
             // Left side: Clean original (no highlighting)
             const leftHTML = operations
@@ -3667,9 +3686,23 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
                 {/* Split View Header */}
                 <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
                   <div className="flex items-center justify-between">
-                    <div>
-                      <h2 className="text-lg font-semibold text-gray-900">Split View</h2>
-                      <p className="text-sm text-gray-600 mt-1">AI Suggested Changes</p>
+                    <div className="flex items-center gap-4">
+                      <div>
+                        <h2 className="text-lg font-semibold text-gray-900">Split View</h2>
+                        <p className="text-sm text-gray-600 mt-1">AI Suggested Changes</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <label className="text-sm font-medium text-gray-700">Diff Level:</label>
+                        <select
+                          value={diffLevel}
+                          onChange={(e) => setDiffLevel(e.target.value as 'word' | 'line' | 'paragraph')}
+                          className="text-sm border border-gray-300 rounded px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                        >
+                          <option value="word">Word Level</option>
+                          <option value="line">Line Level</option>
+                          <option value="paragraph">Paragraph Level</option>
+                        </select>
+                      </div>
                     </div>
                     <button
                       onClick={() => {
