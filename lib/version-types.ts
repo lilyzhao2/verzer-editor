@@ -28,6 +28,8 @@ export interface DocumentVersion {
   changesSinceLastVersion?: number; // number of edits since last version
   pendingSuggestions?: TrackedChange[]; // Unresolved suggestions that carry over
   baselineContent?: string; // Previous version content (for showing diffs)
+  aiEditPrompt?: string; // The prompt that generated this AI edit
+  aiEditModel?: string; // The AI model used for this edit
 }
 
 export interface VersionHistorySettings {

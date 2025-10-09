@@ -1903,7 +1903,7 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
   }, [comments]);
 
   // Version History Functions
-  const createNewVersion = (content: string, autoSaved: boolean = false, aiEditInfo?: { model?: string; type?: string }) => {
+  const createNewVersion = (content: string, autoSaved: boolean = false, aiEditInfo?: { model?: string; type?: string; prompt?: string }) => {
     // Get current version for baseline
     const currentVersion = versions.find(v => v.id === currentVersionId);
     
@@ -1925,12 +1925,15 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
       archived: false,
       isStarred: false,
       saveType: aiEditInfo ? 'ai' : (autoSaved ? 'auto' : 'manual'),
-      description: aiEditInfo ? `AI edit (${aiEditInfo.model || 'unknown'})` : description,
+      description: aiEditInfo ? `AI: ${typeof aiEditInfo.prompt === 'string' ? aiEditInfo.prompt.substring(0, 50) : 'AI edit'}...` : description,
       changesSinceLastVersion: changesSinceLastSave,
       // OPTION C: Save pending suggestions to carry over
       pendingSuggestions: trackedChanges.length > 0 ? trackedChanges : undefined,
       // Save baseline for showing diffs later
       baselineContent: currentVersion?.content,
+      // Store AI edit details
+      aiEditPrompt: typeof aiEditInfo?.prompt === 'string' ? aiEditInfo.prompt : 'AI suggested changes',
+      aiEditModel: aiEditInfo?.model,
     };
 
     console.log('📝 Creating new version', newVersionNumber, 'with', trackedChanges.length, 'pending suggestions');
@@ -1950,43 +1953,51 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
   const handleShowSplitView = useCallback((suggestion: any) => {
     if (!editor || !suggestion.originalText || !suggestion.suggestedText) return;
     
-    // Get the current document content
-    const currentContent = editor.getText();
+    // Get the last saved version's content (clean, no changes)
+    const lastSavedVersion = versions.find(v => v.id === currentVersionId);
+    const lastSavedContent = lastSavedVersion?.content || '';
     
-    // Create the suggested version by replacing the original text
+    // Get current document content
+    const currentContent = editor.getHTML();
+    
+    // Create the suggested version by applying AI changes to current content
     const suggestedContent = currentContent.replace(
       suggestion.originalText, 
       suggestion.suggestedText
     );
     
     setSplitViewData({
-      originalContent: currentContent,
-      suggestedContent: suggestedContent,
+      originalContent: lastSavedContent, // Last saved version (clean)
+      suggestedContent: suggestedContent, // Current + AI changes
       explanation: suggestion.explanation || 'AI suggested changes'
     });
     
     setShowSplitView(true);
-  }, [editor]);
+  }, [editor, versions, currentVersionId]);
 
   // Update split view when new suggestions come in (if split view is already open)
   const updateSplitViewWithSuggestion = useCallback((suggestion: any) => {
     if (!editor || !showSplitView) return;
     
-    // Get the current document content
-    const currentContent = editor.getText();
+    // Get the last saved version's content (clean, no changes)
+    const lastSavedVersion = versions.find(v => v.id === currentVersionId);
+    const lastSavedContent = lastSavedVersion?.content || '';
     
-    // Create the suggested version by replacing the original text
+    // Get current document content
+    const currentContent = editor.getHTML();
+    
+    // Create the suggested version by applying AI changes to current content
     const suggestedContent = currentContent.replace(
       suggestion.originalText, 
       suggestion.suggestedText
     );
     
     setSplitViewData({
-      originalContent: currentContent,
-      suggestedContent: suggestedContent,
+      originalContent: lastSavedContent, // Last saved version (clean)
+      suggestedContent: suggestedContent, // Current + AI changes
       explanation: suggestion.explanation || 'AI suggested changes'
     });
-  }, [editor, showSplitView]);
+  }, [editor, showSplitView, versions, currentVersionId]);
 
   const handleApplySuggestion = useCallback((suggestion: any) => {
     if (!editor || suggestion.from === undefined || suggestion.to === undefined) return;
@@ -2056,19 +2067,47 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
       // Apply the suggestion as a tracked change
       const tr = state.tr;
       
-      // Replace the text
-      tr.replaceWith(suggestion.from, suggestion.to, editor.schema.text(suggestion.suggestedText));
-      
-      // Add metadata for AI edit tracking
-      tr.setMeta('trackChanges', {
-        type: 'ai-edit',
-        model: suggestion.model || 'unknown',
-        timestamp: new Date(),
-        conversationId: suggestion.conversationId,
-        originalSuggestion: suggestion
-      });
-      
-      editor.view.dispatch(tr);
+      // Parse HTML content if it contains HTML tags
+      if (suggestion.suggestedText.includes('<p>') || suggestion.suggestedText.includes('</p>')) {
+        // Use Tiptap's built-in HTML parsing to handle the content properly
+        const tempEditor = editor;
+        
+        // Save current selection
+        const currentSelection = { from: suggestion.from, to: suggestion.to };
+        
+        // Delete the old content and insert the new HTML
+        tempEditor.chain()
+          .focus()
+          .setTextSelection(currentSelection)
+          .deleteSelection()
+          .insertContent(suggestion.suggestedText)
+          .run();
+        
+        // Add metadata for AI edit tracking
+        const metaTr = tempEditor.state.tr;
+        metaTr.setMeta('trackChanges', {
+          type: 'ai-edit',
+          model: suggestion.model || 'unknown',
+          timestamp: new Date(),
+          conversationId: suggestion.conversationId,
+          originalSuggestion: suggestion
+        });
+        tempEditor.view.dispatch(metaTr);
+      } else {
+        // Plain text - use the original method
+        tr.replaceWith(suggestion.from, suggestion.to, editor.schema.text(suggestion.suggestedText));
+        
+        // Add metadata for AI edit tracking
+        tr.setMeta('trackChanges', {
+          type: 'ai-edit',
+          model: suggestion.model || 'unknown',
+          timestamp: new Date(),
+          conversationId: suggestion.conversationId,
+          originalSuggestion: suggestion
+        });
+        
+        editor.view.dispatch(tr);
+      }
       
       // Create a new version for AI edits
       setTimeout(() => {
@@ -2076,7 +2115,8 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
         console.log('🎯 Creating new version for AI edit');
         const newVersion = createNewVersion(content, false, { 
           model: suggestion.model || 'claude-3-5-sonnet', 
-          type: 'agent-edit' 
+          type: 'agent-edit',
+          prompt: String(suggestion.prompt || suggestion.explanation || 'AI suggested changes')
         });
         console.log('✅ Created AI edit version:', newVersion.id, 'V' + newVersion.versionNumber);
       }, 100);
@@ -2120,9 +2160,9 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
     // Update both lists
     setVersions(remainingVersions);
     setArchivedVersions([...updatedArchivedVersions, ...markedAsArchived]);
-    
-    // Load the version content
-    editor.commands.setContent(version.content);
+      
+      // Load the version content
+      editor.commands.setContent(version.content);
     setCurrentVersionId(version.id);
     setViewingVersionId(version.id);
     
@@ -2691,16 +2731,6 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
             )}
         </div>
         
-          {/* History Button */}
-          <button
-            onClick={() => setShowVersionHistory(!showVersionHistory)}
-            onMouseEnter={() => preloadHeavyComponents()}
-            className="px-3 py-1.5 text-xs font-medium text-black bg-white border border-gray-300 rounded hover:bg-gray-50"
-            title="Version History"
-          >
-            History
-          </button>
-          
           {/* Settings Button */}
           <button 
             onClick={() => setShowContextPage(true)}
@@ -2708,19 +2738,6 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
             title="Settings"
           >
             Settings
-          </button>
-          
-          {/* AI Chat Button */}
-          <button 
-            onClick={() => setShowAIChatSidebar(!showAIChatSidebar)}
-            className={`px-3 py-1.5 text-xs font-medium border rounded hover:bg-gray-50 ${
-              showAIChatSidebar 
-                ? 'text-blue-600 bg-blue-50 border-blue-300' 
-                : 'text-black bg-white border-gray-300'
-            }`}
-            title="AI Assistant"
-          >
-            AI Chat
           </button>
           
           {/* Placeholder for future modes */}
@@ -2815,7 +2832,7 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
       </div>
 
       {/* Modern Toolbar */}
-      <div className="bg-gray-50 border-b border-gray-200 px-6 py-3 flex items-center gap-0 text-sm relative z-10 flex-shrink-0">
+      <div className="bg-gray-50 border-b border-gray-200 px-6 py-3 flex items-center gap-1 text-sm relative z-10 flex-shrink-0 overflow-x-auto">
         {/* Undo/Redo */}
         <button
           onClick={() => editor.chain().focus().undo().run()}
@@ -3239,6 +3256,86 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
           </svg>
         </button>
 
+        <div className="w-px h-6 bg-gray-300 mx-2" />
+
+        {/* History Button */}
+        <button
+          onClick={() => {
+            setShowVersionHistory(!showVersionHistory);
+            // Don't close AI chat - they can both be open
+          }}
+          onMouseEnter={() => preloadHeavyComponents()}
+          className="p-2 hover:bg-gray-200 rounded-md transition-colors flex-shrink-0"
+          title="Version History"
+          style={{ minWidth: '40px' }}
+        >
+          <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+        </button>
+
+        {/* AI Chat Button */}
+        <button 
+          onClick={() => {
+            setShowAIChatSidebar(!showAIChatSidebar);
+            // Don't close version history - they can both be open
+          }}
+          className={`p-2 rounded-md transition-colors flex-shrink-0 ${
+            showAIChatSidebar 
+              ? 'text-blue-600 bg-blue-100' 
+              : 'text-gray-600 hover:bg-gray-200'
+          }`}
+          title="Verzer AI"
+          style={{ minWidth: '40px' }}
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+          </svg>
+        </button>
+
+        {/* Split View Button */}
+        <button
+          onClick={() => {
+            if (showSplitView) {
+              // Close split view
+              setShowSplitView(false);
+              setSplitViewData(null);
+            } else {
+              // Open split view showing unsaved changes from last version
+              const currentContent = editor?.getHTML() || '';
+              
+              // Get the last saved version's content
+              const lastSavedVersion = versions.find(v => v.id === currentVersionId);
+              const lastSavedContent = lastSavedVersion?.content || '';
+              
+              if (currentContent.trim() || lastSavedContent.trim()) {
+                setSplitViewData({
+                  originalContent: lastSavedContent,
+                  suggestedContent: currentContent,
+                  explanation: hasUnsavedChanges 
+                    ? `Showing ${changesSinceLastSave} unsaved changes since last save` 
+                    : 'No unsaved changes - document matches last saved version'
+                });
+                setShowSplitView(true);
+              } else {
+                showToast('No content to compare', 'info');
+              }
+            }
+          }}
+          className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+            showSplitView 
+              ? 'bg-blue-100 text-blue-700' 
+              : hasUnsavedChanges
+                ? 'bg-orange-100 text-orange-700 hover:bg-orange-200'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+          }`}
+          title={hasUnsavedChanges 
+            ? `View ${changesSinceLastSave} unsaved changes` 
+            : "Split View - Compare versions"}
+        >
+          📊 {hasUnsavedChanges ? `${changesSinceLastSave} Changes` : 'Split View'}
+        </button>
+
         <div className="flex-1" />
 
         {/* Mode Status Indicator + Changes Sidebar Toggle */}
@@ -3420,42 +3517,6 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
           </svg>
         </button>
 
-        {/* Split View Button */}
-        <button
-          onClick={() => {
-            if (showSplitView) {
-              // Close split view
-              setShowSplitView(false);
-              setSplitViewData(null);
-            } else {
-              // Open split view with current document
-              const currentContent = editor?.getText() || '';
-              if (currentContent.trim()) {
-                setSplitViewData({
-                  originalContent: currentContent,
-                  suggestedContent: currentContent, // Start with same content
-                  explanation: 'Use AI Chat in Agent mode to generate suggestions, then view them here.'
-                });
-                setShowSplitView(true);
-                // Also open AI chat if not already open
-                if (!showAIChatSidebar) {
-                  setShowAIChatSidebar(true);
-                }
-              } else {
-                showToast('Add some content to the document first', 'info');
-              }
-            }
-          }}
-          className={`px-3 py-1.5 text-xs font-medium border rounded ml-2 ${
-            showSplitView 
-              ? 'text-blue-600 bg-blue-50 border-blue-300' 
-              : 'text-gray-700 bg-white border-gray-300 hover:bg-gray-50'
-          }`}
-          title="Split View - Compare original vs AI suggestions"
-        >
-          📊 Split View
-        </button>
-
         {/* Editing Mode Selector - Always on the right */}
         <div className="relative ml-2">
           <select
@@ -3554,9 +3615,147 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
           />
         )}
         
-        <div ref={scrollAreaRef} className={`flex-1 overflow-auto flex relative transition-all duration-300 ${showVersionHistory ? 'ml-96' : 'ml-0'} min-h-0`}>
-        {/* Page-like white container */}
-        <div className="flex-1 relative">
+        <div ref={scrollAreaRef} className={`flex-1 overflow-auto flex relative transition-all duration-300 ${showVersionHistory ? 'mr-96' : 'mr-0'} min-h-0`}>
+        {/* Split View - Shown instead of normal editor when active */}
+        {showSplitView && splitViewData ? (
+          <div className="flex-1 flex flex-col bg-white">
+            {/* Split View Header */}
+            <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-900">Document Comparison</h2>
+                  <p className="text-sm text-gray-600 mt-1">{splitViewData.explanation}</p>
+                </div>
+                <button
+                  onClick={() => {
+                    setShowSplitView(false);
+                    setSplitViewData(null);
+                  }}
+                  className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-md transition-colors"
+                  title="Close Split View"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            {/* Split View Content */}
+            <div className="flex-1 flex overflow-hidden">
+              {/* Left: Last Saved Version */}
+              <div className="flex-1 flex flex-col border-r border-gray-200">
+                <div className="px-4 py-2 bg-gray-50 border-b border-gray-200 flex items-center gap-2">
+                  <div className="w-3 h-3 rounded-full bg-blue-400"></div>
+                  <span className="text-sm font-medium text-gray-700">Last Saved Version</span>
+                </div>
+                <div className="flex-1 overflow-auto">
+                  <div className="p-8">
+                    <div 
+                      className="prose max-w-none text-gray-900 leading-relaxed"
+                      dangerouslySetInnerHTML={{ __html: splitViewData.originalContent }}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Right: AI Suggested Changes */}
+              <div className="flex-1 flex flex-col">
+                <div className="px-4 py-2 bg-gray-50 border-b border-gray-200 flex items-center gap-2">
+                  <div className="w-3 h-3 rounded-full bg-green-400"></div>
+                  <span className="text-sm font-medium text-gray-700">AI Suggested Changes</span>
+                </div>
+                <div className="flex-1 overflow-auto">
+                  <div className="p-8">
+                    <div 
+                      className="prose max-w-none text-gray-900 leading-relaxed"
+                      dangerouslySetInnerHTML={{ __html: splitViewData.suggestedContent }}
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Split View Actions */}
+            <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex items-center justify-between">
+              <button
+                onClick={() => {
+                  setShowSplitView(false);
+                  setSplitViewData(null);
+                }}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => {
+                    // Discard unsaved changes by reverting to last saved version
+                    if (hasUnsavedChanges) {
+                      const lastSavedVersion = versions.find(v => v.id === currentVersionId);
+                      if (lastSavedVersion && editor) {
+                        editor.commands.setContent(lastSavedVersion.content);
+                        setChangesSinceLastSave(0);
+                        setHasUnsavedChanges(false);
+                        showToast('Changes discarded', 'info');
+                      }
+                    } else {
+                      showToast('AI changes rejected', 'info');
+                    }
+                    setShowSplitView(false);
+                    setSplitViewData(null);
+                  }}
+                  className="px-6 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700 transition-colors flex items-center gap-2"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                  Reject Changes
+                </button>
+                <button
+                  onClick={() => {
+                    // If there are unsaved changes, save them as a new version
+                    if (hasUnsavedChanges && editor) {
+                      const content = editor.getHTML();
+                      console.log('💾 Saving unsaved changes from Split View');
+                      const newVersion = createNewVersion(content, false);
+                      showToast(`Version ${newVersion.versionNumber} saved`, 'success');
+                      setShowSplitView(false);
+                      setSplitViewData(null);
+                    } else if (editor && splitViewData) {
+                      // Apply AI suggestions if different
+                      editor.commands.setContent(splitViewData.suggestedContent);
+                      
+                      // Create new version
+                      setTimeout(() => {
+                        const content = editor.getHTML();
+                        console.log('🎯 Creating new version for Split View AI edit');
+                        const newVersion = createNewVersion(content, false, { 
+                          model: 'claude-3-5-sonnet', 
+                          type: 'split-view-edit',
+                          prompt: 'Changes accepted from Split View'
+                        });
+                        console.log('✅ Created Split View AI edit version:', newVersion.id, 'V' + newVersion.versionNumber);
+                      }, 100);
+                      
+                      showToast('AI changes applied successfully', 'success');
+                    }
+                    setShowSplitView(false);
+                    setSplitViewData(null);
+                  }}
+                  className="px-6 py-2 text-sm font-medium text-white bg-green-600 rounded-md hover:bg-green-700 transition-colors flex items-center gap-2"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                  Accept Changes
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : (
+          /* Normal Editor - Shown when Split View is not active */
+          <>
           {/* Old Version Warning Banner */}
           {isCurrentVersionLocked && (
             <div className="max-w-[8.5in] mx-auto mt-6 mb-2 px-4 py-3 bg-yellow-100 border-l-4 border-yellow-500 rounded-r">
@@ -3945,6 +4144,8 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
             ))}
           </div>
         )}
+          </>
+        )}
         </div>
 
         {/* Old sidebar removed - using floating cards only */}
@@ -4059,9 +4260,9 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
         )}
       </div>
 
-      {/* Version History Sidebar */}
+      {/* Version History Sidebar - Right Side */}
       {showVersionHistory && (
-        <div className="fixed left-0 top-0 h-screen w-96 bg-white border-r border-gray-200 shadow-lg z-40 flex flex-col">
+        <div className="fixed right-0 top-0 h-screen w-96 bg-white border-l border-gray-200 shadow-lg z-40 flex flex-col">
           {/* Header */}
           <div className="px-6 py-5 border-b border-gray-200">
             <div className="flex items-center justify-between mb-1">
@@ -4273,6 +4474,13 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
                           📝 {version.description}
                         </p>
                       )}
+                      
+                      {/* AI Edit Prompt */}
+                      {version.aiEditPrompt && (
+                        <div className="text-xs text-blue-700 bg-blue-50 p-2 rounded mb-1">
+                          <span className="font-medium">🤖 AI Prompt:</span> {version.aiEditPrompt}
+                        </div>
+                      )}
 
                       {/* Action Description (restore/unarchive action) */}
                       {version.actionDescription && (
@@ -4429,6 +4637,13 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
                             </p>
                           )}
                           
+                          {/* AI Edit Prompt */}
+                          {version.aiEditPrompt && (
+                            <div className="text-xs text-gray-600 bg-gray-100 p-2 rounded mb-1">
+                              <span className="font-medium">🤖 AI Prompt:</span> {version.aiEditPrompt}
+                </div>
+                          )}
+                          
                           {/* Action Description (restore/unarchive action) */}
                           {version.actionDescription && (
                             <p className="text-xs text-blue-500 font-medium mb-1">
@@ -4447,8 +4662,8 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
                               hour12: true
                             })}
                           </p>
-                </div>
             </div>
+          </div>
                     );
                   })}
                 </div>
@@ -5205,46 +5420,7 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
         </div>
       )}
 
-      {/* Split Diff View */}
-      {showSplitView && splitViewData && (
-        <SplitDiffView
-          isOpen={showSplitView}
-          onClose={() => setShowSplitView(false)}
-          originalContent={splitViewData.originalContent}
-          suggestedContent={splitViewData.suggestedContent}
-          explanation={splitViewData.explanation}
-          onAccept={() => {
-            // Apply the changes to the document
-            if (editor && splitViewData) {
-              editor.commands.setContent(splitViewData.suggestedContent);
-              
-              // Create new version
-              setTimeout(() => {
-                const content = editor.getHTML();
-                console.log('🎯 Creating new version for Split View AI edit');
-                const newVersion = createNewVersion(content, false, { 
-                  model: 'claude-3-5-sonnet', 
-                  type: 'split-view-edit' 
-                });
-                console.log('✅ Created Split View AI edit version:', newVersion.id, 'V' + newVersion.versionNumber);
-              }, 100);
-              
-              showToast('AI changes applied successfully', 'success');
-            }
-            setShowSplitView(false);
-            setSplitViewData(null);
-          }}
-          onReject={() => {
-            setShowSplitView(false);
-            setSplitViewData(null);
-            showToast('AI changes rejected', 'info');
-          }}
-          onRegenerate={() => {
-            // TODO: Implement regeneration
-            showToast('Regeneration not yet implemented', 'info');
-          }}
-        />
-      )}
+      {/* Split Diff View now embedded inline in the editor area above */}
 
       {toast && (
         <div 
@@ -5262,7 +5438,6 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
           </div>
         </div>
       )}
-      </div>
       </div>
     </EditorErrorBoundary>
   );

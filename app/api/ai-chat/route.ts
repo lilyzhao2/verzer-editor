@@ -331,25 +331,89 @@ async function generateSuggestions(
   const suggestions: AISuggestion[] = [];
   
   // Look for REPLACE/WITH format first (most reliable)
-  const replaceWithPattern = /REPLACE:\s*["']([^"']+)["']\s*WITH:\s*["']([^"']+)["']/is;
-  const replaceMatch = aiResponse.match(replaceWithPattern);
+  // Very simple pattern to capture everything between REPLACE: and WITH:
+  const replaceIndex = aiResponse.indexOf('REPLACE:');
+  const withIndex = aiResponse.indexOf('WITH:', replaceIndex);
   
-  if (replaceMatch) {
-    const originalText = replaceMatch[1].trim();
-    const suggestedText = replaceMatch[2].trim();
+  console.log('🔍 Looking for REPLACE/WITH pattern...');
+  console.log('📝 AI Response length:', aiResponse.length);
+  console.log('📍 REPLACE index:', replaceIndex, 'WITH index:', withIndex);
+  
+  if (replaceIndex !== -1 && withIndex !== -1 && withIndex > replaceIndex) {
+    // Extract content between REPLACE: and WITH:
+    let originalText = aiResponse.substring(replaceIndex + 8, withIndex).trim();
     
-    // Find this text in the document (search in plain text, not HTML)
-    // Note: We'll let the frontend handle position mapping since it has access to the editor
+    // Find the end of the WITH section (look for double newline, "Regenerate", or end of string)
+    let withContent = aiResponse.substring(withIndex + 5);
+    const endMarkers = ['\n\nRegenerate', '\n\n\n', '\nRegenerate'];
+    let endIndex = withContent.length;
+    
+    for (const marker of endMarkers) {
+      const markerIndex = withContent.indexOf(marker);
+      if (markerIndex !== -1 && markerIndex < endIndex) {
+        endIndex = markerIndex;
+      }
+    }
+    
+    let suggestedText = withContent.substring(0, endIndex).trim();
+    
+    // Remove quotes if present
+    originalText = originalText.replace(/^["']|["']$/g, '');
+    suggestedText = suggestedText.replace(/^["']|["']$/g, '');
+    
+    console.log(`✨ Found REPLACE/WITH suggestion:`);
+    console.log(`📝 Original raw (${originalText.length} chars):`, originalText.substring(0, 300));
+    console.log(`🔄 Suggested raw (${suggestedText.length} chars):`, suggestedText.substring(0, 300));
+    
+    if (originalText.length > 0 && suggestedText.length > 0) {
+      // For text matching, clean up HTML tags and normalize whitespace
+      const originalTextForMatching = originalText.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
+      
+      console.log(`📝 Original for matching (${originalTextForMatching.length} chars):`, originalTextForMatching.substring(0, 300));
+      
+      suggestions.push({
+        id: `sug-${Date.now()}-replace`,
+        originalText: originalTextForMatching,
+        suggestedText: suggestedText, // Keep HTML for replacement
+        explanation: 'AI suggested changes',
+        from: -1, // Signal that frontend should find the position
+        to: -1,   // Signal that frontend should find the position
+        status: 'pending'
+      });
+      console.log('✅ Suggestion created successfully');
+      return suggestions;
+    } else {
+      console.log('❌ Empty original or suggested text');
+    }
+  } else {
+    console.log('❌ REPLACE/WITH pattern not found');
+  }
+  
+  // Try pattern without quotes as fallback
+  const replaceWithoutQuotes = /REPLACE:\s*([^\n]+(?:\n[^\n]+)*?)\s*WITH:\s*([^\n]+(?:\n[^\n]+)*?)(?:\n|$)/is;
+  const replaceMatchNoQuotes = aiResponse.match(replaceWithoutQuotes);
+  
+  if (replaceMatchNoQuotes) {
+    let originalText = replaceMatchNoQuotes[1].trim();
+    let suggestedText = replaceMatchNoQuotes[2].trim();
+    
+    // Clean up HTML tags
+    originalText = originalText.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
+    suggestedText = suggestedText.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
+    
+    console.log(`✨ Found REPLACE/WITH suggestion (no quotes):`);
+    console.log(`📝 Original:`, originalText.substring(0, 100) + '...');
+    console.log(`🔄 Suggested:`, suggestedText.substring(0, 100) + '...');
+    
     suggestions.push({
-      id: `sug-${Date.now()}-replace`,
+      id: `sug-${Date.now()}-replace-nq`,
       originalText: originalText,
       suggestedText: suggestedText,
       explanation: aiResponse,
-      from: -1, // Signal that frontend should find the position
-      to: -1,   // Signal that frontend should find the position
+      from: -1,
+      to: -1,
       status: 'pending'
     });
-    console.log(`✨ Found REPLACE/WITH suggestion: "${originalText}" → "${suggestedText}"`);
     return suggestions;
   }
   

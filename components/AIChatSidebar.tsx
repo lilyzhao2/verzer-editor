@@ -57,8 +57,8 @@ const AI_MODELS = [
 ];
 
 const CHAT_MODES = [
-  { id: 'chat', name: 'Chat', description: 'Discuss and get suggestions' },
-  { id: 'agent', name: 'Agent', description: 'AI can directly edit selected text' },
+  { id: 'chat', name: 'Chat' },
+  { id: 'agent', name: 'Agent' },
 ];
 
 export function AIChatSidebar({
@@ -211,6 +211,7 @@ export function AIChatSidebar({
       }
 
       const data = await response.json();
+      console.log('🤖 AI Response received:', data);
       
       const aiMessage: ChatMessage = {
         id: `msg-${Date.now()}-ai`,
@@ -220,13 +221,49 @@ export function AIChatSidebar({
         suggestions: data.suggestions || []
       };
 
+      console.log('📋 AI Message with suggestions:', aiMessage.suggestions?.length || 0, 'suggestions');
+      if (aiMessage.suggestions && aiMessage.suggestions.length > 0) {
+        console.log('🎯 First suggestion:', aiMessage.suggestions[0]);
+        console.log('🔍 Suggestion details:', {
+          id: aiMessage.suggestions[0].id,
+          originalText: aiMessage.suggestions[0].originalText?.substring(0, 100),
+          suggestedText: aiMessage.suggestions[0].suggestedText?.substring(0, 100),
+          status: aiMessage.suggestions[0].status
+        });
+      } else {
+        console.log('❌ No suggestions found in AI response');
+      }
+
       const updatedMessages = [...newMessages, aiMessage];
       setMessages(updatedMessages);
       saveConversation(updatedMessages);
 
       // If split view is open and we have suggestions, update it automatically
-      if (aiMessage.suggestions && aiMessage.suggestions.length > 0 && onUpdateSplitView) {
-        onUpdateSplitView(aiMessage.suggestions[0]);
+      if (aiMessage.suggestions && aiMessage.suggestions.length > 0) {
+        const firstSuggestion = {
+          ...aiMessage.suggestions[0],
+          prompt: userMessage.content // Store the user's prompt text with the suggestion
+        };
+        
+        if (onUpdateSplitView) {
+          onUpdateSplitView(firstSuggestion);
+        }
+        
+        // In Agent mode, automatically apply the suggestion
+        if (chatMode === 'agent') {
+          // Auto-apply the suggestion directly to the document
+          if (onApplySuggestion) {
+            console.log('🤖 Agent mode: Auto-applying suggestion to document');
+            setTimeout(() => {
+              onApplySuggestion(firstSuggestion);
+            }, 500); // Small delay to let the UI update
+          }
+          
+          // Also show split view for transparency
+          if (onShowSplitView) {
+            onShowSplitView(firstSuggestion);
+          }
+        }
       }
 
     } catch (error) {
@@ -371,7 +408,7 @@ export function AIChatSidebar({
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
             <Bot className="w-5 h-5 text-blue-600" />
-            <h2 className="font-semibold text-gray-900">AI Assistant</h2>
+            <h2 className="font-semibold text-gray-900">Verzer</h2>
           </div>
           <button
             onClick={onClose}
@@ -413,8 +450,8 @@ export function AIChatSidebar({
             <p className="text-sm font-medium">Start a conversation with AI</p>
             <p className="text-xs mt-1 text-gray-500">
               {chatMode === 'agent' 
-                ? (isAgentModeAvailable ? 'AI can edit your document directly' : 'Agent mode unavailable') 
-                : 'AI will provide suggestions and discuss your document'}
+                ? (isAgentModeAvailable ? 'Ready to edit your document' : 'Agent mode unavailable') 
+                : 'Ready to help with your document'}
             </p>
           </div>
         )}
@@ -448,51 +485,64 @@ export function AIChatSidebar({
               {/* AI Suggestions */}
               {message.suggestions && message.suggestions.length > 0 && (
                 <div className="mt-2 space-y-2">
-                  {message.suggestions.map((suggestion) => (
-                    <div key={suggestion.id} className="border border-gray-200 rounded-lg p-3 bg-white">
-                      <div className="text-xs text-gray-700 mb-2 font-medium">{suggestion.explanation}</div>
-                      
-                      {/* Diff Display */}
-                      <div className="bg-gray-50 p-3 rounded text-sm font-mono border">
-                        <div className="text-red-700 font-medium">- {suggestion.originalText}</div>
-                        <div className="text-green-700 font-medium">+ {suggestion.suggestedText}</div>
+                  {chatMode === 'agent' ? (
+                    // In Agent mode, show that changes were auto-applied
+                    <div className="border border-green-200 rounded-lg p-3 bg-green-50">
+                      <div className="text-xs text-green-700 font-medium mb-1">
+                        ✅ Changes Applied Automatically
                       </div>
-
-                      {/* Action Buttons */}
-                      {suggestion.status === 'pending' && (
-                        <div className="flex gap-2 mt-2">
-                          <button
-                            onClick={() => onShowSplitView(suggestion)}
-                            className="flex items-center gap-1 px-2 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700"
-                          >
-                            📊 View Diff
-                          </button>
-                          <button
-                            onClick={() => handleApplySuggestion(suggestion)}
-                            className="flex items-center gap-1 px-2 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700"
-                          >
-                            <Check className="w-3 h-3" />
-                            Accept
-                          </button>
-                          <button
-                            onClick={() => handleRejectSuggestion(suggestion.id)}
-                            className="flex items-center gap-1 px-2 py-1 bg-red-600 text-white text-xs rounded hover:bg-red-700"
-                          >
-                            <X className="w-3 h-3" />
-                            Reject
-                          </button>
-                        </div>
-                      )}
-
-                      {suggestion.status === 'accepted' && (
-                        <div className="text-xs text-green-600 mt-2">✓ Applied</div>
-                      )}
-
-                      {suggestion.status === 'rejected' && (
-                        <div className="text-xs text-red-600 mt-2">✗ Rejected</div>
-                      )}
+                      <div className="text-xs text-gray-600">
+                        The AI suggestion has been applied to your document. Check the version history to see details.
+                      </div>
                     </div>
-                  ))}
+                  ) : (
+                    // In Chat mode, show the suggestions with Accept/Reject buttons
+                    message.suggestions.map((suggestion) => (
+                      <div key={suggestion.id} className="border border-gray-200 rounded-lg p-3 bg-white">
+                        <div className="text-xs text-gray-700 mb-2 font-medium">{suggestion.explanation}</div>
+                        
+                        {/* Diff Display */}
+                        <div className="bg-gray-50 p-3 rounded text-sm font-mono border">
+                          <div className="text-red-700 font-medium">- {suggestion.originalText}</div>
+                          <div className="text-green-700 font-medium">+ {suggestion.suggestedText}</div>
+                        </div>
+
+                        {/* Action Buttons */}
+                        {suggestion.status === 'pending' && (
+                          <div className="flex gap-2 mt-2">
+                            <button
+                              onClick={() => onShowSplitView(suggestion)}
+                              className="flex items-center gap-1 px-2 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700"
+                            >
+                              📊 View Diff
+                            </button>
+                            <button
+                              onClick={() => handleApplySuggestion(suggestion)}
+                              className="flex items-center gap-1 px-2 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700"
+                            >
+                              <Check className="w-3 h-3" />
+                              Accept
+                            </button>
+                            <button
+                              onClick={() => handleRejectSuggestion(suggestion.id)}
+                              className="flex items-center gap-1 px-2 py-1 bg-red-600 text-white text-xs rounded hover:bg-red-700"
+                            >
+                              <X className="w-3 h-3" />
+                              Reject
+                            </button>
+                          </div>
+                        )}
+
+                        {suggestion.status === 'accepted' && (
+                          <div className="text-xs text-green-600 mt-2">✓ Applied</div>
+                        )}
+
+                        {suggestion.status === 'rejected' && (
+                          <div className="text-xs text-red-600 mt-2">✗ Rejected</div>
+                        )}
+                      </div>
+                    ))
+                  )}
                 </div>
               )}
 
@@ -571,9 +621,11 @@ export function AIChatSidebar({
                       <div className={`font-medium ${isDisabled ? 'text-gray-400' : 'text-gray-800'}`}>
                         {mode.name} {isDisabled ? '(Current Version Only)' : ''}
                       </div>
-                      <div className={`text-xs ${isDisabled ? 'text-gray-300' : 'text-gray-600'}`}>
-                        {isDisabled ? 'Switch to current version to use Agent mode' : mode.description}
-                      </div>
+                      {isDisabled && (
+                        <div className="text-xs text-gray-300">
+                          Switch to current version to use Agent mode
+                        </div>
+                      )}
                     </button>
                   );
                 })}
