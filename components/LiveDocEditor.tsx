@@ -1925,7 +1925,7 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
       archived: false,
       isStarred: false,
       saveType: aiEditInfo ? 'ai' : (autoSaved ? 'auto' : 'manual'),
-      description: aiEditInfo ? `AI: ${typeof aiEditInfo.prompt === 'string' ? aiEditInfo.prompt.substring(0, 50) : 'AI edit'}...` : description,
+      description: aiEditInfo ? undefined : description, // Don't show AI description since we have AI Prompt section
       changesSinceLastVersion: changesSinceLastSave,
       // OPTION C: Save pending suggestions to carry over
       pendingSuggestions: trackedChanges.length > 0 ? trackedChanges : undefined,
@@ -3258,23 +3258,7 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
 
         <div className="w-px h-6 bg-gray-300 mx-2" />
 
-        {/* History Button */}
-        <button
-          onClick={() => {
-            setShowVersionHistory(!showVersionHistory);
-            // Don't close AI chat - they can both be open
-          }}
-          onMouseEnter={() => preloadHeavyComponents()}
-          className="p-2 hover:bg-gray-200 rounded-md transition-colors flex-shrink-0"
-          title="Version History"
-          style={{ minWidth: '40px' }}
-        >
-          <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-        </button>
-
-        {/* AI Chat Button */}
+        {/* Verzer Chat Button */}
         <button 
           onClick={() => {
             setShowAIChatSidebar(!showAIChatSidebar);
@@ -3285,11 +3269,27 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
               ? 'text-blue-600 bg-blue-100' 
               : 'text-gray-600 hover:bg-gray-200'
           }`}
-          title="Verzer AI"
+          title="Verzer Chat"
           style={{ minWidth: '40px' }}
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+          </svg>
+        </button>
+
+        {/* Versions Button */}
+        <button
+          onClick={() => {
+            setShowVersionHistory(!showVersionHistory);
+            // Don't close AI chat - they can both be open
+          }}
+          onMouseEnter={() => preloadHeavyComponents()}
+          className="p-2 hover:bg-gray-200 rounded-md transition-colors flex-shrink-0"
+          title="Versions"
+          style={{ minWidth: '40px' }}
+        >
+          <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
         </button>
 
@@ -3615,7 +3615,7 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
           />
         )}
         
-        <div ref={scrollAreaRef} className={`flex-1 overflow-auto flex relative transition-all duration-300 ${showVersionHistory ? 'mr-96' : 'mr-0'} min-h-0`}>
+        <div ref={scrollAreaRef} className={`flex-1 overflow-auto flex flex-col relative transition-all duration-300 ${showVersionHistory ? 'mr-96' : 'mr-0'} min-h-0`}>
         {/* Split View - Shown instead of normal editor when active */}
         {showSplitView && splitViewData ? (
           (() => {
@@ -3810,7 +3810,7 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
           })()
         ) : (
           /* Normal Editor - Shown when Split View is not active */
-          <div className="flex-1 relative">
+          <div className="flex-1 w-full relative">
           {/* Old Version Warning Banner */}
           {isCurrentVersionLocked && (
             <div className="max-w-[8.5in] mx-auto mt-6 mb-2 px-4 py-3 bg-yellow-100 border-l-4 border-yellow-500 rounded-r">
@@ -4517,31 +4517,43 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
                         </div>
             </div>
                       
-                      {/* Save Type */}
-                      <div className="flex items-center gap-1.5 text-sm text-gray-600 mb-1">
-                        <span>{saveTypeIcons[(version.saveType || 'manual') as keyof typeof saveTypeIcons]}</span>
-                        <span>{saveTypeLabels[(version.saveType || 'manual') as keyof typeof saveTypeLabels]}</span>
-          </div>
+                      {/* Version Info - Single Clean Line */}
+                      <div className="text-sm text-gray-600 mb-1">
+                        {version.saveType === 'ai' && version.aiEditPrompt ? (
+                          <span>🤖 AI: <em>"{version.aiEditPrompt.length > 50 ? version.aiEditPrompt.substring(0, 50) + '...' : version.aiEditPrompt}"</em></span>
+                        ) : version.saveType === 'manual' && version.actionDescription ? (
+                          <span>📝 {version.actionDescription}</span>
+                        ) : version.saveType === 'auto' ? (
+                          <span>⚡ Auto save of v{version.versionNumber}</span>
+                        ) : version.saveType === 'initial' ? (
+                          <span>🚀 Initial version</span>
+                        ) : version.description ? (
+                          <span>📝 {version.description}</span>
+                        ) : (
+                          <span>{saveTypeIcons[(version.saveType || 'manual') as keyof typeof saveTypeIcons]} {saveTypeLabels[(version.saveType || 'manual') as keyof typeof saveTypeLabels]}</span>
+                        )}
+                      </div>
 
-                      {/* Description (what changed) */}
-                      {version.description && (
-                        <p className="text-sm text-gray-700 mb-1 italic">
-                          📝 {version.description}
-                        </p>
-                      )}
-                      
-                      {/* AI Edit Prompt */}
-                      {version.aiEditPrompt && (
-                        <div className="text-xs text-blue-700 bg-blue-50 p-2 rounded mb-1">
-                          <span className="font-medium">🤖 AI Prompt:</span> {version.aiEditPrompt}
-                        </div>
-                      )}
-
-                      {/* Action Description (restore/unarchive action) */}
-                      {version.actionDescription && (
-                        <p className="text-xs text-blue-600 font-medium mb-1">
-                          {version.actionDescription}
-                        </p>
+                      {/* Change Statistics */}
+                      {version.baselineContent && version.content && version.baselineContent !== version.content && (
+                        (() => {
+                          // Simple word count diff
+                          const baselineWords = version.baselineContent.replace(/<[^>]*>/g, '').split(/\s+/).filter(w => w.length > 0).length;
+                          const currentWords = version.content.replace(/<[^>]*>/g, '').split(/\s+/).filter(w => w.length > 0).length;
+                          const wordDiff = currentWords - baselineWords;
+                          
+                          return (
+                            <div className="text-xs text-gray-500 mb-1">
+                              {wordDiff > 0 ? (
+                                <span className="text-green-600">+{wordDiff} words</span>
+                              ) : wordDiff < 0 ? (
+                                <span className="text-red-600">{wordDiff} words</span>
+                              ) : (
+                                <span>No word changes</span>
+                              )}
+                            </div>
+                          );
+                        })()
                       )}
 
                       {/* Timestamp */}
@@ -4679,33 +4691,45 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
                     </div>
                           </div>
                           
-                          {/* Save Type */}
-                          <div className="flex items-center gap-1.5 text-sm text-gray-500 mb-1">
-                            <span>{saveTypeIcons[(version.saveType || 'manual') as keyof typeof saveTypeIcons]}</span>
-                            <span>{saveTypeLabels[(version.saveType || 'manual') as keyof typeof saveTypeLabels]}</span>
-                  </div>
-                          
-                          {/* Description (what changed) */}
-                          {version.description && (
-                            <p className="text-sm text-gray-600 mb-1 italic">
-                              📝 {version.description}
-                            </p>
+                          {/* Version Info - Single Clean Line */}
+                          <div className="text-sm text-gray-500 mb-1">
+                            {version.saveType === 'ai' && version.aiEditPrompt ? (
+                              <span>🤖 AI: <em>"{version.aiEditPrompt.length > 50 ? version.aiEditPrompt.substring(0, 50) + '...' : version.aiEditPrompt}"</em></span>
+                            ) : version.saveType === 'manual' && version.actionDescription ? (
+                              <span>📝 {version.actionDescription}</span>
+                            ) : version.saveType === 'auto' ? (
+                              <span>⚡ Auto save of v{version.versionNumber}</span>
+                            ) : version.saveType === 'initial' ? (
+                              <span>🚀 Initial version</span>
+                            ) : version.description ? (
+                              <span>📝 {version.description}</span>
+                            ) : (
+                              <span>{saveTypeIcons[(version.saveType || 'manual') as keyof typeof saveTypeIcons]} {saveTypeLabels[(version.saveType || 'manual') as keyof typeof saveTypeLabels]}</span>
+                            )}
+                          </div>
+
+                          {/* Change Statistics */}
+                          {version.baselineContent && version.content && version.baselineContent !== version.content && (
+                            (() => {
+                              // Simple word count diff
+                              const baselineWords = version.baselineContent.replace(/<[^>]*>/g, '').split(/\s+/).filter(w => w.length > 0).length;
+                              const currentWords = version.content.replace(/<[^>]*>/g, '').split(/\s+/).filter(w => w.length > 0).length;
+                              const wordDiff = currentWords - baselineWords;
+                              
+                              return (
+                                <div className="text-xs text-gray-500 mb-1">
+                                  {wordDiff > 0 ? (
+                                    <span className="text-green-600">+{wordDiff} words</span>
+                                  ) : wordDiff < 0 ? (
+                                    <span className="text-red-600">{wordDiff} words</span>
+                                  ) : (
+                                    <span>No word changes</span>
+                                  )}
+                                </div>
+                              );
+                            })()
                           )}
-                          
-                          {/* AI Edit Prompt */}
-                          {version.aiEditPrompt && (
-                            <div className="text-xs text-gray-600 bg-gray-100 p-2 rounded mb-1">
-                              <span className="font-medium">🤖 AI Prompt:</span> {version.aiEditPrompt}
-                </div>
-                          )}
-                          
-                          {/* Action Description (restore/unarchive action) */}
-                          {version.actionDescription && (
-                            <p className="text-xs text-blue-500 font-medium mb-1">
-                              {version.actionDescription}
-                            </p>
-                          )}
-                          
+
                           {/* Timestamp */}
                           <p className="text-xs text-gray-400">
                             {new Date(version.timestamp).toLocaleString('en-US', {

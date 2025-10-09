@@ -227,10 +227,18 @@ function buildSystemPrompt(mode: string, shouldGenerateSuggestions: boolean, con
     prompt += `You are in Agent mode. When the user asks for changes, you should:
 
 1. Identify what part of the document needs to be changed
-2. Provide the exact replacement text using this format:
+2. Provide the exact replacement text using this EXACT format:
 
-REPLACE: "[exact text from document to replace]"
-WITH: "[your improved version]"
+REPLACE: "exact text from document to replace"
+WITH: "your improved version"
+
+CRITICAL RULES:
+- Use double quotes around both REPLACE and WITH text
+- Copy the EXACT text from the document for REPLACE
+- Write clean, properly formatted text for WITH
+- Do NOT merge words together
+- Do NOT include extra characters or formatting
+- Keep text readable and properly spaced
 
 Example:
 User: "make this more concise"
@@ -361,11 +369,41 @@ async function generateSuggestions(
     originalText = originalText.replace(/^["']|["']$/g, '');
     suggestedText = suggestedText.replace(/^["']|["']$/g, '');
     
+    // Clean up corrupted text patterns
+    originalText = originalText
+      .replace(/([a-z])([A-Z])/g, '$1 $2') // Fix camelCase words that got merged
+      .replace(/(\w+)(\w+)(?=\s|$)/g, (match, p1, p2) => {
+        // Only split if it looks like two words merged together
+        if (p1.length > 2 && p2.length > 2) {
+          return `${p1} ${p2}`;
+        }
+        return match;
+      })
+      .replace(/\s+/g, ' ') // Normalize whitespace
+      .trim();
+    
+    suggestedText = suggestedText
+      .replace(/([a-z])([A-Z])/g, '$1 $2') // Fix camelCase words that got merged
+      .replace(/(\w+)(\w+)(?=\s|$)/g, (match, p1, p2) => {
+        // Only split if it looks like two words merged together
+        if (p1.length > 2 && p2.length > 2) {
+          return `${p1} ${p2}`;
+        }
+        return match;
+      })
+      .replace(/\s+/g, ' ') // Normalize whitespace
+      .trim();
+    
     console.log(`✨ Found REPLACE/WITH suggestion:`);
     console.log(`📝 Original raw (${originalText.length} chars):`, originalText.substring(0, 300));
     console.log(`🔄 Suggested raw (${suggestedText.length} chars):`, suggestedText.substring(0, 300));
     
-    if (originalText.length > 0 && suggestedText.length > 0) {
+    // Validate the text quality
+    const hasCorruptedWords = /\b\w{15,}\b/.test(originalText) || /\b\w{15,}\b/.test(suggestedText);
+    const hasReasonableLength = originalText.length > 10 && suggestedText.length > 10;
+    const isNotTooSimilar = originalText !== suggestedText;
+    
+    if (originalText.length > 0 && suggestedText.length > 0 && !hasCorruptedWords && hasReasonableLength && isNotTooSimilar) {
       // For text matching, clean up HTML tags and normalize whitespace
       const originalTextForMatching = originalText.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
       
@@ -383,7 +421,11 @@ async function generateSuggestions(
       console.log('✅ Suggestion created successfully');
       return suggestions;
     } else {
-      console.log('❌ Empty original or suggested text');
+      console.log('❌ Suggestion rejected due to quality issues:');
+      console.log(`  - Has corrupted words: ${hasCorruptedWords}`);
+      console.log(`  - Has reasonable length: ${hasReasonableLength}`);
+      console.log(`  - Is not too similar: ${isNotTooSimilar}`);
+      console.log(`  - Original length: ${originalText.length}, Suggested length: ${suggestedText.length}`);
     }
   } else {
     console.log('❌ REPLACE/WITH pattern not found');
