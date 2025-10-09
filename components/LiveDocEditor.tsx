@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useEditor as useTiptapEditor, EditorContent } from '@tiptap/react';
+import { TextSelection } from 'prosemirror-state';
 import { useEditor } from '@/contexts/EditorContext';
 import StarterKit from '@tiptap/starter-kit';
 import { Underline } from '@tiptap/extension-underline';
@@ -22,6 +23,7 @@ import { preloadCriticalComponents, preloadHeavyComponents } from '@/components/
 import { TrackChangesDecorationExtension, TrackedChange } from '@/lib/track-changes-decorations';
 import { FontSize } from '@/lib/extensions/font-size';
 import { AIChatSidebar } from '@/components/AIChatSidebar';
+import { SplitDiffView } from '@/components/SplitDiffView';
 
 /**
  * MODE 1: LIVE DOC EDITOR
@@ -255,6 +257,12 @@ export default function LiveDocEditor() {
   const [showAIChatSidebar, setShowAIChatSidebar] = useState(false);
   const [selectedText, setSelectedText] = useState<string>('');
   const [selectionRange, setSelectionRange] = useState<{ from: number; to: number } | undefined>();
+  const [showSplitView, setShowSplitView] = useState(false);
+  const [splitViewData, setSplitViewData] = useState<{
+    originalContent: string;
+    suggestedContent: string;
+    explanation: string;
+  } | null>(null);
   
   // Load autocomplete enabled state from localStorage
   const [autocompleteEnabled, setAutocompleteEnabled] = useState<boolean>(() => {
@@ -863,9 +871,10 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
           if (!selection.empty) {
             const pos = view.posAtCoords({ left: event.clientX, top: event.clientY });
             if (pos && (pos.pos < selection.from || pos.pos > selection.to)) {
-              // Double-click outside selection - clear it
+              // Double-click outside selection - clear it by setting cursor at clicked position
+              const resolvedPos = state.doc.resolve(Math.min(pos.pos, state.doc.content.size));
               const tr = state.tr.setSelection(
-                state.schema.text('').resolve(pos.pos) as any
+                TextSelection.create(state.doc, resolvedPos.pos)
               );
               view.dispatch(tr);
               return true;
@@ -1938,12 +1947,94 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
   };
 
   // AI Chat Functions
+  const handleShowSplitView = useCallback((suggestion: any) => {
+    if (!editor || !suggestion.originalText || !suggestion.suggestedText) return;
+    
+    // Get the current document content
+    const currentContent = editor.getText();
+    
+    // Create the suggested version by replacing the original text
+    const suggestedContent = currentContent.replace(
+      suggestion.originalText, 
+      suggestion.suggestedText
+    );
+    
+    setSplitViewData({
+      originalContent: currentContent,
+      suggestedContent: suggestedContent,
+      explanation: suggestion.explanation || 'AI suggested changes'
+    });
+    
+    setShowSplitView(true);
+  }, [editor]);
+
   const handleApplySuggestion = useCallback((suggestion: any) => {
-    if (!editor || !suggestion.from || !suggestion.to) return;
+    if (!editor || suggestion.from === undefined || suggestion.to === undefined) return;
 
     try {
+      const { state } = editor;
+      const docSize = state.doc.content.size;
+      
+      // Handle position finding for suggestions that don't have valid positions
+      if (suggestion.from === -1 || suggestion.to === -1 || suggestion.from < 0 || suggestion.to > docSize || suggestion.from > suggestion.to) {
+        console.log('🔍 Finding text position in document for:', suggestion.originalText);
+        
+        // Get plain text content from editor
+        const currentContent = editor.getText();
+        const textIndex = currentContent.indexOf(suggestion.originalText);
+        
+        if (textIndex !== -1) {
+          // Convert plain text position to ProseMirror position
+          // We need to find the actual position in the ProseMirror document
+          const doc = state.doc;
+          let proseMirrorPos = 1; // Start at position 1 (after doc start)
+          let plainTextPos = 0;
+          
+          // Walk through the document to find the corresponding ProseMirror position
+          doc.descendants((node, pos) => {
+            if (node.isText && node.text) {
+              const nodeTextStart = plainTextPos;
+              const nodeTextEnd = plainTextPos + node.text.length;
+              
+              // Check if our target text starts within this text node
+              if (textIndex >= nodeTextStart && textIndex < nodeTextEnd) {
+                const offsetInNode = textIndex - nodeTextStart;
+                proseMirrorPos = pos + offsetInNode;
+                return false; // Stop walking
+              }
+              
+              plainTextPos += node.text.length;
+            } else if (node.isBlock) {
+              // Add newline for block boundaries (except the first one)
+              if (plainTextPos > 0) plainTextPos += 1;
+            }
+            return true;
+          });
+          
+          suggestion.from = proseMirrorPos;
+          suggestion.to = proseMirrorPos + suggestion.originalText.length;
+          
+          console.log('✅ Found positions:', { 
+            originalText: suggestion.originalText,
+            plainTextIndex: textIndex, 
+            proseMirrorFrom: suggestion.from, 
+            proseMirrorTo: suggestion.to,
+            docSize 
+          });
+        } else {
+          showToast('Cannot find the text to replace in current document', 'error');
+          return;
+        }
+      }
+      
+      // Double-check positions are still valid
+      if (suggestion.from < 0 || suggestion.to > docSize || suggestion.from > suggestion.to) {
+        showToast('Invalid text positions - document may have changed', 'error');
+        return;
+      }
+
       // Apply the suggestion as a tracked change
-      const tr = editor.state.tr;
+      const tr = state.tr;
       
       // Replace the text
       tr.replaceWith(suggestion.from, suggestion.to, editor.schema.text(suggestion.suggestedText));
@@ -1968,7 +2059,7 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
       showToast('AI suggestion applied successfully', 'success');
     } catch (error) {
       console.error('Error applying AI suggestion:', error);
-      showToast('Failed to apply AI suggestion', 'error');
+      showToast('Failed to apply AI suggestion - ' + (error instanceof Error ? error.message : 'Unknown error'), 'error');
     }
   }, [editor, createNewVersion, showToast]);
 
@@ -2516,7 +2607,7 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
     <EditorErrorBoundary>
       <div className="flex flex-col h-screen bg-gray-100 overflow-hidden">
       {/* Top Bar - Like Google Docs */}
-      <div className="bg-white border-b border-gray-200 px-6 py-2">
+      <div className="bg-white border-b border-gray-200 px-6 py-2 relative z-10 flex-shrink-0">
         <div className="flex items-center gap-4">
           {/* Document Title */}
           <input
@@ -2699,7 +2790,7 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
       </div>
 
       {/* Modern Toolbar */}
-      <div className="bg-gray-50 border-b border-gray-200 px-6 py-3 flex items-center gap-0 text-sm">
+      <div className="bg-gray-50 border-b border-gray-200 px-6 py-3 flex items-center gap-0 text-sm relative z-10 flex-shrink-0">
         {/* Undo/Redo */}
         <button
           onClick={() => editor.chain().focus().undo().run()}
@@ -3304,6 +3395,19 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
           </svg>
         </button>
 
+        {/* Split View Button */}
+        <button
+          onClick={() => setShowSplitView(!showSplitView)}
+          className={`px-3 py-1.5 text-xs font-medium border rounded ml-2 ${
+            showSplitView 
+              ? 'text-blue-600 bg-blue-50 border-blue-300' 
+              : 'text-gray-700 bg-white border-gray-300 hover:bg-gray-50'
+          }`}
+          title="Split View - Compare original vs AI suggestions"
+        >
+          📊 Split View
+        </button>
+
         {/* Editing Mode Selector - Always on the right */}
         <div className="relative ml-2">
           <select
@@ -3383,7 +3487,7 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
       )}
 
       {/* Document Area + Comments Sidebar */}
-      <div className="flex-1 flex relative">
+      <div className="flex-1 flex relative min-h-0">
         {/* AI Chat Sidebar */}
         {showAIChatSidebar && (
           <AIChatSidebar
@@ -3395,6 +3499,7 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
             selectionRange={selectionRange}
             onApplySuggestion={handleApplySuggestion}
             onRejectSuggestion={handleRejectSuggestion}
+            onShowSplitView={handleShowSplitView}
             isCurrentVersion={viewingVersionId === currentVersionId}
             editingMode={editingMode}
           />
@@ -4576,13 +4681,13 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
 
       {/* Debug Toggle Button - Hidden in production */}
       {process.env.NODE_ENV === 'development' && (
-        <button
-          onClick={() => setDebugMode(!debugMode)}
+      <button
+        onClick={() => setDebugMode(!debugMode)}
           className="fixed bottom-4 left-4 bg-gray-800 text-white p-2 rounded-full shadow-lg hover:bg-gray-700 text-xs opacity-50 hover:opacity-100"
           title="Toggle Debug Panel (Dev Only)"
-        >
-          🐛
-        </button>
+      >
+        🐛
+      </button>
       )}
       
       
@@ -5049,6 +5154,42 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
             </div>
           </div>
         </div>
+      )}
+
+      {/* Split Diff View */}
+      {showSplitView && splitViewData && (
+        <SplitDiffView
+          isOpen={showSplitView}
+          onClose={() => setShowSplitView(false)}
+          originalContent={splitViewData.originalContent}
+          suggestedContent={splitViewData.suggestedContent}
+          explanation={splitViewData.explanation}
+          onAccept={() => {
+            // Apply the changes to the document
+            if (editor && splitViewData) {
+              editor.commands.setContent(splitViewData.suggestedContent);
+              
+              // Create new version
+              setTimeout(() => {
+                const content = editor.getHTML();
+                createNewVersion(content, false);
+              }, 100);
+              
+              showToast('AI changes applied successfully', 'success');
+            }
+            setShowSplitView(false);
+            setSplitViewData(null);
+          }}
+          onReject={() => {
+            setShowSplitView(false);
+            setSplitViewData(null);
+            showToast('AI changes rejected', 'info');
+          }}
+          onRegenerate={() => {
+            // TODO: Implement regeneration
+            showToast('Regeneration not yet implemented', 'info');
+          }}
+        />
       )}
 
       {toast && (

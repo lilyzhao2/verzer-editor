@@ -44,6 +44,7 @@ interface AIChatSidebarProps {
   selectionRange?: { from: number; to: number };
   onApplySuggestion: (suggestion: AISuggestion) => void;
   onRejectSuggestion: (suggestionId: string) => void;
+  onShowSplitView: (suggestion: AISuggestion) => void;
   isCurrentVersion?: boolean;
   editingMode?: string;
 }
@@ -68,6 +69,7 @@ export function AIChatSidebar({
   selectionRange,
   onApplySuggestion,
   onRejectSuggestion,
+  onShowSplitView,
   isCurrentVersion = true,
   editingMode = 'editing'
 }: AIChatSidebarProps) {
@@ -324,7 +326,7 @@ export function AIChatSidebar({
 
   return (
     <div 
-      className="h-full bg-white border-r border-gray-200 flex flex-col max-h-screen overflow-hidden relative"
+      className="h-full bg-white border-r border-gray-200 flex flex-col overflow-hidden relative flex-shrink-0"
       style={{ width: sidebarWidth }}
     >
       {/* Resize Handle */}
@@ -368,8 +370,8 @@ export function AIChatSidebar({
         )}
         
         {chatMode === 'agent' && isAgentModeAvailable && !selectedText && (
-          <div className="text-xs text-blue-700 bg-blue-50 p-2 rounded border border-blue-200">
-            💡 Select text in the document to let AI edit it
+          <div className="text-xs text-green-700 bg-green-50 p-2 rounded border border-green-200">
+            🤖 Agent mode active - AI can edit your document
           </div>
         )}
       </div>
@@ -382,7 +384,7 @@ export function AIChatSidebar({
             <p className="text-sm font-medium">Start a conversation with AI</p>
             <p className="text-xs mt-1 text-gray-500">
               {chatMode === 'agent' 
-                ? (isAgentModeAvailable ? 'AI can edit selected text' : 'Agent mode unavailable') 
+                ? (isAgentModeAvailable ? 'AI can edit your document directly' : 'Agent mode unavailable') 
                 : 'AI will provide suggestions and discuss your document'}
             </p>
           </div>
@@ -430,6 +432,12 @@ export function AIChatSidebar({
                       {/* Action Buttons */}
                       {suggestion.status === 'pending' && (
                         <div className="flex gap-2 mt-2">
+                          <button
+                            onClick={() => onShowSplitView(suggestion)}
+                            className="flex items-center gap-1 px-2 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700"
+                          >
+                            📊 View Diff
+                          </button>
                           <button
                             onClick={() => handleApplySuggestion(suggestion)}
                             className="flex items-center gap-1 px-2 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700"
@@ -592,7 +600,7 @@ export function AIChatSidebar({
             value={inputMessage}
             onChange={(e) => setInputMessage(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={`Ask AI to ${chatMode === 'agent' ? 'edit your text' : 'help with your document'}...`}
+            placeholder={`Ask AI to ${chatMode === 'agent' ? 'edit your document' : 'help with your document'}...`}
             className="flex-1 px-3 py-2 border border-gray-300 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm min-h-[40px] max-h-[120px] text-gray-900 placeholder-gray-500"
             rows={2}
             disabled={isLoading}
