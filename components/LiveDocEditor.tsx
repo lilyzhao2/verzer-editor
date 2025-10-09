@@ -264,6 +264,8 @@ export default function LiveDocEditor() {
     explanation: string;
   } | null>(null);
   const [diffLevel, setDiffLevel] = useState<'word' | 'line' | 'paragraph'>('word');
+  const [acceptedChanges, setAcceptedChanges] = useState<Set<number>>(new Set());
+  const [rejectedChanges, setRejectedChanges] = useState<Set<number>>(new Set());
   
   // Load autocomplete enabled state from localStorage
   const [autocompleteEnabled, setAutocompleteEnabled] = useState<boolean>(() => {
@@ -3311,6 +3313,10 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
                 const lastSavedContent = lastSavedVersion?.content || '';
                 
                 if (currentContent.trim() || lastSavedContent.trim()) {
+                  // Reset change tracking
+                  setAcceptedChanges(new Set());
+                  setRejectedChanges(new Set());
+                  
                   setSplitViewData({
                     originalContent: lastSavedContent,
                     suggestedContent: currentContent,
@@ -3729,28 +3735,13 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
               }
             }
             
-            // Left side: Clean original (no highlighting)
-            const leftHTML = operations
-              .filter((op: any) => op.type !== 'insert')
-              .map((op: any) => {
-                const escapedText = op.text.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
-                return `<span>${escapedText}</span>`;
-              })
-              .join('');
-            
-            // Right side: Show all changes (deletions + insertions highlighted)
-            const rightHTML = operations.map((op: any) => {
-              const escapedText = op.text.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
-              if (op.type === 'delete') {
-                return `<span class="diff-delete" style="background-color: #fee; text-decoration: line-through; color: #c33;">${escapedText}</span>`;
-              } else if (op.type === 'insert') {
-                return `<span class="diff-insert" style="background-color: #dfd; color: #060; font-weight: 500;">${escapedText}</span>`;
-              } else {
-                return `<span>${escapedText}</span>`;
-              }
-            }).join('');
-            
-            const diffResult = { leftHTML, rightHTML, operations };
+            // Track changes with indices
+            const changesWithActions = operations.map((op: any, idx: number) => ({
+              ...op,
+              index: idx,
+              isAccepted: acceptedChanges.has(idx),
+              isRejected: rejectedChanges.has(idx)
+            }));
 
             // Get version numbers for display
             const currentVersion = versions.find(v => v.id === currentVersionId);
@@ -3795,46 +3786,107 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
                   </div>
                 </div>
 
-                {/* Split View Content */}
-                <div className="flex-1 flex overflow-hidden">
-                  {/* Left: Last Saved Version */}
-                  <div className="flex-1 flex flex-col border-r border-gray-200">
-                    <div className="px-4 py-3 bg-gray-50 border-b border-gray-200">
-                      <div className="flex items-center gap-2 mb-1">
-                        <div className="w-3 h-3 rounded-full bg-blue-400"></div>
-                        <span className="text-sm font-semibold text-gray-900">V{currentVersionNumber} (Current)</span>
-                      </div>
-                      <p className="text-xs text-gray-600 ml-5">If rejected, you stay on this version</p>
-                    </div>
-                    <div className="flex-1 overflow-auto bg-white">
-                      <div className="p-8">
+                {/* Split View Content - Interactive Changes */}
+                <div className="flex-1 overflow-auto bg-gray-50">
+                  <div className="max-w-5xl mx-auto p-6 space-y-3">
+                    {changesWithActions.map((change: any) => {
+                      const unitName = diffLevel === 'word' ? 'word' : diffLevel === 'line' ? 'line' : 'paragraph';
+                      
+                      // Skip equal/unchanged content
+                      if (change.type === 'equal') {
+                        return (
+                          <div key={change.index} className="px-4 py-2 bg-white rounded border border-gray-200">
+                            <span className="text-gray-700 whitespace-pre-wrap">{change.text}</span>
+                          </div>
+                        );
+                      }
+                      
+                      // Show changes with accept/reject buttons
+                      const isDelete = change.type === 'delete';
+                      const isInsert = change.type === 'insert';
+                      
+                      return (
                         <div 
-                          className="text-gray-900 leading-relaxed whitespace-pre-wrap"
-                          style={{ lineHeight: '1.8', fontSize: '15px' }}
-                          dangerouslySetInnerHTML={{ __html: diffResult.leftHTML }}
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Right: AI Suggested Changes */}
-                  <div className="flex-1 flex flex-col">
-                    <div className="px-4 py-3 bg-gray-50 border-b border-gray-200">
-                      <div className="flex items-center gap-2 mb-1">
-                        <div className="w-3 h-3 rounded-full bg-green-400"></div>
-                        <span className="text-sm font-semibold text-gray-900">V{nextVersionNumber} (AI Suggested)</span>
-                      </div>
-                      <p className="text-xs text-gray-600 ml-5">If accepted, this becomes your new version</p>
-                    </div>
-                    <div className="flex-1 overflow-auto bg-white">
-                      <div className="p-8">
-                        <div 
-                          className="text-gray-900 leading-relaxed whitespace-pre-wrap"
-                          style={{ lineHeight: '1.8', fontSize: '15px' }}
-                          dangerouslySetInnerHTML={{ __html: diffResult.rightHTML }}
-                        />
-                      </div>
-                    </div>
+                          key={change.index} 
+                          className={`border-2 rounded-lg p-4 transition-all ${
+                            change.isAccepted 
+                              ? 'bg-green-50 border-green-300' 
+                              : change.isRejected 
+                                ? 'bg-red-50 border-red-300'
+                                : isDelete
+                                  ? 'bg-red-50 border-red-200'
+                                  : 'bg-green-50 border-green-200'
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-4">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 mb-2">
+                                <span className={`text-xs font-semibold px-2 py-0.5 rounded ${
+                                  isDelete ? 'bg-red-600 text-white' : 'bg-green-600 text-white'
+                                }`}>
+                                  {isDelete ? `${unitName.toUpperCase()} DELETED` : `${unitName.toUpperCase()} ADDED`}
+                                </span>
+                                {change.isAccepted && (
+                                  <span className="text-xs font-semibold text-green-700">✓ Accepted</span>
+                                )}
+                                {change.isRejected && (
+                                  <span className="text-xs font-semibold text-red-700">✗ Rejected</span>
+                                )}
+                              </div>
+                              <div className={`text-sm whitespace-pre-wrap ${
+                                isDelete ? 'line-through text-red-800' : 'text-green-800 font-medium'
+                              }`}>
+                                {change.text}
+                              </div>
+                            </div>
+                            
+                            {!change.isAccepted && !change.isRejected && (
+                              <div className="flex gap-2 flex-shrink-0">
+                                <button
+                                  onClick={() => {
+                                    setAcceptedChanges(prev => new Set(prev).add(change.index));
+                                  }}
+                                  className="px-3 py-1.5 text-xs font-medium text-white bg-green-600 rounded hover:bg-green-700 transition-colors"
+                                  title={`Accept this ${unitName}`}
+                                >
+                                  ✓ Accept
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    setRejectedChanges(prev => new Set(prev).add(change.index));
+                                  }}
+                                  className="px-3 py-1.5 text-xs font-medium text-white bg-red-600 rounded hover:bg-red-700 transition-colors"
+                                  title={`Reject this ${unitName}`}
+                                >
+                                  ✗ Reject
+                                </button>
+                              </div>
+                            )}
+                            
+                            {(change.isAccepted || change.isRejected) && (
+                              <button
+                                onClick={() => {
+                                  setAcceptedChanges(prev => {
+                                    const next = new Set(prev);
+                                    next.delete(change.index);
+                                    return next;
+                                  });
+                                  setRejectedChanges(prev => {
+                                    const next = new Set(prev);
+                                    next.delete(change.index);
+                                    return next;
+                                  });
+                                }}
+                                className="px-3 py-1.5 text-xs font-medium text-gray-600 bg-gray-200 rounded hover:bg-gray-300 transition-colors"
+                                title="Undo decision"
+                              >
+                                ↺ Undo
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
 
@@ -3844,6 +3896,8 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
                 onClick={() => {
                   setShowSplitView(false);
                   setSplitViewData(null);
+                  setAcceptedChanges(new Set());
+                  setRejectedChanges(new Set());
                 }}
                 className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
               >
@@ -3852,65 +3906,60 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
               <div className="flex gap-3">
                 <button
                   onClick={() => {
-                    // Discard unsaved changes by reverting to last saved version
-                    if (hasUnsavedChanges) {
-                      const lastSavedVersion = versions.find(v => v.id === currentVersionId);
-                      if (lastSavedVersion && editor) {
-                        editor.commands.setContent(lastSavedVersion.content);
-                        setChangesSinceLastSave(0);
-                        setHasUnsavedChanges(false);
-                        showToast('Changes discarded', 'info');
-                      }
-                    } else {
-                      showToast('AI changes rejected', 'info');
-                    }
-                    setShowSplitView(false);
-                    setSplitViewData(null);
-                  }}
-                  className="px-6 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700 transition-colors flex items-center gap-2"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                  Reject Changes
-                </button>
-                <button
-                  onClick={() => {
-                    // If there are unsaved changes, save them as a new version
-                    if (hasUnsavedChanges && editor) {
-                      const content = editor.getHTML();
-                      console.log('💾 Saving unsaved changes from Split View');
-                      const newVersion = createNewVersion(content, false);
-                      showToast(`Version ${newVersion.versionNumber} saved`, 'success');
-                      setShowSplitView(false);
-                      setSplitViewData(null);
-                    } else if (editor && splitViewData) {
-                      // Apply AI suggestions if different
-                      editor.commands.setContent(splitViewData.suggestedContent);
+                    // Apply only accepted changes, reject the rest
+                    if (editor && splitViewData) {
+                      let resultText = '';
+                      changesWithActions.forEach((change: any) => {
+                        if (change.type === 'equal') {
+                          // Always include unchanged text
+                          resultText += change.text;
+                        } else if (change.type === 'delete') {
+                          // Keep deleted text only if rejected (not accepted to delete)
+                          if (change.isRejected || !change.isAccepted) {
+                            resultText += change.text;
+                          }
+                        } else if (change.type === 'insert') {
+                          // Add inserted text only if accepted
+                          if (change.isAccepted) {
+                            resultText += change.text;
+                          }
+                        }
+                      });
+                      
+                      // Convert plain text back to HTML
+                      const htmlContent = '<p>' + resultText.split('\n\n').map(para => 
+                        para.split('\n').join('<br>')
+                      ).join('</p><p>') + '</p>';
+                      
+                      editor.commands.setContent(htmlContent);
                       
                       // Create new version
                       setTimeout(() => {
                         const content = editor.getHTML();
-                        console.log('🎯 Creating new version for Split View AI edit');
+                        const acceptedCount = acceptedChanges.size;
+                        const rejectedCount = rejectedChanges.size;
+                        const totalChanges = changesWithActions.filter((c: any) => c.type !== 'equal').length;
+                        
                         const newVersion = createNewVersion(content, false, { 
                           model: 'claude-3-5-sonnet', 
                           type: 'split-view-edit',
-                          prompt: 'Changes accepted from Split View'
+                          prompt: `Applied ${acceptedCount}/${totalChanges} changes (${rejectedCount} rejected) at ${diffLevel} level`
                         });
-                        console.log('✅ Created Split View AI edit version:', newVersion.id, 'V' + newVersion.versionNumber);
+                        showToast(`Applied ${acceptedCount} changes, version ${newVersion.versionNumber} created`, 'success');
                       }, 100);
-                      
-                      showToast('AI changes applied successfully', 'success');
                     }
                     setShowSplitView(false);
                     setSplitViewData(null);
+                    setAcceptedChanges(new Set());
+                    setRejectedChanges(new Set());
                   }}
-                  className="px-6 py-2 text-sm font-medium text-white bg-green-600 rounded-md hover:bg-green-700 transition-colors flex items-center gap-2"
+                  disabled={acceptedChanges.size === 0}
+                  className="px-6 py-2 text-sm font-medium text-white bg-green-600 rounded-md hover:bg-green-700 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                   </svg>
-                  Accept Changes
+                  Apply Accepted Changes ({acceptedChanges.size})
                 </button>
               </div>
             </div>
