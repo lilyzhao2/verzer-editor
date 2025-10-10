@@ -1925,7 +1925,9 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
       autoSaved,
       archived: false,
       isStarred: false,
-      saveType: aiEditInfo ? 'ai' : (autoSaved ? 'auto' : 'manual'),
+      saveType: aiEditInfo 
+        ? (aiEditInfo.type === 'human-approved' ? 'human-approved' : 'ai')
+        : (autoSaved ? 'auto' : 'manual'),
       description: aiEditInfo ? undefined : description, // Don't show AI description since we have AI Prompt section
       changesSinceLastVersion: changesSinceLastSave,
       // OPTION C: Save pending suggestions to carry over
@@ -1933,7 +1935,7 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
       // Save baseline for showing diffs later
       baselineContent: currentVersion?.content,
       // Store AI edit details
-      aiEditPrompt: typeof aiEditInfo?.prompt === 'string' ? aiEditInfo.prompt : 'AI suggested changes',
+      aiEditPrompt: aiEditInfo ? (typeof aiEditInfo.prompt === 'string' ? aiEditInfo.prompt : 'AI suggested changes') : undefined,
       aiEditModel: aiEditInfo?.model,
     };
 
@@ -3894,8 +3896,8 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
                         console.log('🎯 Creating new version for Split View AI edit');
                         const newVersion = createNewVersion(content, false, { 
                           model: 'claude-3-5-sonnet', 
-                          type: 'split-view-edit',
-                          prompt: 'Changes accepted from Split View'
+                          type: 'human-approved',
+                          prompt: 'Human approved AI changes from Split View'
                         });
                         console.log('✅ Created Split View AI edit version:', newVersion.id, 'V' + newVersion.versionNumber);
                       }, 100);
@@ -4628,8 +4630,10 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
                       
                       {/* Version Info - Single Clean Line */}
                       <div className="text-sm text-gray-600 mb-1">
-                        {version.saveType === 'ai' && version.aiEditPrompt ? (
-                          <span>🤖 AI: <em>"{version.aiEditPrompt.length > 50 ? version.aiEditPrompt.substring(0, 50) + '...' : version.aiEditPrompt}"</em></span>
+                        {version.saveType === 'human-approved' && version.aiEditPrompt ? (
+                          <span>✅ Human approved: <em>"{version.aiEditPrompt.length > 50 ? version.aiEditPrompt.substring(0, 50) + '...' : version.aiEditPrompt}"</em></span>
+                        ) : version.saveType === 'ai' && version.aiEditPrompt ? (
+                          <span>🤖 AI edit: <em>"{version.aiEditPrompt.length > 50 ? version.aiEditPrompt.substring(0, 50) + '...' : version.aiEditPrompt}"</em></span>
                         ) : version.saveType === 'manual' && version.actionDescription ? (
                           <span>📝 {version.actionDescription}</span>
                         ) : version.saveType === 'auto' ? (
@@ -4802,8 +4806,10 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
                           
                           {/* Version Info - Single Clean Line */}
                           <div className="text-sm text-gray-500 mb-1">
-                            {version.saveType === 'ai' && version.aiEditPrompt ? (
-                              <span>🤖 AI: <em>"{version.aiEditPrompt.length > 50 ? version.aiEditPrompt.substring(0, 50) + '...' : version.aiEditPrompt}"</em></span>
+                            {version.saveType === 'human-approved' && version.aiEditPrompt ? (
+                              <span>✅ Human approved: <em>"{version.aiEditPrompt.length > 50 ? version.aiEditPrompt.substring(0, 50) + '...' : version.aiEditPrompt}"</em></span>
+                            ) : version.saveType === 'ai' && version.aiEditPrompt ? (
+                              <span>🤖 AI edit: <em>"{version.aiEditPrompt.length > 50 ? version.aiEditPrompt.substring(0, 50) + '...' : version.aiEditPrompt}"</em></span>
                             ) : version.saveType === 'manual' && version.actionDescription ? (
                               <span>📝 {version.actionDescription}</span>
                             ) : version.saveType === 'auto' ? (
@@ -4814,8 +4820,8 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
                               <span>📝 {version.description}</span>
                             ) : (
                               <span>{saveTypeIcons[(version.saveType || 'manual') as keyof typeof saveTypeIcons]} {saveTypeLabels[(version.saveType || 'manual') as keyof typeof saveTypeLabels]}</span>
-                  )}
-                </div>
+                            )}
+                          </div>
 
                           {/* Change Statistics */}
                           {version.baselineContent && version.content && version.baselineContent !== version.content && (
