@@ -4306,7 +4306,7 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
                         </div>
                       </div>
             ))}
-          </div>
+                    </div>
         )}
           </div>
         )}
@@ -4814,8 +4814,8 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
                               <span>📝 {version.description}</span>
                             ) : (
                               <span>{saveTypeIcons[(version.saveType || 'manual') as keyof typeof saveTypeIcons]} {saveTypeLabels[(version.saveType || 'manual') as keyof typeof saveTypeLabels]}</span>
-                            )}
-                          </div>
+                  )}
+                </div>
 
                           {/* Change Statistics */}
                           {version.baselineContent && version.content && version.baselineContent !== version.content && (
@@ -4834,7 +4834,7 @@ ${isAfterSentenceEnd ? 'Write the next sentence:' : 'Complete this sentence with
                                   ) : (
                                     <span>No word changes</span>
                                   )}
-                                </div>
+            </div>
                               );
                             })()
                           )}

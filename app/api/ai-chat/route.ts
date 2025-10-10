@@ -236,9 +236,11 @@ CRITICAL RULES:
 - Use double quotes around both REPLACE and WITH text
 - Copy the EXACT text from the document for REPLACE
 - Write clean, properly formatted text for WITH
+- Do NOT wrap text in <p> tags or other HTML - just provide the plain text
 - Do NOT merge words together
 - Do NOT include extra characters or formatting
 - Keep text readable and properly spaced
+- For multiple changes, provide multiple REPLACE/WITH pairs
 
 Example:
 User: "make this more concise"
@@ -246,6 +248,8 @@ You: I'll help make that more concise.
 
 REPLACE: "On a crisp autumn morning, with the morning mist still clinging to the trees, I found myself contemplating how salutations have always fascinated me as these brief but meaningful moments of human connection"
 WITH: "On a crisp autumn morning, I contemplated how greetings fascinate me as brief moments of human connection"
+
+IMPORTANT: Never wrap your REPLACE or WITH text in HTML tags like <p> or <span>. Just provide the raw text content.
 
 Always provide specific REPLACE/WITH pairs for any changes you suggest.`;
   } else {
